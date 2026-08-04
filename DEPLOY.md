@@ -8,15 +8,19 @@ The game is already touch-first. The staged path to phones:
 `index.html` (the whole game, self-contained), `manifest.webmanifest`, `sw.js`
 (offline caching), `icon.svg`. Any static host works.
 
-**GitHub Pages (recommended — auto-deploys on every push):**
-```sh
-gh repo create crownhold --public --source=. --push
-gh api repos/{owner}/crownhold/pages -X POST -f build_type=workflow
-```
-The included workflow (`.github/workflows/pages.yml`) builds and publishes on
-every push to `main`. Your game lands at `https://<you>.github.io/crownhold/`.
+**GitHub Pages — LIVE at https://yankiakal.github.io/crownhold/**
 
-**Netlify (fastest one-off):** run `npm run build`, then drag the `dist/`
+Repo: https://github.com/yankiakal/crownhold (Pages serves the `gh-pages`
+branch). To ship an update:
+```sh
+npm run deploy     # builds and force-pushes dist/ to gh-pages
+```
+(An Actions workflow that auto-deploys on every push exists but needs the gh
+token's `workflow` scope: `gh auth refresh -s workflow`, then restore
+`.github/workflows/pages.yml` from DEPLOY history if wanted. `npm run deploy`
+makes it optional.)
+
+**Netlify (alternative):** run `npm run build`, then drag the `dist/`
 folder onto https://app.netlify.com/drop.
 
 **On the phone:** open the URL → browser menu → *Add to Home Screen*. It
