@@ -1,0 +1,893 @@
+<title>Crownhold — Prototype</title>
+<style>
+  /* ── Crownhold: a night-siege war room. Single deliberate dark theme. ── */
+  :root{
+    --ground:#171310;
+    --panel:#211b16;
+    --panel-2:#2a221b;
+    --edge:#3a2f25;
+    --ink:#e8dcc8;
+    --ink-dim:#9c8d77;
+    --gold:#d9a441;
+    --gold-deep:#a87a26;
+    --good:#7fa65a;
+    --bad:#c25a45;
+    --info:#6e93a8;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --sans:ui-sans-serif,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{background:var(--ground)}
+  body{
+    background:
+      radial-gradient(1200px 500px at 50% -10%, rgba(217,164,65,.06), transparent 60%),
+      var(--ground);
+    color:var(--ink);
+    font-family:var(--serif);
+    font-size:16px;
+    line-height:1.45;
+    min-height:100vh;
+  }
+  button{
+    font-family:var(--sans);
+    font-size:.8rem;
+    color:var(--ink);
+    background:var(--panel-2);
+    border:1px solid var(--edge);
+    border-radius:3px;
+    padding:.4rem .7rem;
+    cursor:pointer;
+  }
+  button:hover:not(:disabled){border-color:var(--gold-deep)}
+  button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+  button:disabled{opacity:.45;cursor:default}
+  button.primary{
+    background:linear-gradient(180deg,#3d2f18,#33270f);
+    border-color:var(--gold-deep);
+    color:#f0dfb2;
+  }
+  button.valor-btn{color:var(--gold);border-color:var(--gold-deep);background:#241c0e}
+
+  .wrap{max-width:1100px;margin:0 auto;padding:0 1rem 3rem}
+
+  /* header banner */
+  header{
+    display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap;
+    padding:.8rem 0 .7rem;
+    border-bottom:1px solid var(--edge);
+  }
+  .brand{display:flex;flex-direction:column}
+  .brand h1{
+    font-size:1.25rem;font-weight:600;letter-spacing:.12em;
+    color:var(--gold);
+  }
+  .brand span{
+    font-family:var(--sans);font-size:.6rem;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--ink-dim);
+  }
+  .res-row{display:flex;gap:1rem;flex-wrap:wrap;margin-left:auto;align-items:center}
+  .res{
+    font-family:var(--sans);font-size:.82rem;
+    font-variant-numeric:tabular-nums;
+    display:flex;align-items:baseline;gap:.35rem;
+  }
+  .res .lbl{font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-dim)}
+  .res .rate{font-size:.65rem;color:var(--ink-dim)}
+  .res.valor{color:var(--gold);border-left:1px solid var(--edge);padding-left:1rem}
+  .res.valor .lbl{color:var(--gold-deep)}
+
+  /* threat bar */
+  .threat{
+    margin-top:1rem;
+    border:1px solid var(--edge);
+    background:var(--panel);
+    border-radius:4px;
+    padding:.65rem .9rem .75rem;
+  }
+  .threat .row{display:flex;align-items:baseline;gap:.9rem;flex-wrap:wrap}
+  .threat .title{font-size:1rem;color:var(--ink)}
+  .threat .meta{font-family:var(--sans);font-size:.72rem;color:var(--ink-dim);font-variant-numeric:tabular-nums}
+  .threat .meta b{color:var(--ink);font-weight:600}
+  .bar{
+    height:6px;border-radius:3px;margin-top:.55rem;
+    background:#151009;border:1px solid #2c2119;overflow:hidden;
+  }
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--gold-deep),var(--gold))}
+  .bar.threat-fill i{background:linear-gradient(90deg,#6e3a2c,var(--bad))}
+
+  /* layout */
+  main{display:grid;grid-template-columns:1.9fr 1.1fr;gap:1rem;margin-top:1rem}
+  @media(max-width:820px){main{grid-template-columns:1fr}}
+
+  section.panel{
+    border:1px solid var(--edge);background:var(--panel);
+    border-radius:4px;padding:.8rem .9rem 1rem;
+  }
+  .panel>h2{
+    font-family:var(--sans);font-size:.62rem;font-weight:600;
+    letter-spacing:.24em;text-transform:uppercase;color:var(--ink-dim);
+    padding-bottom:.5rem;border-bottom:1px solid var(--edge);margin-bottom:.7rem;
+    display:flex;justify-content:space-between;align-items:baseline;
+  }
+  .rail{display:flex;flex-direction:column;gap:1rem}
+
+  /* buildings */
+  .bgrid{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+  @media(max-width:560px){.bgrid{grid-template-columns:1fr}}
+  .bcard{
+    border:1px solid var(--edge);background:var(--panel-2);
+    border-radius:3px;padding:.6rem .7rem;
+    display:flex;flex-direction:column;gap:.35rem;
+  }
+  .bcard .head{display:flex;align-items:baseline;gap:.5rem}
+  .bcard .name{font-size:.98rem}
+  .bcard .lvl{
+    font-family:var(--sans);font-size:.62rem;color:var(--gold);
+    margin-left:auto;letter-spacing:.08em;font-variant-numeric:tabular-nums;
+  }
+  .bcard .fx{font-size:.78rem;color:var(--ink-dim);font-style:italic;min-height:1.1em}
+  .bcard.locked{opacity:.55}
+  .cost{display:flex;gap:.5rem;flex-wrap:wrap;font-family:var(--sans);font-size:.72rem;font-variant-numeric:tabular-nums}
+  .cost .lack{color:var(--bad)}
+  .queue-strip{
+    display:flex;align-items:center;gap:.7rem;
+    border:1px dashed var(--gold-deep);border-radius:3px;
+    background:#231b0f;padding:.45rem .7rem;margin-bottom:.7rem;
+    font-family:var(--sans);font-size:.75rem;font-variant-numeric:tabular-nums;
+  }
+  .queue-strip .bar{flex:1;margin-top:0}
+
+  /* troops / heroes / quest */
+  .trow{
+    display:flex;align-items:center;gap:.6rem;padding:.4rem 0;
+    border-bottom:1px solid rgba(58,47,37,.55);
+    font-variant-numeric:tabular-nums;
+  }
+  .trow:last-child{border-bottom:none}
+  .trow .tname{min-width:6.2rem}
+  .trow .tmeta{font-family:var(--sans);font-size:.68rem;color:var(--ink-dim)}
+  .trow .spacer{flex:1}
+  .trow .count{font-family:var(--sans);font-size:.9rem;color:var(--ink)}
+  .hero{padding:.45rem 0;border-bottom:1px solid rgba(58,47,37,.55)}
+  .hero:last-child{border-bottom:none}
+  .hero .hname{font-size:.92rem}
+  .hero .hmeta{font-family:var(--sans);font-size:.7rem;color:var(--ink-dim);font-variant-numeric:tabular-nums}
+  .hero.locked{opacity:.55;font-style:italic}
+  .xpbar{height:3px;background:#151009;border-radius:2px;margin-top:.3rem;overflow:hidden}
+  .xpbar i{display:block;height:100%;background:var(--info)}
+  .quest-txt{font-size:.95rem}
+  .quest-reward{font-family:var(--sans);font-size:.72rem;color:var(--gold);margin-top:.3rem}
+  .quest-done{color:var(--ink-dim);font-style:italic}
+
+  /* chronicle */
+  .chronicle{max-height:15rem;overflow-y:auto;display:flex;flex-direction:column;gap:.35rem}
+  .chronicle p{
+    font-size:.8rem;color:var(--ink-dim);
+    padding-left:.6rem;border-left:2px solid var(--edge);
+  }
+  .chronicle p.win{border-left-color:var(--good);color:var(--ink)}
+  .chronicle p.loss{border-left-color:var(--bad);color:var(--ink)}
+  .chronicle p.gold{border-left-color:var(--gold);color:var(--ink)}
+  .chronicle time{font-family:var(--sans);font-size:.62rem;color:#6b5f4e;margin-right:.4rem;font-variant-numeric:tabular-nums}
+
+  /* banner + overlay */
+  .banner{
+    position:fixed;left:50%;top:1rem;transform:translateX(-50%);
+    background:var(--panel-2);border:1px solid var(--gold-deep);
+    border-radius:4px;padding:.6rem 1.1rem;
+    font-size:.95rem;z-index:50;box-shadow:0 6px 24px rgba(0,0,0,.5);
+    animation:drop .25s ease-out;
+  }
+  .banner.win{border-color:var(--good)}
+  .banner.loss{border-color:var(--bad)}
+  @keyframes drop{from{opacity:0;transform:translate(-50%,-8px)}to{opacity:1;transform:translate(-50%,0)}}
+  .overlay{
+    position:fixed;inset:0;z-index:100;
+    background:rgba(13,10,8,.92);
+    display:flex;align-items:center;justify-content:center;padding:1rem;
+  }
+  .overlay .card{
+    max-width:34rem;border:1px solid var(--gold-deep);border-radius:5px;
+    background:var(--panel);padding:2.2rem 2.4rem;text-align:center;
+  }
+  .overlay h1{
+    font-size:2.6rem;font-weight:600;letter-spacing:.18em;color:var(--gold);
+    text-wrap:balance;
+  }
+  .overlay .rule{width:5rem;height:1px;background:var(--gold-deep);margin:1rem auto}
+  .overlay p.sub{color:var(--ink-dim);font-style:italic;margin-bottom:1.2rem}
+  .pillars{text-align:left;display:flex;flex-direction:column;gap:.6rem;margin:0 auto 1.5rem;max-width:26rem}
+  .pillars p{font-size:.88rem;color:var(--ink)}
+  .pillars b{color:var(--gold);font-weight:600}
+  footer{
+    margin-top:1.2rem;display:flex;gap:1rem;align-items:center;
+    font-family:var(--sans);font-size:.68rem;color:var(--ink-dim);
+  }
+  footer button{font-size:.68rem;padding:.25rem .6rem}
+  @media(prefers-reduced-motion:reduce){
+    .banner{animation:none}
+  }
+</style>
+
+<div class="wrap">
+  <div id="app"></div>
+</div>
+<div id="fx"></div>
+
+<script>
+'use strict';
+/* ════════════════════════════ DEFINITIONS ════════════════════════════ */
+
+const BUILDINGS = {
+  townhall:  {name:'Town Hall',  icon:'🏰', fx:'Raises storage caps; gates every other building.',
+              cost:{wood:120,stone:90}, time:20, max:10},
+  farm:      {name:'Farm',       icon:'🌾', prod:'food', rate:2.0, cost:{wood:30},           time:8,  max:10},
+  lumberyard:{name:'Lumberyard', icon:'🪵', prod:'wood', rate:1.6, cost:{food:30},           time:8,  max:10},
+  quarry:    {name:'Quarry',     icon:'⛰️', prod:'stone',rate:1.0, cost:{wood:60,food:40},   time:12, max:10},
+  ironmine:  {name:'Iron Mine',  icon:'⚒️', prod:'iron', rate:0.7, cost:{wood:80,stone:60},  time:15, max:10, th:3},
+  barracks:  {name:'Barracks',   icon:'⚔️', fx:'Trains troops; each level trains 8% faster.',
+              cost:{wood:60,stone:30},  time:15, max:10},
+  wall:      {name:'Wall',       icon:'🧱', fx:'+18 defense power per level.',
+              cost:{stone:90,wood:40},  time:18, max:10, th:2},
+  watchtower:{name:'Watchtower', icon:'🗼', fx:'Scouts raid strength; blunts attacks 5% per level.',
+              cost:{wood:120,stone:80,iron:20}, time:20, max:6, th:3},
+};
+const COST_MULT = 1.55, TH_COST_MULT = 1.7, TIME_MULT = 1.42;
+
+/* upkeep: food/sec per soldier — armies eat. This is what keeps army size in
+   equilibrium with your farms instead of scaling to infinity. */
+const TROOPS = {
+  spearman:{name:'Spearman', icon:'🛡️', power:3,  upkeep:0.06, cost:{food:25,wood:10}, time:4,  barracks:1},
+  archer:  {name:'Archer',   icon:'🏹', power:5,  upkeep:0.10, cost:{food:20,wood:25}, time:6,  barracks:2},
+  knight:  {name:'Knight',   icon:'🐎', power:11, upkeep:0.22, cost:{food:60,iron:20}, time:12, barracks:4},
+  ballista:{name:'Ballista', icon:'⚙️', power:24, upkeep:0.50, cost:{wood:80,iron:40}, time:20, barracks:6},
+};
+
+const HEROES = {
+  marshal:{name:'Ser Alden, the Marshal', icon:'⚜️',
+           fx:l=>'+'+(4*l)+'% troop power',
+           hint:'Reach Town Hall 2', check:s=>s.b.townhall>=2},
+  steward:{name:'Maren, High Steward',    icon:'📜',
+           fx:l=>'+'+(6*l)+'% production',
+           hint:'Reach Town Hall 3', check:s=>s.b.townhall>=3},
+  warden: {name:'Odo, the Night Warden',  icon:'🦉',
+           fx:l=>'−'+(4*l)+'% training time',
+           hint:'Repel 7 raids',     check:s=>s.wavesWon>=7},
+  quartermaster:{name:'Petra, Quartermaster', icon:'⚖️',
+           fx:l=>'+'+(3*l)+'% raid loot',
+           hint:'Reach Mastery 6',   check:s=>masteryLvl(s)>=6},
+};
+
+/* The Mastery track — Crownhold's replacement for VIP levels. Earned from every
+   kind of play (raids, quests, building, drilling, patrols); never sold. */
+const MASTERY = [
+  {need:60,   fx:'+6% production'},
+  {need:190,  fx:'+6% troop power'},
+  {need:400,  fx:'Patrol cooldown −8s'},
+  {need:700,  fx:'+15% storage'},
+  {need:1100, fx:'−12% build & training time'},
+  {need:1600, fx:'A famed Quartermaster takes notice'},
+  {need:2200, fx:'Writ of Peace capacity +1'},
+  {need:2900, fx:'+8% production & troop power'},
+  {need:3700, fx:'Patrols return double resources'},
+  {need:4600, fx:'+15% troop power — High Sovereign'},
+];
+
+const QUESTS = [
+  {txt:'Raise the Farm to level 2',      check:s=>s.b.farm>=2,        reward:{wood:60},           rtxt:'+60 wood'},
+  {txt:'Raise the Lumberyard to level 2',check:s=>s.b.lumberyard>=2,  reward:{food:60},           rtxt:'+60 food'},
+  {txt:'Build the Quarry',               check:s=>s.b.quarry>=1,      reward:{wood:80},           rtxt:'+80 wood'},
+  {txt:'Build the Barracks',             check:s=>s.b.barracks>=1,    reward:{food:80,valor:2},   rtxt:'+80 food, +2 Valor'},
+  {txt:'Train 5 troops',                 check:s=>s.trained>=5,       reward:{valor:4},           rtxt:'+4 Valor'},
+  {txt:'Repel your first raid',          check:s=>s.wavesWon>=1,      reward:{stone:60,valor:3},  rtxt:'+60 stone, +3 Valor'},
+  {txt:'Reach Town Hall 2',              check:s=>s.b.townhall>=2,    reward:{valor:5},           rtxt:'+5 Valor'},
+  {txt:'Build the Wall',                 check:s=>s.b.wall>=1,        reward:{valor:4},           rtxt:'+4 Valor'},
+  {txt:'Repel 3 raids',                  check:s=>s.wavesWon>=3,      reward:{valor:6},           rtxt:'+6 Valor'},
+  {txt:'Reach Town Hall 3',              check:s=>s.b.townhall>=3,    reward:{valor:8},           rtxt:'+8 Valor'},
+  {txt:'Build the Iron Mine',            check:s=>s.b.ironmine>=1,    reward:{food:120},          rtxt:'+120 food'},
+  {txt:'Build the Watchtower',           check:s=>s.b.watchtower>=1,  reward:{valor:5},           rtxt:'+5 Valor'},
+  {txt:'Train a Knight',                 check:s=>(s.trainedBy.knight||0)>=1, reward:{valor:6},   rtxt:'+6 Valor'},
+  {txt:'Repel a Warband (every 5th raid)',check:s=>s.warbandsWon>=1,  reward:{valor:10,shield:1}, rtxt:'+10 Valor, +1 Writ of Peace'},
+  {txt:'Repel 8 raids',                  check:s=>s.wavesWon>=8,      reward:{valor:10},          rtxt:'+10 Valor'},
+  {txt:'Reach Town Hall 4',              check:s=>s.b.townhall>=4,    reward:{valor:20},          rtxt:'+20 Valor'},
+  {txt:'Reach Mastery 3',                check:s=>masteryLvl(s)>=3,   reward:{valor:8},           rtxt:'+8 Valor'},
+  {txt:'Reach Town Hall 5',              check:s=>s.b.townhall>=5,    reward:{valor:12,shield:1}, rtxt:'+12 Valor, +1 Writ'},
+  {txt:'Train a Ballista',               check:s=>(s.trainedBy.ballista||0)>=1, reward:{valor:12},rtxt:'+12 Valor'},
+  {txt:'Repel 15 raids',                 check:s=>s.wavesWon>=15,     reward:{valor:15,shield:1}, rtxt:'+15 Valor, +1 Writ'},
+  {txt:'Reach Town Hall 7',              check:s=>s.b.townhall>=7,    reward:{valor:25},          rtxt:'+25 Valor'},
+  {txt:'Reach Mastery 6',                check:s=>masteryLvl(s)>=6,   reward:{valor:15},          rtxt:'+15 Valor'},
+  {txt:'Repel 25 raids',                 check:s=>s.wavesWon>=25,     reward:{valor:25},          rtxt:'+25 Valor'},
+  {txt:'Reach Town Hall 10',             check:s=>s.b.townhall>=10,   reward:{valor:50},          rtxt:'+50 Valor'},
+];
+
+const RES_META = {
+  food:{lbl:'Food',icon:'🌾'}, wood:{lbl:'Wood',icon:'🪵'},
+  stone:{lbl:'Stone',icon:'⛰️'}, iron:{lbl:'Iron',icon:'⚒️'},
+};
+const WAVE_MS = 75000, FIRST_WAVE_MS = 120000, PATROL_MS = 25000, SHIELD_MS = 180000;
+const SAVE_KEY = 'crownhold-save-v1';
+
+/* ════════════════════════════ STATE ════════════════════════════ */
+
+function freshState(){
+  const now = Date.now();
+  return {
+    res:{food:120,wood:120,stone:60,iron:0},
+    valor:0,
+    b:{townhall:1,farm:1,lumberyard:1,quarry:0,ironmine:0,barracks:0,wall:0,watchtower:0},
+    t:{spearman:8,archer:0,knight:0,ballista:0},
+    heroes:{marshal:{on:false,lvl:1,xp:0},steward:{on:false,lvl:1,xp:0},warden:{on:false,lvl:1,xp:0},quartermaster:{on:false,lvl:1,xp:0}},
+    bq:null, tq:null,
+    wave:1, nextWave:now+FIRST_WAVE_MS, wavesWon:0,
+    trained:0, trainedBy:{},
+    mxp:0, shields:0, shieldUntil:0, warbandsWon:0, streak:0,
+    questIdx:0,
+    patrolReady:0,
+    log:[], banner:null,
+    seenIntro:false,
+    lastSeen:now,
+  };
+}
+let S = load();
+
+function load(){
+  try{
+    const raw = localStorage.getItem(SAVE_KEY);
+    if(!raw) return freshState();
+    const s = JSON.parse(raw);
+    const now = Date.now();
+    // v0.2 migration: backfill fields that older saves lack
+    const f = freshState();
+    if(s.mxp==null) s.mxp = 0;
+    if(s.shields==null) s.shields = 0;
+    if(s.shieldUntil==null) s.shieldUntil = 0;
+    if(s.warbandsWon==null) s.warbandsWon = 0;
+    if(s.streak==null) s.streak = 0;
+    if(s.t.ballista==null) s.t.ballista = 0;
+    for(const k of Object.keys(f.heroes)) if(!s.heroes[k]) s.heroes[k] = f.heroes[k];
+    // offline production, capped at 2 hours
+    const away = Math.min(Math.max(now - (s.lastSeen||now), 0), 7200000);
+    if(away > 60000){
+      const gained = [];
+      for(const r of Object.keys(RES_META)){
+        let g = prodPerSec(s, r) * away/1000;
+        if(r==='food') g -= upkeepPerSec(s) * away/1000;   // the muster ate while you were gone
+        if(g >= 1){ s.res[r] = Math.min(s.res[r]+g, storageCap(s)); gained.push('+'+fmt(g)+' '+RES_META[r].lbl.toLowerCase()); }
+        else if(g < 0) s.res[r] = Math.max(0, s.res[r]+g); // drain, but no desertion offline
+      }
+      if(gained.length) pushLog(s, 'While you were away, the hold produced '+gained.join(', ')+' (after feeding the muster).', 'gold');
+    }
+    if(s.nextWave < now) s.nextWave = now + 60000;
+    if(s.banner) s.banner = null;
+    return s;
+  }catch(e){ return freshState(); }
+}
+function save(){ S.lastSeen = Date.now(); try{ localStorage.setItem(SAVE_KEY, JSON.stringify(S)); }catch(e){} }
+
+/* ════════════════════════════ MATH ════════════════════════════ */
+
+function fmt(n){ return n>=10000 ? (n/1000).toFixed(1)+'k' : String(Math.floor(n)); }
+function ftime(ms){ const s=Math.max(0,Math.ceil(ms/1000)); return s>=60 ? Math.floor(s/60)+'m '+(s%60)+'s' : s+'s'; }
+function clock(t){ const d=new Date(t); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+
+function masteryLvl(s){ let l=0; for(const m of MASTERY){ if((s.mxp||0)>=m.need) l++; else break; } return l; }
+function perk(s,n){ return masteryLvl(s)>=n; }
+function shieldCap(s){ return 2 + (perk(s,7)?1:0); }
+function storageCap(s){ return Math.round(800 * Math.pow(s.b.townhall,1.35) * (perk(s,4)?1.15:1)); }
+function heroLvl(s,k){ const h=s.heroes[k]; return h&&h.on ? h.lvl : 0; }
+function prodPerSec(s, res){
+  let p = 0;
+  for(const [k,d] of Object.entries(BUILDINGS)) if(d.prod===res) p += d.rate * s.b[k];
+  return p * (1 + 0.06*heroLvl(s,'steward') + (perk(s,1)?0.06:0) + (perk(s,8)?0.08:0));
+}
+function buildCost(k){ const d=BUILDINGS[k], lvl=S.b[k], c={};
+  const mult = k==='townhall' ? TH_COST_MULT : COST_MULT;
+  for(const [r,v] of Object.entries(d.cost)) c[r] = Math.round(v * Math.pow(mult,lvl));
+  return c;
+}
+function buildTime(k){ return Math.min(300, BUILDINGS[k].time * Math.pow(TIME_MULT, S.b[k]) * (perk(S,5)?0.88:1)) * 1000; }
+function canAfford(cost){ return Object.entries(cost).every(([r,v]) => S.res[r] >= v); }
+function payCost(cost){ for(const [r,v] of Object.entries(cost)) S.res[r] -= v; }
+function trainMult(){
+  const b = Math.max(0, S.b.barracks-1);
+  return Math.max(0.3, (1 - 0.08*b - 0.04*heroLvl(S,'warden')) * (perk(S,5)?0.88:1));
+}
+function armyPower(){
+  let p = 0;
+  for(const [k,d] of Object.entries(TROOPS)) p += d.power * S.t[k];
+  p *= (1 + 0.04*heroLvl(S,'marshal'))
+     * (1 + (perk(S,2)?0.06:0) + (perk(S,8)?0.08:0) + (perk(S,10)?0.15:0));
+  return Math.round(p + 18*S.b.wall);
+}
+function upkeepPerSec(s){
+  let u = 0;
+  for(const [k,d] of Object.entries(TROOPS)) u += d.upkeep * (s.t[k]||0);
+  return u;
+}
+function wavePower(w){ return Math.round(10*Math.pow(w,1.3) + 5*w); }
+// each consecutive loss bloodies the band: it returns at 85% strength, floor ~61%
+function streakMult(s){ return Math.pow(0.85, Math.min(s.streak||0, 3)); }
+function finishCost(endTs){ return Math.max(1, Math.ceil((endTs-Date.now())/4000)); }
+function xpNeed(lvl){ return Math.round(50*Math.pow(lvl,1.4)); }
+
+/* ════════════════════════════ EVENTS & LOG ════════════════════════════ */
+
+function pushLog(s, txt, cls){
+  s.log.unshift({t:Date.now(), txt, cls:cls||''});
+  if(s.log.length > 40) s.log.length = 40;
+}
+function showBanner(txt, cls){ S.banner = {txt, cls:cls||'', until:Date.now()+4000}; }
+function gainRes(r, amt){ S.res[r] = Math.min(S.res[r]+amt, storageCap(S)); }
+function gainShield(n){ S.shields = Math.min(shieldCap(S), S.shields + (n||1)); }
+function gainMastery(amt){
+  const before = masteryLvl(S);
+  S.mxp += amt;
+  const after = masteryLvl(S);
+  if(after > before){
+    pushLog(S, 'Mastery rises to '+after+' — '+MASTERY[after-1].fx+'.', 'gold');
+    showBanner('✦ Mastery '+after+': '+MASTERY[after-1].fx, 'win');
+  }
+}
+function gainReward(reward){
+  for(const [k,v] of Object.entries(reward)){
+    if(k==='valor') S.valor += v;
+    else if(k==='shield') gainShield(v);
+    else gainRes(k, v);
+  }
+}
+
+/* ════════════════════════════ ACTIONS ════════════════════════════ */
+
+const ACTIONS = {
+  upgrade(key){
+    if(S.bq) return;
+    const d = BUILDINGS[key], lvl = S.b[key];
+    if(lvl >= d.max) return;
+    if(key!=='townhall' && lvl >= S.b.townhall) return;
+    if(d.th && S.b.townhall < d.th) return;
+    const cost = buildCost(key);
+    if(!canAfford(cost)) return;
+    payCost(cost);
+    S.bq = {key, start:Date.now(), end:Date.now()+buildTime(key)};
+    pushLog(S, (lvl===0?'Construction of the ':'Work begins on the ')+d.name+(lvl===0?' begins.':' (level '+(lvl+1)+').'));
+  },
+  train(key, count){
+    if(S.tq) return;
+    const d = TROOPS[key];
+    if(S.b.barracks < d.barracks) return;
+    count = Number(count)||1;
+    const cost = {};
+    for(const [r,v] of Object.entries(d.cost)) cost[r] = v*count;
+    if(!canAfford(cost)) return;
+    payCost(cost);
+    const dur = d.time*1000*count*trainMult();
+    S.tq = {key, count, start:Date.now(), end:Date.now()+dur};
+    pushLog(S, 'The Barracks begins drilling '+count+' '+d.name+(count>1?'s':'')+'.');
+  },
+  finishBuild(){
+    if(!S.bq) return;
+    const c = finishCost(S.bq.end);
+    if(S.valor < c) return;
+    S.valor -= c; S.bq.end = Date.now();
+  },
+  finishTrain(){
+    if(!S.tq) return;
+    const c = finishCost(S.tq.end);
+    if(S.valor < c) return;
+    S.valor -= c; S.tq.end = Date.now();
+  },
+  patrol(){
+    const now = Date.now();
+    if(now < S.patrolReady) return;
+    S.patrolReady = now + PATROL_MS - (perk(S,3)?8000:0);
+    const mult = perk(S,9)?2:1;
+    const th = S.b.townhall, f = (12+6*th)*mult, w = (12+6*th)*mult;
+    gainRes('food',f); gainRes('wood',w); S.valor += 2;
+    gainMastery(3);
+    let extra = '';
+    if(Math.random() < 0.25){ const st = (10+4*th)*mult; gainRes('stone',st); extra = ', +'+st+' stone'; }
+    pushLog(S, 'Your patrol returns: +'+f+' food, +'+w+' wood'+extra+', +2 Valor.', 'gold');
+  },
+  raiseShield(){
+    const now = Date.now();
+    if(S.shields < 1 || S.shieldUntil > now) return;
+    S.shields--;
+    S.shieldUntil = now + SHIELD_MS;
+    S.nextWave += SHIELD_MS;
+    pushLog(S, 'The Writ of Peace is raised — no raid can touch the hold for '+ftime(SHIELD_MS)+'.', 'gold');
+  },
+  intro(){ S.seenIntro = true; },
+  about(){ S.seenIntro = false; },
+  reset(){
+    if(confirm('Raze the hold and start over? Your save will be erased.')){
+      S = freshState(); save();
+    }
+  },
+};
+
+/* ════════════════════════════ SIMULATION ════════════════════════════ */
+
+let lastTick = Date.now(), lastSave = 0, famineAcc = 0;
+
+function tick(){
+  const now = Date.now();
+  let dt = (now - lastTick)/1000;
+  lastTick = now;
+  // tab was backgrounded a while: grant production, but don't fight unattended
+  if(dt > 10){
+    dt = Math.min(dt, 7200);
+    if(S.nextWave < now + 5000) S.nextWave = now + 30000;
+  }
+  // hold the first raid while the title screen is up
+  if(!S.seenIntro) S.nextWave = Math.max(S.nextWave, now + FIRST_WAVE_MS);
+
+  for(const r of Object.keys(RES_META)) gainRes(r, prodPerSec(S,r)*dt);
+
+  // armies eat: upkeep drains food; an unfed muster deserts
+  S.res.food -= upkeepPerSec(S)*dt;
+  if(S.res.food < 0){
+    S.res.food = 0;
+    famineAcc += dt;
+    if(famineAcc >= 10){
+      famineAcc = 0;
+      let lost = 0;
+      for(const k of Object.keys(TROOPS)){
+        if(S.t[k] > 0){ const l = Math.ceil(S.t[k]*0.02); S.t[k] -= l; lost += l; }
+      }
+      if(lost) pushLog(S, 'Famine! '+lost+' troops desert an unfed muster — raise your Farms or let raids thin the ranks.', 'loss');
+    }
+  } else famineAcc = 0;
+
+  if(S.bq && now >= S.bq.end){
+    S.b[S.bq.key]++;
+    const d = BUILDINGS[S.bq.key];
+    pushLog(S, d.name+' complete — now level '+S.b[S.bq.key]+'. +2 Valor.', 'gold');
+    S.valor += 2; S.bq = null;
+    gainMastery(6);
+  }
+  if(S.tq && now >= S.tq.end){
+    const n = S.tq.count;
+    S.t[S.tq.key] += n;
+    S.trained += n;
+    S.trainedBy[S.tq.key] = (S.trainedBy[S.tq.key]||0) + n;
+    pushLog(S, n+' '+TROOPS[S.tq.key].name+(n>1?'s':'')+' join the muster.');
+    S.tq = null;
+    gainMastery(n);
+  }
+
+  if(now >= S.nextWave) resolveWave();
+
+  // quests
+  const q = QUESTS[S.questIdx];
+  if(q && q.check(S)){
+    gainReward(q.reward);
+    gainMastery(12);
+    pushLog(S, 'Quest complete — '+q.txt+' ('+q.rtxt+').', 'gold');
+    showBanner('📜 Quest complete: '+q.rtxt, 'win');
+    S.questIdx++;
+    if(S.questIdx >= QUESTS.length)
+      pushLog(S, 'The charter is fulfilled. The hold — and its numbers — are yours to tune.', 'gold');
+  }
+
+  // hero unlocks + levels
+  for(const [k,d] of Object.entries(HEROES)){
+    const h = S.heroes[k];
+    if(!h.on && d.check(S)){
+      h.on = true;
+      pushLog(S, d.icon+' '+d.name+' pledges service to the hold!', 'gold');
+      showBanner(d.icon+' Hero joined: '+d.name, 'win');
+    }
+    while(h.on && h.lvl < 10 && h.xp >= xpNeed(h.lvl)){
+      h.xp -= xpNeed(h.lvl); h.lvl++;
+      pushLog(S, d.name+' rises to level '+h.lvl+'.', 'gold');
+    }
+  }
+
+  if(S.banner && now > S.banner.until) S.banner = null;
+  if(now - lastSave > 5000){ save(); lastSave = now; }
+  render();
+}
+
+function resolveWave(){
+  const w = S.wave;
+  const isWB = w % 5 === 0; // every 5th raid is an elite Warband
+  const label = isWB ? 'Warband' : 'Raid';
+  const raw = wavePower(w) * (isWB?1.6:1) * (0.88 + Math.random()*0.24) * streakMult(S);
+  const blunt = Math.min(0.3, 0.05*S.b.watchtower);
+  const enemy = raw * (1-blunt);
+  const mine = armyPower();
+  S.nextWave = Date.now() + WAVE_MS;
+
+  if(mine >= enemy){
+    // casualties scale with how close it was
+    const ratio = enemy/Math.max(mine,1);
+    const lossFrac = 0.30 * ratio*ratio;
+    let lost = 0;
+    for(const k of Object.keys(TROOPS)){
+      const l = Math.round(S.t[k] * lossFrac * (0.7+Math.random()*0.6));
+      S.t[k] = Math.max(0, S.t[k]-l); lost += l;
+    }
+    const lootMult = (isWB?2:1) * (1 + 0.03*heroLvl(S,'quartermaster'));
+    const base = 15*Math.pow(w,0.8);
+    const loot = {food:Math.round(base*lootMult), wood:Math.round(base*lootMult),
+                  stone:Math.round(0.4*base*lootMult), iron:Math.round(0.2*base*lootMult)};
+    for(const [r,v] of Object.entries(loot)) gainRes(r,v);
+    const valor = (5+Math.min(w,15)) * (isWB?2:1);
+    S.valor += valor;
+    for(const h of Object.values(S.heroes)) if(h.on) h.xp += (12+3*w)*(isWB?2:1);
+    gainMastery((8+2*w)*(isWB?2:1));
+    S.wavesWon++; S.wave++; S.streak = 0;
+    if(isWB){ S.warbandsWon++; gainShield(1); }
+    pushLog(S, label+' '+w+' repelled! Loot: +'+fmt(loot.food)+' food, +'+fmt(loot.wood)+' wood, +'+fmt(loot.stone)+' stone, +'+fmt(loot.iron)+' iron. +'+valor+' Valor.'
+      +(isWB?' A Writ of Peace was captured.':'')+(lost?' Fallen: '+lost+'.':''), 'win');
+    showBanner('⚔️ '+label+' '+w+' repelled — +'+valor+' Valor'+(lost?', '+lost+' fallen':''), 'win');
+  }else{
+    S.streak++;
+    S.nextWave = Date.now() + WAVE_MS*2; // a loss buys a longer breather
+    for(const k of Object.keys(TROOPS)) S.t[k] = Math.floor(S.t[k]*0.8);
+    for(const r of Object.keys(RES_META)) S.res[r] = Math.floor(S.res[r]*0.85);
+    S.valor += 2;
+    gainMastery(3);
+    gainShield(1);
+    pushLog(S, label+' '+w+' breaks through the gate and carries off part of your stores — but your defenders bloodied them, and the next assault will come weaker. +2 Valor, and a Writ of Peace is granted.', 'loss');
+    showBanner('🔥 '+label+' '+w+' broke through — they return weaker next time', 'loss');
+  }
+}
+
+/* ════════════════════════════ RENDER ════════════════════════════ */
+
+const app = document.getElementById('app');
+const fx  = document.getElementById('fx');
+const esc = s => s;
+
+function costHtml(cost){
+  return '<span class="cost">' + Object.entries(cost).map(([r,v]) =>
+    '<span class="'+(S.res[r]>=v?'':'lack')+'">'+RES_META[r].icon+' '+fmt(v)+'</span>'
+  ).join('') + '</span>';
+}
+
+function renderHeader(){
+  const cap = storageCap(S);
+  let h = '<header><div class="brand"><h1>CROWNHOLD</h1><span>hold the frontier</span></div><div class="res-row">';
+  for(const [r,m] of Object.entries(RES_META)){
+    let rate = prodPerSec(S,r);
+    if(r==='food') rate -= upkeepPerSec(S);           // net of army upkeep
+    const rateTxt = (rate<0?'−':'+')+Math.abs(rate).toFixed(1);
+    const warn = rate<0 ? ';color:var(--bad)' : '';
+    h += '<span class="res"><span class="lbl">'+m.lbl+'</span> '+fmt(S.res[r])
+       + '<span class="rate" style="'+warn.slice(1)+'">/'+fmt(cap)+' · '+rateTxt+'/s</span></span>';
+  }
+  h += '<span class="res valor"><span class="lbl">Valor</span> '+fmt(S.valor)+'</span>';
+  h += '</div></header>';
+  return h;
+}
+
+function renderThreat(){
+  const now = Date.now();
+  const shielded = S.shieldUntil > now;
+  const left = S.nextWave - now;
+  const total = S.wavesWon===0 && S.wave===1 ? FIRST_WAVE_MS : WAVE_MS;
+  const pct = Math.max(0, Math.min(100, 100*left/total));
+  const isWB = S.wave % 5 === 0;
+  const scouted = S.b.watchtower >= 1;
+  const est = scouted ? '≈'+Math.round(wavePower(S.wave)*(isWB?1.6:1)*streakMult(S))+' strength'
+                        +(S.streak>0?' (bloodied)':'')
+                      : 'strength unknown — a Watchtower would tell you';
+  let h = '<div class="threat"><div class="row">';
+  if(shielded){
+    h += '<span class="title" style="color:var(--gold)">🛡 The Writ of Peace holds</span>'
+      + '<span class="meta">raids resume in <b>'+ftime(S.shieldUntil-now)+'</b></span>';
+  }else{
+    h += '<span class="title"'+(isWB?' style="color:var(--bad)"':'')+'>'+(isWB?'⚔️ Warband':'Raid')+' '+S.wave+' approaches</span>'
+      + '<span class="meta">in <b>'+ftime(left)+'</b></span>'
+      + '<span class="meta">scouts: <b>'+est+'</b></span>';
+  }
+  h += '<span class="meta" style="margin-left:auto">your power: <b>'+armyPower()+'</b></span>'
+    + '<span class="meta">writs: <b>'+S.shields+'/'+shieldCap(S)+'</b></span>'
+    + (S.shields>0 && !shielded ? '<button class="valor-btn" data-act="raiseShield">🛡 Raise shield · 3m</button>' : '')
+    + '</div><div class="bar'+(shielded?'':' threat-fill')+'"><i style="width:'
+    + (shielded ? Math.max(0,Math.min(100,100*(S.shieldUntil-now)/SHIELD_MS)) : pct)
+    + '%"></i></div></div>';
+  return h;
+}
+
+function queueStrip(q, label, finishAct){
+  const now = Date.now();
+  const pct = Math.min(100, 100*(now-q.start)/Math.max(1,(q.end-q.start)));
+  const c = finishCost(q.end);
+  return '<div class="queue-strip"><span>'+label+'</span>'
+    + '<div class="bar"><i style="width:'+pct+'%"></i></div>'
+    + '<span>'+ftime(q.end-now)+'</span>'
+    + '<button class="valor-btn" data-act="'+finishAct+'" '+(S.valor<c?'disabled':'')+'>Finish · '+c+' ⚜ Valor</button>'
+    + '</div>';
+}
+
+function renderHold(){
+  let h = '<section class="panel"><h2>The Hold</h2>';
+  if(S.bq){
+    const d = BUILDINGS[S.bq.key];
+    h += queueStrip(S.bq, d.icon+' '+d.name+' → '+(S.b[S.bq.key]+1), 'finishBuild');
+  }
+  h += '<div class="bgrid">';
+  for(const [k,d] of Object.entries(BUILDINGS)){
+    const lvl = S.b[k];
+    const lockedTH = d.th && S.b.townhall < d.th;
+    const fxTxt = d.prod
+      ? '+'+(d.rate*Math.max(lvl,1)*(1+0.06*heroLvl(S,'steward'))).toFixed(1)+' '+d.prod+'/s'+(lvl===0?' when built':'')
+      : d.fx;
+    h += '<div class="bcard'+(lockedTH?' locked':'')+'">'
+      + '<div class="head"><span>'+d.icon+'</span><span class="name">'+d.name+'</span>'
+      + '<span class="lvl">'+(lvl===0?'not built':'LVL '+lvl)+'</span></div>'
+      + '<div class="fx">'+fxTxt+'</div>';
+    if(lockedTH){
+      h += '<div class="tmeta" style="font-family:var(--sans);font-size:.7rem;color:var(--ink-dim)">Requires Town Hall '+d.th+'</div>';
+    }else if(lvl >= d.max){
+      h += '<div class="tmeta" style="font-family:var(--sans);font-size:.7rem;color:var(--gold)">Fully raised</div>';
+    }else{
+      const cost = buildCost(k);
+      const capped = k!=='townhall' && lvl >= S.b.townhall;
+      const dis = S.bq || !canAfford(cost) || capped;
+      h += '<div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">'
+        + '<button data-act="upgrade" data-key="'+k+'" '+(dis?'disabled':'')+'>'
+        + (lvl===0?'Build':'Upgrade to '+(lvl+1))+' · '+ftime(buildTime(k))+'</button>'
+        + costHtml(cost)
+        + (capped?'<span class="tmeta" style="font-family:var(--sans);font-size:.65rem;color:var(--ink-dim)">Town Hall must lead</span>':'')
+        + '</div>';
+    }
+    h += '</div>';
+  }
+  h += '</div></section>';
+  return h;
+}
+
+function renderMuster(){
+  let h = '<section class="panel"><h2>Muster <span style="letter-spacing:.05em">power '+armyPower()+' · eats '+upkeepPerSec(S).toFixed(1)+' food/s</span></h2>';
+  if(S.b.barracks === 0){
+    h += '<p style="font-size:.85rem;color:var(--ink-dim);font-style:italic">Build the Barracks to train troops.</p>';
+  }else{
+    if(S.tq){
+      const d = TROOPS[S.tq.key];
+      h += queueStrip(S.tq, d.icon+' '+S.tq.count+'× '+d.name, 'finishTrain');
+    }
+    for(const [k,d] of Object.entries(TROOPS)){
+      const locked = S.b.barracks < d.barracks;
+      h += '<div class="trow"><span>'+d.icon+'</span><span class="tname">'+d.name+'</span>'
+        + '<span class="tmeta">pwr '+d.power+'</span><span class="spacer"></span>';
+      if(locked){
+        h += '<span class="tmeta">Barracks '+d.barracks+'</span>';
+      }else{
+        h += '<span class="count">'+S.t[k]+'</span>'
+          + '<button data-act="train" data-key="'+k+'" data-n="1" '+(S.tq?'disabled':'')+'>+1</button>'
+          + '<button data-act="train" data-key="'+k+'" data-n="5" '+(S.tq?'disabled':'')+'>+5</button>'
+          + '<button data-act="train" data-key="'+k+'" data-n="25" '+(S.tq?'disabled':'')+'>+25</button>';
+      }
+      h += '</div>';
+    }
+  }
+  const now = Date.now(), cd = S.patrolReady - now;
+  h += '<div style="margin-top:.7rem;display:flex;align-items:center;gap:.6rem">'
+    + '<button class="primary" data-act="patrol" '+(cd>0?'disabled':'')+'>🐴 Send patrol'
+    + (cd>0?' · '+ftime(cd):' · resources +2 ⚜')+'</button>'
+    + '<span class="tmeta" style="font-family:var(--sans);font-size:.65rem;color:var(--ink-dim)">Active play earns Valor</span></div>';
+  h += '</section>';
+  return h;
+}
+
+function renderHeroes(){
+  let h = '<section class="panel"><h2>Heroes</h2>';
+  for(const [k,d] of Object.entries(HEROES)){
+    const hero = S.heroes[k];
+    if(!hero.on){
+      h += '<div class="hero locked"><span class="hname">'+d.icon+' ???</span>'
+        + '<div class="hmeta">'+d.hint+' to recruit</div></div>';
+    }else{
+      const need = xpNeed(hero.lvl);
+      const pct = hero.lvl>=10 ? 100 : Math.min(100, 100*hero.xp/need);
+      h += '<div class="hero"><span class="hname">'+d.icon+' '+d.name+'</span>'
+        + '<div class="hmeta">Level '+hero.lvl+' · '+d.fx(hero.lvl)
+        + (hero.lvl>=10?' · max':' · '+fmt(hero.xp)+'/'+fmt(need)+' xp')+'</div>'
+        + '<div class="xpbar"><i style="width:'+pct+'%"></i></div></div>';
+    }
+  }
+  h += '</section>';
+  return h;
+}
+
+function renderMastery(){
+  const lvl = masteryLvl(S);
+  const next = MASTERY[lvl];
+  const prev = lvl>0 ? MASTERY[lvl-1].need : 0;
+  const pct = next ? Math.min(100, 100*(S.mxp-prev)/(next.need-prev)) : 100;
+  let h = '<section class="panel"><h2>Mastery <span style="letter-spacing:.05em">level '+lvl+'/10</span></h2>';
+  if(lvl>0)
+    h += '<div style="font-family:var(--sans);font-size:.7rem;color:var(--ink)">Held: '+MASTERY[lvl-1].fx+(lvl>1?' — and '+(lvl-1)+' more':'')+'</div>';
+  if(next)
+    h += '<div style="font-family:var(--sans);font-size:.7rem;color:var(--ink-dim);margin-top:.2rem;font-variant-numeric:tabular-nums">Next: '+next.fx+' · '+fmt(S.mxp)+'/'+fmt(next.need)+' xp</div>';
+  else
+    h += '<div style="font-family:var(--sans);font-size:.7rem;color:var(--gold);margin-top:.2rem">High Sovereign — the track is complete.</div>';
+  h += '<div class="xpbar" style="margin-top:.4rem"><i style="width:'+pct+'%;background:var(--gold)"></i></div>';
+  h += '<p style="font-size:.72rem;font-family:var(--sans);color:var(--ink-dim);margin-top:.45rem">Earned from raids, quests, building, drilling, patrols. This replaces VIP — it cannot be bought.</p>';
+  h += '</section>';
+  return h;
+}
+
+function renderQuest(){
+  const q = QUESTS[S.questIdx];
+  let h = '<section class="panel"><h2>Charter · '+Math.min(S.questIdx+1,QUESTS.length)+'/'+QUESTS.length+'</h2>';
+  if(q){
+    h += '<p class="quest-txt">'+q.txt+'</p><p class="quest-reward">Reward: '+q.rtxt+'</p>';
+  }else{
+    h += '<p class="quest-txt quest-done">The charter is fulfilled. Raids will keep escalating — hold as long as you can.</p>';
+  }
+  h += '</section>';
+  return h;
+}
+
+function renderChronicle(){
+  let h = '<section class="panel"><h2>Chronicle</h2><div class="chronicle">';
+  if(S.log.length===0) h += '<p>The chronicle is blank. For now.</p>';
+  for(const e of S.log.slice(0,16))
+    h += '<p class="'+e.cls+'"><time>'+clock(e.t)+'</time>'+e.txt+'</p>';
+  h += '</div></section>';
+  return h;
+}
+
+function renderFooter(){
+  return '<footer><span>Crownhold prototype — every Valor point was earned, none were sold.</span>'
+    + '<button data-act="about">About</button>'
+    + '<button data-act="reset">Raze &amp; restart</button></footer>';
+}
+
+function renderFx(){
+  let h = '';
+  if(S.banner) h += '<div class="banner '+S.banner.cls+'">'+S.banner.txt+'</div>';
+  if(!S.seenIntro){
+    h += '<div class="overlay"><div class="card">'
+      + '<h1>CROWNHOLD</h1><div class="rule"></div>'
+      + '<p class="sub">Hold the frontier. Pay in effort, never in coin.</p>'
+      + '<div class="pillars">'
+      + '<p><b>No cash shop.</b> Every timer can be finished instantly — with Valor, a currency you can only earn by playing.</p>'
+      + '<p><b>Heroes are milestones,</b> not lottery tickets. Reach the goal, gain the hero.</p>'
+      + '<p><b>Losing never spirals.</b> A band that beats you returns <i>weaker</i>, not stronger — raids only escalate when you win. And armies eat: feed your muster or it deserts.</p>'
+      + '</div>'
+      + '<button class="primary" data-act="intro" style="font-size:.95rem;padding:.6rem 1.6rem">Take the field</button>'
+      + '</div></div>';
+  }
+  return h;
+}
+
+function render(){
+  app.innerHTML = renderHeader() + renderThreat()
+    + '<main>' + renderHold()
+    + '<div class="rail">' + renderMuster() + renderHeroes() + renderMastery() + renderQuest() + renderChronicle() + '</div>'
+    + '</main>' + renderFooter();
+  fx.innerHTML = renderFx();
+}
+
+/* ════════════════════════════ INPUT ════════════════════════════ */
+
+function runAction(btn){
+  if(btn.disabled) return;
+  const act = btn.dataset.act;
+  if(!act || !ACTIONS[act]) return;
+  if(act==='upgrade') ACTIONS.upgrade(btn.dataset.key);
+  else if(act==='train') ACTIONS.train(btn.dataset.key, btn.dataset.n);
+  else ACTIONS[act]();
+  render();
+}
+// pointerdown so the 4 Hz re-render can never swallow a click
+document.addEventListener('pointerdown', e => {
+  const btn = e.target.closest('button[data-act]');
+  if(btn) runAction(btn);
+});
+// keyboard activation arrives as click with detail 0
+document.addEventListener('click', e => {
+  if(e.detail !== 0) return;
+  const btn = e.target.closest('button[data-act]');
+  if(btn) runAction(btn);
+});
+window.addEventListener('pagehide', save);
+
+render();
+setInterval(tick, 250);
+</script>
