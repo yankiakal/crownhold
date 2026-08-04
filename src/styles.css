@@ -197,6 +197,49 @@ section.panel{
 .pillars{text-align:left;display:flex;flex-direction:column;gap:.6rem;margin:0 auto 1.5rem;max-width:26rem}
 .pillars p{font-size:.88rem;color:var(--ink)}
 .pillars b{color:var(--gold);font-weight:600}
+/* transparency details */
+.stat-note{
+  font-family:var(--sans);font-size:.68rem;color:var(--ink-dim);
+  font-variant-numeric:tabular-nums;margin:-.3rem 0 .5rem;
+}
+.stat-note b{color:var(--ink)}
+.trow{flex-wrap:wrap}
+.tdetail{
+  flex-basis:100%;font-family:var(--sans);font-size:.66rem;color:var(--ink-dim);
+  display:flex;gap:.4rem;align-items:baseline;padding-left:1.6rem;
+}
+.tdetail .cost{font-size:.66rem;display:inline-flex}
+.m-row{
+  display:flex;gap:.4rem;align-items:baseline;
+  font-family:var(--sans);font-size:.68rem;color:var(--ink-dim);
+  font-variant-numeric:tabular-nums;padding:.12rem 0;
+}
+.m-row.got{color:var(--ink)}
+.m-row.got::first-letter{color:var(--gold)}
+
+/* codex */
+.card.codex{
+  max-width:44rem;max-height:85vh;overflow-y:auto;text-align:left;
+}
+.card.codex h1{text-align:center}
+.card.codex .sub{text-align:center}
+.card.codex h3{
+  font-family:var(--sans);font-size:.66rem;font-weight:600;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--gold);margin:1.1rem 0 .4rem;
+}
+.card.codex ul{margin:0 0 .4rem 1.1rem;display:flex;flex-direction:column;gap:.3rem}
+.card.codex li{font-size:.82rem;color:var(--ink)}
+.card.codex .tscroll{overflow-x:auto}
+.card.codex table{
+  border-collapse:collapse;font-family:var(--sans);font-size:.72rem;
+  font-variant-numeric:tabular-nums;margin:.2rem 0 .5rem;width:100%;
+}
+.card.codex th{
+  text-align:left;color:var(--ink-dim);font-weight:600;font-size:.62rem;
+  letter-spacing:.12em;text-transform:uppercase;
+}
+.card.codex td,.card.codex th{padding:.25rem .6rem .25rem 0;border-bottom:1px solid rgba(58,47,37,.5)}
+
 /* draft choices */
 .choice-grid{display:flex;gap:.7rem;justify-content:center;flex-wrap:wrap;margin:1rem 0 1.2rem}
 .choice-card{

@@ -38,7 +38,8 @@ export function spoilBonus(s, key){
 /* ── derived values ── */
 export function perk(s,n){ return masteryLvl(s)>=n; }
 export function shieldCap(s){ return 2 + (perk(s,7)?1:0) + spoilBonus(s,'shieldCap'); }
-export function storageCap(s){ return Math.round(800 * Math.pow(s.b.townhall,1.35) * (perk(s,4)?1.15:1)); }
+export function storageCapFor(s, thLvl){ return Math.round(800 * Math.pow(thLvl,1.35) * (perk(s,4)?1.15:1)); }
+export function storageCap(s){ return storageCapFor(s, s.b.townhall); }
 export function prodMult(s, res){
   const resKey = {food:'foodProd',wood:'woodProd',stone:'stoneProd',iron:'ironProd'}[res];
   return 1 + heroBonus(s,'production') + (perk(s,1)?0.06:0) + (perk(s,8)?0.08:0) + spoilBonus(s,resKey);
@@ -65,22 +66,26 @@ export function buildTime(s,k){
 }
 export function canAfford(s,cost){ return Object.entries(cost).every(([r,v]) => s.res[r] >= v); }
 export function payCost(s,cost){ for(const [r,v] of Object.entries(cost)) s.res[r] -= v; }
-export function trainMult(s){
-  const b = Math.max(0, s.b.barracks-1);
+export function trainMultFor(s, barracksLvl){
+  const b = Math.max(0, barracksLvl-1);
   return Math.max(0.25,
     (1 - 0.08*b - heroBonus(s,'trainTime') - spoilBonus(s,'trainTime')) * (perk(s,5)?0.88:1));
 }
-export function armyPower(s){
-  let p = 0;
-  for(const [k,d] of Object.entries(TROOPS)) p += d.power * s.t[k];
-  p *= (1 + heroBonus(s,'troopPower') + spoilBonus(s,'troopPower'))
-     * (1 + (perk(s,2)?0.06:0) + (perk(s,8)?0.08:0) + (perk(s,10)?0.15:0));
-  return Math.round(p + 18*s.b.wall + heroBonus(s,'wallPower'));
+export function trainMult(s){ return trainMultFor(s, s.b.barracks); }
+export function armyBreakdown(s){
+  let base = 0;
+  for(const [k,d] of Object.entries(TROOPS)) base += d.power * s.t[k];
+  const mult = (1 + heroBonus(s,'troopPower') + spoilBonus(s,'troopPower'))
+             * (1 + (perk(s,2)?0.06:0) + (perk(s,8)?0.08:0) + (perk(s,10)?0.15:0));
+  const wall = 18*s.b.wall + heroBonus(s,'wallPower');
+  return { base, mult, wall, total: Math.round(base*mult + wall) };
 }
+export function armyPower(s){ return armyBreakdown(s).total; }
 export function wavePower(w){ return Math.round(10*Math.pow(w,1.3) + 5*w); }
 // each consecutive loss bloodies the band: it returns at 85% strength, floor ~61%
 export function streakMult(s){ return Math.pow(0.85, Math.min(s.streak||0, 3)); }
-export function bluntMult(s){ return Math.min(0.4, 0.05*s.b.watchtower + heroBonus(s,'blunt')); }
+export function bluntFor(s, towerLvl){ return Math.min(0.4, 0.05*towerLvl + heroBonus(s,'blunt')); }
+export function bluntMult(s){ return bluntFor(s, s.b.watchtower); }
 export function finishCost(endTs, now){ return Math.max(1, Math.ceil((endTs-now)/4000)); }
 export function xpNeed(lvl){ return Math.round(50*Math.pow(lvl,1.4)); }
 export function unlockedSlots(s){ return HERO_SLOTS.filter(sl=>sl.check(s)).length; }
