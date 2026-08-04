@@ -268,13 +268,16 @@ function renderChronicle(S){
 }
 
 function renderFooter(){
+  const armed = Date.now() < resetArmedUntil;
   return '<footer><span>Crownhold prototype — every Valor point was earned, none were sold.</span>'
     + '<button data-act="codex">📖 Codex — all the rules</button>'
     + '<button data-act="about">About</button>'
-    + '<button data-act="reset">Raze &amp; restart</button></footer>';
+    + '<button data-act="reset"'+(armed?' style="color:var(--bad);border-color:var(--bad)"':'')+'>'
+    + (armed?'⚠ Tap again to raze EVERYTHING':'Raze &amp; restart')+'</button></footer>';
 }
 
 let codexOpen = false;
+let resetArmedUntil = 0; // two-tap raze confirmation window
 let detail = null; // {type:'building'|'troop'|'hero', key} — the tap-to-inspect sheet
 
 function renderDetail(S){
@@ -501,10 +504,15 @@ const ACTIONS = {
   detail: b => { detail = {type:b.dataset.dtype, key:b.dataset.key}; },
   detailClose: () => { detail = null; },
   promote: b => promote(store.s, b.dataset.key, Date.now()),
+  // native confirm() is blocked in sandboxed frames — the button itself asks twice
   reset: () => {
-    if(confirm('Raze the hold and start over? Your save will be erased.')){
-      store.s = freshState(Date.now());
-      save(store.s, Date.now());
+    const now = Date.now();
+    if(now < resetArmedUntil){
+      resetArmedUntil = 0;
+      store.s = freshState(now);
+      save(store.s, now);
+    }else{
+      resetArmedUntil = now + 5000;
     }
   },
 };
