@@ -24,6 +24,7 @@ import {
   committedTroops, forcePower,
 } from './arena.js';
 import * as net from './net.js';
+import { mountScene, sceneResize, pickBuilding } from './iso.js';
 import { store, freshState, save } from './state.js';
 
 const app = document.getElementById('app');
@@ -110,10 +111,21 @@ function queueStrip(S, q, label, finishAct){
 }
 
 function renderHold(S){
-  let h = '<section class="panel"><h2>The Hold</h2>';
+  let h = '<section class="panel"><h2>The Hold'
+    + '<button class="info-btn" data-act="holdView" style="letter-spacing:0">'
+    + (listView ? '🏰 scene' : '▤ list') + '</button></h2>';
   if(S.bq){
     const d = BUILDINGS[S.bq.key];
     h += queueStrip(S, S.bq, d.icon+' '+d.name+' → '+(S.b[S.bq.key]+1), 'finishBuild');
+  }
+  if(!listView){
+    // the canvas itself is a persistent element re-parented after each render,
+    // so the 60fps scene survives the 4Hz DOM rebuild
+    h += '<div id="scene-slot"></div>'
+      + '<div class="stat-note">Tap a building to inspect or raise it. '
+      + '<span style="color:var(--good)">↑</span> marks one you can afford now.</div>'
+      + '</section>';
+    return h;
   }
   h += '<div class="bgrid">';
   for(const [k,d] of Object.entries(BUILDINGS)){
@@ -355,6 +367,9 @@ function renderFooter(){
 let codexOpen = false;
 let resetArmedUntil = 0; // two-tap raze confirmation window
 let arenaStance = 'balanced', arenaFrac = 0.5;
+let listView = false, sceneMounted = false;
+const sceneCanvas = document.createElement('canvas');
+sceneCanvas.id = 'holdscene';
 let detail = null; // {type:'building'|'troop'|'hero', key} — the tap-to-inspect sheet
 
 function renderDetail(S){
@@ -701,6 +716,12 @@ export function render(){
     + '</main>' + renderFooter();
   fx.innerHTML = renderFx(S) + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
   drawMap(S);
+  const slot = document.getElementById('scene-slot');
+  if(slot){
+    if(sceneCanvas.parentNode !== slot) slot.appendChild(sceneCanvas);
+    if(!sceneMounted){ mountScene(sceneCanvas, store); sceneMounted = true; }
+    else sceneResize();
+  }
 }
 
 /* ── input ── */
@@ -712,6 +733,7 @@ const VIEW_ACTIONS = {
   codex: () => { codexOpen = !codexOpen; },
   detail: b => { detail = {type:b.dataset.dtype, key:b.dataset.key}; },
   detailClose: () => { detail = null; },
+  holdView:    () => { listView = !listView; sceneMounted = false; },
   arenaStance: b => { arenaStance = b.dataset.key; },
   arenaFrac:   b => { arenaFrac = Number(b.dataset.key); },
   arenaAttack: b => {
@@ -809,6 +831,12 @@ export function renderAccount(){
 export function wire(){
   // pointerdown so the 4 Hz re-render can never swallow a click
   document.addEventListener('pointerdown', e => {
+    // taps on the hold scene open that building's sheet
+    if(e.target && e.target.id === 'holdscene'){
+      const key = pickBuilding(e.clientX, e.clientY);
+      if(key){ detail = {type:'building', key}; render(); }
+      return;
+    }
     // taps on the world map open the tile's sheet
     if(e.target && e.target.id === 'worldmap'){
       const rect = e.target.getBoundingClientRect();
