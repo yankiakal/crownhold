@@ -92,6 +92,42 @@ This is the anti-gacha: same excitement of the roll, none of the wallet.
   rosters and meaningfully different end states (power, upkeep profile), while
   overall pacing stays inside the v0.3 targets.
 
+## The Arena (v1.2 — fair PvP, finally)
+
+This is the system Kingshot gets worst, so ours inverts its incentives.
+
+**What never happens:** no resources, buildings or defenders are ever taken from
+a loser. Winners gain Laurels (Elo rating), Valor and Mastery from a purse —
+nothing from the other player's stores. A hold cannot be farmed, so there is no
+reason to buy safety, and no reason for a big account to hunt small ones.
+
+**What decides fights** (measured win rates for an evenly-matched pair, 400
+trials each — `scratchpad/arena3.mjs` pattern, rerun after any change):
+
+| The attacker's read | Win rate |
+|---|---|
+| Right stance + right composition | 69% |
+| Neutral | 42% |
+| Wrong stance | 8% |
+| Half-commitment (right read) | 0% |
+| Ballista siege vs a Wall 8 defender | 58% (vs 50% without) |
+
+- **Stance triangle**: Charge > Volley > Shield Wall > Charge, ±15%/−12%.
+  Scouting reveals the defender's standing stance, so it is an informed read.
+- **Composition**: bring the answer to their dominant class (Spearmen vs
+  Knights, Knights vs Archers/Ballistas, Archers vs Spearmen), up to +15%.
+- **Siege**: a wall counts at half strength in the arena, and ballistas cut it
+  to as low as 10% — which is Ballistas' PvP job.
+- **Defenders** fight *prepared* (×1.12) plus their wall, lose no troops, and
+  risk half the rating. An even army is not enough; the attacker needs a read.
+- **Commitment**: sending a quarter/half/all — and casualties (≤6% winning,
+  ≤14% losing) thin the wall that must hold your next raid. Real tension between
+  ladder ambition and home defence.
+- **Brackets**: opponents shown only between 0.65× and 1.35× your defence
+  (widening if the pool is thin); the server hard-refuses outside 0.3×–2.2×.
+- Outcomes roll ±22%, so close odds are a genuine gamble and no fight is decided
+  before the dice.
+
 ## Going online (v1.1 — the authoritative server)
 
 `server/server.js` imports the same rule modules the browser runs

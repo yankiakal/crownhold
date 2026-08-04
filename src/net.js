@@ -71,7 +71,7 @@ export async function login(name, password){
 }
 
 export function logout(){
-  session = null; online = false; board = null; persist();
+  session = null; online = false; board = null; arena = null; persist();
 }
 
 /* Resume a stored session on boot. Returns the authoritative state, or null to
@@ -102,6 +102,22 @@ export async function pullState(){
 export async function resetHold(){
   const d = await post('/api/reset', { token: session.token });
   return d.state;
+}
+
+let arena = null;
+export function arenaData(){ return arena; }
+
+export async function refreshArena(){
+  if(!isOnline()) return null;
+  try{
+    arena = await post('/api/arena/list', { token: session.token });
+    return arena;
+  }catch(e){ return null; }
+}
+
+export async function arenaAttack(target, stance, frac){
+  const d = await post('/api/arena/attack', { token: session.token, target, stance, frac });
+  return d;   // { report, name, state }
 }
 
 export async function refreshLeaderboard(){

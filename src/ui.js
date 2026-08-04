@@ -19,6 +19,10 @@ import {
   wavePower, streakMult, finishCost, xpNeed,
 } from './logic.js';
 import { applyAction, isGameAction } from './actions.js';
+import {
+  STANCE_BEATS, CLASS_ANSWER, stanceMult, composition, answerBonusForClass,
+  committedTroops, forcePower,
+} from './arena.js';
 import * as net from './net.js';
 import { store, freshState, save } from './state.js';
 
@@ -278,10 +282,49 @@ function renderChronicle(S){
   return h;
 }
 
+function renderArena(S){
+  if(!net.isOnline())
+    return '<section class="panel"><h2>The Arena</h2>'
+      + '<p style="font-size:.85rem;color:var(--ink-dim);font-style:italic">Sign in (☁ below) to face other holds. '
+      + 'Opponents are matched by power, and victors take no stores — only Laurels.</p></section>';
+  const a = net.arenaData();
+  const me = a && a.me;
+  let h = '<section class="panel"><h2>The Arena <span style="letter-spacing:.05em">'
+    + (me ? me.laurels + ' Laurels · ' + me.wins + '–' + me.losses : 'asking the server…') + '</span></h2>';
+
+  h += '<div class="stance-row"><span class="meta">your standing defence:</span>';
+  for(const [k,st] of Object.entries(STANCES)){
+    h += '<button class="stance-btn'+(S.defStance===k?' active':'')+'" data-act="defStance" data-key="'+k+'" title="'+st.hint+'">'
+      + st.icon+' '+st.name+'</button>';
+  }
+  h += '</div>';
+
+  if(S.arenaLast){
+    const r = S.arenaLast;
+    h += '<div class="stat-note" style="color:'+(r.won?'var(--good)':'var(--bad)')+'">'+r.text+'</div>';
+  }
+  if(me && me.readyIn > 0)
+    h += '<div class="stat-note">Marshals regrouping — next attack in '+ftime(me.readyIn)+'.</div>';
+
+  if(a && a.opponents){
+    if(!a.opponents.length) h += '<div class="stat-note">No holds in your bracket yet — found a second hold on another device to spar with.</div>';
+    for(const o of a.opponents){
+      h += '<div class="trow"><span class="tname">'+o.name+'</span>'
+        + '<span class="tmeta">'+o.laurels+' ⚜L · TH'+o.townhall+'</span><span class="spacer"></span>'
+        + '<span class="count">'+fmt(o.power)+'</span>'
+        + '<button data-act="detail" data-dtype="arena" data-key="'+o.key+'">Scout</button></div>';
+    }
+  }
+  h += '<p style="font-size:.68rem;font-family:var(--sans);color:var(--ink-dim);margin-top:.45rem">'
+    + 'Nobody loses resources, buildings, or a single defender here. Only rating moves.</p>';
+  h += '</section>';
+  return h;
+}
+
 function renderLeaderboard(S){
   if(!net.isOnline()) return '';
   const rows = net.leaderboardRows();
-  let h = '<section class="panel"><h2>The Frontier Holds <span style="letter-spacing:.05em">waves held</span></h2>';
+  let h = '<section class="panel"><h2>The Frontier Holds <span style="letter-spacing:.05em">by Laurels</span></h2>';
   if(!rows) h += '<div class="stat-note">Asking the server…</div>';
   else if(!rows.length) h += '<div class="stat-note">No holds on record yet.</div>';
   else{
@@ -290,8 +333,8 @@ function renderLeaderboard(S){
       const r = rows[i];
       h += '<div class="trow'+(r.name===me?' mine':'')+'"><span class="tmeta">'+(i+1)+'</span>'
         + '<span class="tname">'+(r.name===me?'★ ':'')+r.name+'</span><span class="spacer"></span>'
-        + '<span class="tmeta">TH'+r.townhall+' · M'+r.mastery+' · pwr '+fmt(r.power)+'</span>'
-        + '<span class="count">'+r.wavesWon+'</span></div>';
+        + '<span class="tmeta">TH'+r.townhall+' · '+r.wavesWon+'w · arena '+r.arena+'</span>'
+        + '<span class="count">'+r.laurels+'</span></div>';
     }
   }
   h += '</section>';
@@ -311,6 +354,7 @@ function renderFooter(){
 
 let codexOpen = false;
 let resetArmedUntil = 0; // two-tap raze confirmation window
+let arenaStance = 'balanced', arenaFrac = 0.5;
 let detail = null; // {type:'building'|'troop'|'hero', key} — the tap-to-inspect sheet
 
 function renderDetail(S){
@@ -392,6 +436,42 @@ function renderDetail(S){
           + '</div>';
       }
     }
+  }
+
+  else if(detail.type==='arena'){
+    const a = net.arenaData();
+    const o = a && a.opponents.find(x => x.key === k);
+    if(!o) return '';
+    title = '⚔ Scouting ' + o.name;
+    const answer = o.dominant ? CLASS_ANSWER[o.dominant] : null;
+    const beats = Object.entries(STANCE_BEATS).find(([, loses]) => loses === o.defStance);
+    body += '<p class="d-row">Defence <b>'+fmt(o.power)+'</b> (their wall included) · '+o.laurels+' Laurels · Town Hall '+o.townhall+'</p>'
+      + '<p class="d-row">Their army leans on <b>'+(o.dominant ? TROOPS[o.dominant].name+'s' : 'nothing in particular')+'</b>'
+      + (answer ? ' — '+TROOPS[answer].name+'s are the answer, and your line is '
+          + Math.round(100*(composition(S).parts[answer]||0)/Math.max(composition(S).total,1))+'% '+TROOPS[answer].name+'.' : '.')+'</p>'
+      + '<p class="d-row">They stand in <b>'+STANCES[o.defStance].name+'</b>'
+      + (beats ? ' — <b style="color:var(--gold)">'+STANCES[beats[0]].name+'</b> breaks it (+15%)' : '')+'.</p>'
+      + '<div class="stance-row"><span class="meta">attack in:</span>';
+    for(const [sk,st] of Object.entries(STANCES)){
+      const m = stanceMult(sk, o.defStance);
+      body += '<button class="stance-btn'+(arenaStance===sk?' active':'')+'" data-act="arenaStance" data-key="'+sk+'">'
+        + st.icon+' '+st.name+(m>1?' +15%':m<1?' −12%':'')+'</button>';
+    }
+    body += '</div>';
+    const troops = committedTroops(S, arenaFrac);
+    const sent = Object.values(troops).reduce((x,y)=>x+y,0);
+    const f = forcePower(S, troops);
+    const est = Math.round(f.base * f.mult * stanceMult(arenaStance, o.defStance)
+      * (1 + answerBonusForClass(S, o.dominant)));
+    body += '<div class="stance-row"><span class="meta">commit:</span>'
+      + ['0.25','0.5','1'].map(fr => '<button class="stance-btn'+(String(arenaFrac)===fr?' active':'')+'" data-act="arenaFrac" data-key="'+fr+'">'
+          + (fr==='1'?'everything':fr==='0.5'?'half':'a quarter')+'</button>').join('')
+      + '</div>'
+      + '<p class="d-delta">Sending '+sent+' troops ≈ <b>'+fmt(est)+'</b> against their '+fmt(o.power)+'.'
+      + ' The clash rolls ±22%, so close odds are a real gamble.</p>'
+      + '<p class="d-row">Casualties fall only on what you send (≤6% winning, ≤14% losing) — and thin your walls for the next raid. '
+      + 'Win or lose, no stores change hands.</p>'
+      + '<button class="primary" data-act="arenaAttack" data-key="'+o.key+'" '+(sent?'':'disabled')+'>⚔ Attack '+o.name+'</button>';
   }
 
   else if(detail.type==='hero'){
@@ -479,6 +559,18 @@ function renderCodex(S){
     + '<li>Travel costs 12s per tile each way; gathering takes 60s. Marching troops carry their own rations and <b>do not defend the wall</b> until they return.</li>'
     + '<li>Camp battles use your march&#39;s power (heroes and Mastery apply; no wall, no stance). Defeat costs a third of the marchers.</li>'
     + '<li>One march slot; Town Hall 10 grants a second. Worked tiles regrow in ~4 minutes, sometimes richer.</li>'
+    + '</ul>'
+
+    + '<h3>The Arena (online)</h3>'
+    + '<ul>'
+    + '<li><b>Nothing is stolen.</b> Win or lose, no resources, buildings or defenders change hands — only Laurels (rating), plus Valor and Mastery for the attacker. Nobody can be farmed.</li>'
+    + '<li><b>Bracketed</b>: you are only shown holds between 0.65× and 1.35× your defence (widening if the pool is thin), and the server refuses attacks outside 0.3×–2.2× regardless.</li>'
+    + '<li><b>The stance triangle</b>: Charge beats Volley, Volley beats Shield Wall, Shield Wall beats Charge — +15% for the right read, −12% for the wrong one. Balanced is neutral. Scouting shows their standing defence, so this is a real decision.</li>'
+    + '<li><b>Composition</b>: bring the answer to their dominant class — Spearmen vs Knights, Knights vs Archers and Ballistas, Archers vs Spearmen — up to +15% by share.</li>'
+    + '<li><b>Commitment</b>: you send a quarter, half or all of your army. Casualties fall only on what you sent (≤6% winning, ≤14% losing) and they thin the wall that must hold your next raid.</li>'
+    + '<li><b>Attack and defence</b>: the attacker strikes with 8% initiative for choosing the hour; the defender&#39;s edge is the wall they paid for. Neglect your Wall and you are a soft target on the ladder.</li>'
+    + '<li><b>Defenders</b> fight from a snapshot, lose no troops at all, and risk only half the rating — they were not there to command.</li>'
+    + '<li>Laurels move on Elo (K=24), so beating a stronger hold pays more. One attack every 90s.</li>'
     + '</ul>'
 
     + '<h3>Valor &amp; Writs</h3>'
@@ -605,7 +697,7 @@ export function render(){
   app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
     + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderSpoils(S)
-      + renderLeaderboard(S) + renderMastery(S) + renderQuest(S) + renderChronicle(S) + '</div>'
+      + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
   fx.innerHTML = renderFx(S) + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
   drawMap(S);
@@ -620,6 +712,15 @@ const VIEW_ACTIONS = {
   codex: () => { codexOpen = !codexOpen; },
   detail: b => { detail = {type:b.dataset.dtype, key:b.dataset.key}; },
   detailClose: () => { detail = null; },
+  arenaStance: b => { arenaStance = b.dataset.key; },
+  arenaFrac:   b => { arenaFrac = Number(b.dataset.key); },
+  arenaAttack: b => {
+    const target = b.dataset.key;
+    detail = null;
+    net.arenaAttack(target, arenaStance, arenaFrac)
+      .then(d => { store.s = d.state; net.refreshArena().then(render); net.refreshLeaderboard().then(render); render(); })
+      .catch(err => { acctMsg = err.message; acctOpen = true; renderAccount(); });
+  },
   account: () => { acctOpen = true; acctMsg = ''; renderAccount(); },
   accountClose: () => { acctOpen = false; renderAccount(); },
   signIn: b => submitAccount(b.dataset.mode),

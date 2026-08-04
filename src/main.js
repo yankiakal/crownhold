@@ -16,7 +16,11 @@ render();
 
 // if a session is stored, the server's hold replaces the local one
 net.resume().then(s => {
-  if(s){ store.s = s; render(); net.refreshLeaderboard().then(render); }
+  if(s){
+    store.s = s; render();
+    net.refreshLeaderboard().then(render);
+    net.refreshArena().then(render);
+  }
 }).catch(()=>{});
 
 let lastTick = Date.now(), lastSave = 0, lastPull = 0, lastBoard = 0;
@@ -38,6 +42,7 @@ setInterval(() => {
     if(now - lastBoard > 30000){
       lastBoard = now;
       net.refreshLeaderboard();
+      net.refreshArena();
     }
   }else if(now - lastSave > 5000){
     save(store.s, now); lastSave = now;

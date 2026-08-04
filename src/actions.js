@@ -4,7 +4,7 @@
 
 import {
   startUpgrade, startTraining, finishBuildNow, finishTrainNow,
-  expedition, setCaravan, setStance, setCaptain, useOrder, raiseShield,
+  expedition, setCaravan, setStance, setDefStance, setCaptain, useOrder, raiseShield,
   chooseOption, rerollChoice, promote,
 } from './logic.js';
 import { startMarch } from './world.js';
@@ -17,6 +17,7 @@ export const GAME_ACTIONS = {
   expedition:   (s,p,now,rand) => expedition(s, p.key, now, rand),
   caravan:      (s,p,now)      => setCaravan(s, p.key, now),
   stance:       (s,p,now)      => setStance(s, p.key, now),
+  defStance:    (s,p,now)      => setDefStance(s, p.key, now),
   captain:      (s,p,now)      => setCaptain(s, p.key, now),
   order:        (s,p,now)      => useOrder(s, p.key, now),
   raiseShield:  (s,p,now)      => raiseShield(s, now),

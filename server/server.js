@@ -22,6 +22,10 @@ import { tick, armyPower, masteryLvl, upkeepPerSec } from '../src/logic.js';
 import { tickWorld } from '../src/world.js';
 import { freshState, applyOffline } from '../src/state.js';
 import { applyAction, isGameAction } from '../src/actions.js';
+import {
+  resolveArena, pickOpponents, defensePower, dominantClass,
+  ARENA_CD, START_LAURELS,
+} from '../src/arena.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -152,7 +156,9 @@ async function api(req, res, url){
       townhall: u.state.b.townhall,
       mastery: masteryLvl(u.state),
       warbands: u.state.warbandsWon || 0,
-    })).sort((a,b) => b.wavesWon - a.wavesWon || b.power - a.power).slice(0, 25);
+      laurels: u.state.laurels ?? START_LAURELS,
+      arena: (u.state.arenaWins||0) + '–' + (u.state.arenaLosses||0),
+    })).sort((a,b) => b.laurels - a.laurels || b.wavesWon - a.wavesWon).slice(0, 25);
     return send(res, 200, { rows });
   }
 
@@ -200,6 +206,52 @@ async function api(req, res, url){
     const ok = applyAction(u.state, name, body.params || {}, now);
     markDirty();
     return send(res, 200, { ok, ...publicState(u) });
+  }
+
+  /* ── the arena ── */
+
+  if(path === '/api/arena/list'){
+    advance(u, now);
+    const key = u.name.toLowerCase();
+    const pool = Object.entries(db.users)
+      .filter(([k]) => k !== key)
+      .map(([k,o]) => ({
+        key: k, name: o.name,
+        power: defensePower(o.state),
+        laurels: o.state.laurels ?? START_LAURELS,
+        townhall: o.state.b.townhall,
+        dominant: dominantClass(o.state),
+        defStance: o.state.defStance || 'shieldwall',
+      }));
+    return send(res, 200, {
+      opponents: pickOpponents(u.state, pool),
+      me: {
+        laurels: u.state.laurels ?? START_LAURELS,
+        power: defensePower(u.state),
+        wins: u.state.arenaWins || 0,
+        losses: u.state.arenaLosses || 0,
+        readyIn: Math.max(0, (u.state.arenaReady || 0) - now),
+      },
+    });
+  }
+
+  if(path === '/api/arena/attack'){
+    advance(u, now);
+    if((u.state.arenaReady || 0) > now)
+      return send(res, 429, { error: 'Your marshals are still regrouping.' });
+    const target = db.users[String(body.target || '').toLowerCase()];
+    if(!target || target === u) return send(res, 404, { error: 'No such hold.' });
+    advance(target, now);
+    // the bracket is enforced here, not just offered in the list
+    const mine = defensePower(u.state), theirs = defensePower(target.state);
+    if(theirs > mine * 2.2 || theirs < mine * 0.3)
+      return send(res, 400, { error: 'That hold is outside your bracket.' });
+
+    u.state.name = u.name; target.state.name = target.name;   // for battle reports
+    const report = resolveArena(u.state, target.state, { stance: body.stance, frac: body.frac }, now);
+    if(report.error) return send(res, 400, { error: report.error });
+    markDirty(); flush();
+    return send(res, 200, { report, ...publicState(u) });
   }
 
   if(path === '/api/reset'){

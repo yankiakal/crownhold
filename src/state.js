@@ -23,6 +23,8 @@ export function freshState(now, seed){
     heroes:{}, spoils:{},
     choice:null, choiceQueue:[], offersDone:0,
     stance:'balanced', captain:null, orderCd:{}, mods:null,
+    laurels:1000, defStance:'shieldwall', arenaWins:0, arenaLosses:0,
+    arenaReady:0, arenaLast:null,
     waveType:'rabble', upkeepPauseUntil:0, trainFastNext:false, expedBoost:false,
     bq:null, tq:null,
     wave:1, nextWave:now+FIRST_WAVE_MS, wavesWon:0, wavesLost:0,
@@ -101,6 +103,13 @@ export function load(now){
     // v1.0 the Frontier
     if(!s.world) s.world = genWorld(Math.floor(Math.random()*2**31));
     if(!s.marches) s.marches = [];
+    // v1.2 the Arena
+    if(s.laurels==null) s.laurels = 1000;
+    if(s.defStance==null) s.defStance = 'shieldwall';
+    if(s.arenaWins==null) s.arenaWins = 0;
+    if(s.arenaLosses==null) s.arenaLosses = 0;
+    if(s.arenaReady==null) s.arenaReady = 0;
+    if(s.arenaLast===undefined) s.arenaLast = null;
     // offline production (capped at 2 hours), net of army upkeep
     const away = Math.min(Math.max(now - (s.lastSeen||now), 0), 7200000);
     if(away > 60000) applyOffline(s, away);

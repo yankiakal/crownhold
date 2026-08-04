@@ -331,6 +331,12 @@ export function setStance(s, stance, now){
   s.stance = stance;
   return true;
 }
+export function setDefStance(s, stance, now){
+  if(!STANCES[stance]) return false;
+  s.now = now;
+  s.defStance = stance;
+  return true;
+}
 export function setCaptain(s, id, now){
   if(!s.heroes[id]) return false;
   s.now = now;

@@ -16,6 +16,7 @@ src/defs.js        game data: buildings, troops, heroes, mastery, quests
 src/logic.js       ALL game rules — pure functions, injectable time & rng
 src/world.js       the Frontier: map tiles, marches, camp battles
 src/actions.js     every player action, one table (client + server dispatch it)
+src/arena.js       async PvP: stance triangle, composition counters, siege, Elo
 src/state.js       fresh state, offline progress, persistence, save migration
 src/net.js         client sync layer (offline unless a server is configured)
 src/ui.js          DOM rendering + input
