@@ -154,8 +154,11 @@ function renderMuster(S){
     }
     for(const [k,d] of Object.entries(TROOPS)){
       const locked = S.b.barracks < d.barracks;
-      h += '<div class="trow"><span>'+d.icon+'</span><span class="tname">'+d.name+'</span>'
-        + '<span class="tmeta">pwr '+d.power+'</span><span class="spacer"></span>';
+      h += '<div class="trow'+(unitInfoOpen[k]?' open':'')+'">'
+        + '<span>'+d.icon+'</span><span class="tname">'+d.name+'</span>'
+        + '<span class="tmeta">pwr '+d.power+'</span>'
+        + '<button class="info-btn" data-act="unitinfo" data-key="'+k+'" title="unit details">ⓘ</button>'
+        + '<span class="spacer"></span>';
       if(locked){
         h += '<span class="tmeta">Barracks '+d.barracks+'</span>';
       }else{
@@ -164,7 +167,7 @@ function renderMuster(S){
           + '<button data-act="train" data-key="'+k+'" data-n="5" '+(S.tq?'disabled':'')+'>+5</button>'
           + '<button data-act="train" data-key="'+k+'" data-n="25" '+(S.tq?'disabled':'')+'>+25</button>';
       }
-      // full per-unit economics: cost, training time, upkeep
+      // per-unit economics: revealed on hover (desktop) or ⓘ (touch); full table lives in the Codex
       h += '<span class="tdetail">each: '+costHtml(S, d.cost)
         + ' · ⏱ '+(d.time*trainMult(S)).toFixed(1)+'s'
         + ' · eats '+d.upkeep.toFixed(2)+' food/s</span>';
@@ -267,6 +270,7 @@ function renderFooter(){
 }
 
 let codexOpen = false;
+const unitInfoOpen = {};
 
 function renderCodex(S){
   if(!codexOpen) return '';
@@ -404,6 +408,7 @@ const ACTIONS = {
   intro: () => { store.s.seenIntro = true; },
   about: () => { store.s.seenIntro = false; },
   codex: () => { codexOpen = !codexOpen; },
+  unitinfo: b => { const k = b.dataset.key; unitInfoOpen[k] = !unitInfoOpen[k]; },
   reset: () => {
     if(confirm('Raze the hold and start over? Your save will be erased.')){
       store.s = freshState(Date.now());
