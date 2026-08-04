@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --open /game.html",
     "build": "vite build && node scripts/release.js",
-    "sim": "node sim/sim.js"
+    "sim": "node sim/sim.js",
+    "deploy": "sh scripts/deploy.sh"
   },
   "devDependencies": {
     "vite": "^6.0.0",
