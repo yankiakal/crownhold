@@ -113,11 +113,13 @@ export const HERO_POOL = {
 
 /* ── Command layer: raids have a shape, you choose the answer ── */
 export const WAVE_TYPES = {
-  rabble:     {name:'Rabble',      icon:'🪓', weakTo:null},
-  riders:     {name:'Riders',      icon:'🐎', weakTo:'shieldwall'},
-  skirmishers:{name:'Skirmishers', icon:'🏹', weakTo:'charge'},
-  brutes:     {name:'Brutes',      icon:'💪', weakTo:'volley'},
+  rabble:     {name:'Rabble',      icon:'🪓', weakTo:null,         counter:null},
+  riders:     {name:'Riders',      icon:'🐎', weakTo:'shieldwall', counter:'spearman'},
+  skirmishers:{name:'Skirmishers', icon:'🏹', weakTo:'charge',     counter:'knight'},
+  brutes:     {name:'Brutes',      icon:'💪', weakTo:'volley',     counter:'archer'},
 };
+// cheap troops screen the expensive ones: casualty weight by class
+export const SCREEN = {spearman:1.5, archer:1.2, knight:0.75, ballista:0.5};
 export const STANCES = {
   balanced:  {name:'Balanced',    icon:'⚖️', hint:'No bonus, no penalty'},
   shieldwall:{name:'Shield Wall', icon:'🛡️', hint:'Counters Riders'},

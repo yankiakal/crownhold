@@ -6,7 +6,7 @@
 import {
   BUILDINGS, TROOPS, MASTERY, QUESTS, RES_META,
   HERO_POOL, HERO_SLOTS, SPOILS, RARITY,
-  WAVE_TYPES, STANCES, COUNTER_BONUS, COUNTER_PENALTY, COUNTER_CASUALTY,
+  WAVE_TYPES, STANCES, COUNTER_BONUS, COUNTER_PENALTY, COUNTER_CASUALTY, SCREEN,
   EXPEDITIONS, EXPEDITION_CD,
   COST_EXP, TIME_EXP, TIERS, TIER_POWER, TIER_UPKEEP, TIER_COST,
   WAVE_MS, FIRST_WAVE_MS, masteryLvl,
@@ -381,6 +381,16 @@ export function counterMult(s){
   if(s.stance !== 'balanced') return COUNTER_PENALTY;
   return 1;
 }
+// class counter: the right troops as a share of your army add up to +15% power
+export function compBonus(s){
+  const wt = WAVE_TYPES[s.waveType||'rabble'];
+  if(!wt.counter) return 0;
+  let base = 0;
+  for(const k of Object.keys(TROOPS)) base += tierPower(s,k) * s.t[k];
+  if(base <= 0) return 0;
+  const share = tierPower(s,wt.counter) * s.t[wt.counter] / base;
+  return Math.min(0.15, 0.5*share);
+}
 export function raiseShield(s, now){
   s.now = now;
   if(s.shields < 1 || s.shieldUntil > now) return false;
@@ -402,9 +412,11 @@ export function resolveWave(s, now, rand=Math.random){
   const raw = wavePower(w) * (isWB?1.6:1) * (0.88 + rand()*0.24) * streakMult(s);
   const enemy = raw * (1-bluntMult(s)) * mods.enemyX;
   const bd = armyBreakdown(s);
-  const mine = Math.round(bd.base*bd.mult*cm*mods.powerX + bd.wall*mods.wallX);
-  const stanceNote = cm > 1 ? ' Your '+STANCES[s.stance].name+' broke their '+wt.name+' (+20%).'
-                  : cm < 1 ? ' Your '+STANCES[s.stance].name+' was the wrong answer to '+wt.name+' (−8%).' : '';
+  const cb = compBonus(s);
+  const mine = Math.round(bd.base*bd.mult*cm*(1+cb)*mods.powerX + bd.wall*mods.wallX);
+  let stanceNote = cm > 1 ? ' Your '+STANCES[s.stance].name+' broke their '+wt.name+' (+20%).'
+                 : cm < 1 ? ' Your '+STANCES[s.stance].name+' was the wrong answer to '+wt.name+' (−8%).' : '';
+  if(cb >= 0.08 && wt.counter) stanceNote += ' Your '+TROOPS[wt.counter].name+' line countered them (+'+Math.round(cb*100)+'%).';
   s.nextWave = now + WAVE_MS;
 
   if(mine >= enemy){
@@ -415,8 +427,9 @@ export function resolveWave(s, now, rand=Math.random){
     if(cm > 1) lossFrac *= COUNTER_CASUALTY;
     if(mods.noCasual) lossFrac = 0;
     let lost = 0;
+    // the cheap line screens the expensive engines: casualties weighted by class
     for(const k of Object.keys(TROOPS)){
-      const l = Math.round(s.t[k] * lossFrac * (0.7+rand()*0.6));
+      const l = Math.round(s.t[k] * Math.min(0.95, lossFrac*SCREEN[k]) * (0.7+rand()*0.6));
       s.t[k] = Math.max(0, s.t[k]-l); lost += l;
     }
     const lootMult = (isWB?2:1) * (1 + heroBonus(s,'loot') + spoilBonus(s,'loot') + (perk(s,17)?0.15:0)) * mods.lootX;
@@ -441,7 +454,7 @@ export function resolveWave(s, now, rand=Math.random){
     s.wavesLost = (s.wavesLost||0)+1;
     s.nextWave = now + WAVE_MS*2; // a loss buys a longer breather
     const protect = Math.min(0.6, 0.04*(s.b.warehouse||0)); // the Warehouse hides part of your stores
-    for(const k of Object.keys(TROOPS)) s.t[k] = Math.floor(s.t[k]*0.8);
+    for(const k of Object.keys(TROOPS)) s.t[k] = Math.floor(s.t[k]*(1 - Math.min(0.5, 0.2*SCREEN[k])));
     for(const r of Object.keys(RES_META)) s.res[r] = Math.floor(s.res[r]*(1 - 0.15*(1-protect)));
     gainValor(s, 2);
     gainMastery(s, 3, now);

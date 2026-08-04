@@ -126,13 +126,26 @@ function simulate(minutes, enemyLuck, skilled, label){
       const best = ['ballista','knight','archer','spearman'].find(k => s.b.barracks >= TROOPS[k].barracks);
       const dump = s.res.food > 0.8*L.storageCap(s);
       if(deficit > 0 || dump){
-        const d = TROOPS[best];
+        // skilled: keep a mixed line for class counters and screening; lazy: spam the best
+        let pick = best;
+        if(skilled){
+          const targets = {spearman:0.30, archer:0.20, knight:0.30, ballista:0.20};
+          let worst = null, worstGap = 0, totalP = 0;
+          for(const k of Object.keys(TROOPS)) totalP += L.tierPower(s,k)*s.t[k];
+          for(const k of Object.keys(TROOPS)){
+            if(s.b.barracks < TROOPS[k].barracks) continue;
+            const gap = targets[k] - (totalP>0 ? L.tierPower(s,k)*s.t[k]/totalP : 0);
+            if(gap > worstGap){ worstGap = gap; worst = k; }
+          }
+          if(worst) pick = worst;
+        }
+        const d = TROOPS[pick];
         const headroom = L.prodPerSec(s,'food')*0.85 - L.upkeepPerSec(s);
         const maxSustain = Math.max(0, Math.floor(headroom/d.upkeep));
         const maxAfford = Math.min(...Object.entries(d.cost).map(([r,v]) => Math.floor(s.res[r]/v)));
         const want = deficit>0 ? Math.ceil(deficit/d.power) : 5;
         const n = Math.max(0, Math.min(25, maxAfford, want, maxSustain));
-        if(n > 0) L.startTraining(s, best, n, ms);
+        if(n > 0) L.startTraining(s, pick, n, ms);
       }
     }
   }
