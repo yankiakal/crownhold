@@ -37,8 +37,9 @@ export const TIER_POWER = 0.25, TIER_UPKEEP = 0.18, TIER_COST = 0.22;
 export const TROOPS = {
   spearman:{name:'Spearman', icon:'🛡️', power:3,  upkeep:0.06, cost:{food:25,wood:10}, time:4,  barracks:1},
   archer:  {name:'Archer',   icon:'🏹', power:5,  upkeep:0.10, cost:{food:20,wood:25}, time:6,  barracks:2},
-  knight:  {name:'Knight',   icon:'🐎', power:11, upkeep:0.22, cost:{food:60,iron:20}, time:12, barracks:4},
-  ballista:{name:'Ballista', icon:'⚙️', power:24, upkeep:0.50, cost:{wood:80,iron:40}, time:20, barracks:6},
+  // iron units eat less per point of power — quality is the path past the food ceiling
+  knight:  {name:'Knight',   icon:'🐎', power:11, upkeep:0.17, cost:{food:60,iron:20}, time:12, barracks:4},
+  ballista:{name:'Ballista', icon:'⚙️', power:24, upkeep:0.38, cost:{wood:80,iron:40}, time:20, barracks:6},
 };
 
 /* The Mastery track — Crownhold's replacement for VIP levels. Earned from every

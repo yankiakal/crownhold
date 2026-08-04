@@ -66,6 +66,7 @@ export function tierCostMult(s,k){ return 1 + TIER_COST*(tierOf(s,k)-1); }
 export function promoteCost(s,k){
   const d = TROOPS[k], n = Math.max(s.t[k],1), next = tierOf(s,k)+1, c = {};
   for(const [r,v] of Object.entries(d.cost)) c[r] = Math.ceil(v * (1 + TIER_COST*(next-1)) * 0.5 * n);
+  c.iron = (c.iron||0) + Math.ceil(1.5 * next * n); // reforging is done in steel
   return c;
 }
 export function promote(s, k, now){
