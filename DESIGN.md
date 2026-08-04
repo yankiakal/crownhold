@@ -72,6 +72,26 @@ Full store spec, supporter-pass contents, and revenue scenarios: see
 - **Quests**: a guided chain teaching the loop, each granting resources or Valor.
 - **Persistence**: local save with offline production (capped at 2h).
 
+## Divergence & RNG (v0.5)
+
+Design rule: **randomness proposes, the player disposes.** RNG creates different
+account paths — it never sits behind a purchase or decides an outcome you paid for.
+This is the anti-gacha: same excitement of the roll, none of the wallet.
+
+- **Hero drafts**: a pool of 12 heroes (6 common / 4 rare / 2 epic, weight 62/28/10).
+  Milestones unlock 8 slots; each slot offers a rarity-weighted draft of **three
+  random champions — pick one**, with one 5-Valor redraw. No banners, no pity
+  timers, no duplicates. Every account ends up a different subset in a different
+  order.
+- **Spoils of war**: every Warband win offers **three random permanent relics —
+  pick one** (production charters, drill manuals, war trophies, upkeep larders,
+  writ capacity…). Most stack, so builds compound differently run to run.
+- Hero/spoil effects flow through one bonus-aggregation layer in `logic.js`
+  (`heroBonus`/`spoilBonus`), so adding a hero is a data change in `defs.js`.
+- Sim-verified: identical bot policies under different rolls produce different
+  rosters and meaningfully different end states (power, upkeep profile), while
+  overall pacing stays inside the v0.3 targets.
+
 ## Balance model (v0.3 — simulator-tuned)
 
 Numbers are tuned with `sim.js`, a bot that plays a full session with the exact game

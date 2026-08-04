@@ -14,7 +14,8 @@ export function freshState(now){
     valor:0,
     b:{townhall:1,farm:1,lumberyard:1,quarry:0,ironmine:0,barracks:0,wall:0,watchtower:0},
     t:{spearman:8,archer:0,knight:0,ballista:0},
-    heroes:{marshal:{on:false,lvl:1,xp:0},steward:{on:false,lvl:1,xp:0},warden:{on:false,lvl:1,xp:0},quartermaster:{on:false,lvl:1,xp:0}},
+    heroes:{}, spoils:{},
+    choice:null, choiceQueue:[], offersDone:0,
     bq:null, tq:null,
     wave:1, nextWave:now+FIRST_WAVE_MS, wavesWon:0, wavesLost:0,
     trained:0, trainedBy:{},
@@ -34,7 +35,6 @@ export function load(now){
     const s = JSON.parse(raw);
     s.now = now;
     // migration: backfill fields that older saves lack
-    const f = freshState(now);
     if(s.mxp==null) s.mxp = 0;
     if(s.shields==null) s.shields = 0;
     if(s.shieldUntil==null) s.shieldUntil = 0;
@@ -43,7 +43,17 @@ export function load(now){
     if(s.wavesLost==null) s.wavesLost = 0;
     if(s.famineAcc==null) s.famineAcc = 0;
     if(s.t.ballista==null) s.t.ballista = 0;
-    for(const k of Object.keys(f.heroes)) if(!s.heroes[k]) s.heroes[k] = f.heroes[k];
+    // v0.5: heroes moved from fixed {on,lvl,xp} slots to a drafted roster
+    if(s.heroes && Object.values(s.heroes).some(h => h && typeof h.on === 'boolean')){
+      const owned = {};
+      for(const [k,h] of Object.entries(s.heroes)) if(h.on) owned[k] = {lvl:h.lvl||1, xp:h.xp||0};
+      s.heroes = owned;
+    }
+    if(s.heroes==null) s.heroes = {};
+    if(s.spoils==null) s.spoils = {};
+    if(s.choiceQueue==null) s.choiceQueue = [];
+    if(s.choice===undefined) s.choice = null;
+    if(s.offersDone==null) s.offersDone = Object.keys(s.heroes).length;
     // offline production (capped at 2 hours), net of army upkeep
     const away = Math.min(Math.max(now - (s.lastSeen||now), 0), 7200000);
     if(away > 60000){

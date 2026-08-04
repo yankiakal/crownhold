@@ -31,11 +31,18 @@ function simulate(minutes, enemyLuck, label){
     if(ms >= s.nextWave){
       const w = s.wave, wb = w%5===0;
       const enemy = L.wavePower(w)*(wb?1.6:1)*enemyLuck
-        *(1-Math.min(0.3,0.05*s.b.watchtower))*L.streakMult(s);
+        *(1-L.bluntMult(s))*L.streakMult(s);
       pre = { w, wb, enemy, mine: L.armyPower(s) };
     }
 
     L.tick(s, ms, 1, rand);
+
+    // draft decisions: always take the first offer
+    if(s.choice){
+      const id = s.choice.options[0];
+      note(t, (s.choice.type==='hero' ? 'drafted hero: ' : 'spoils: ')+id);
+      L.chooseOption(s, 0, ms);
+    }
 
     if(pre){
       if(s.wavesWon > prevWon && pre.wb)
@@ -89,7 +96,7 @@ function simulate(minutes, enemyLuck, label){
     if(!s.tq && s.b.barracks > 0){
       const wb = s.wave%5===0;
       const target = 1.4 * L.wavePower(s.wave)*(wb?1.6:1)*1.12
-        *(1-Math.min(0.3,0.05*s.b.watchtower))*L.streakMult(s);
+        *(1-L.bluntMult(s))*L.streakMult(s);
       const deficit = target - L.armyPower(s);
       const best = ['ballista','knight','archer','spearman'].find(k => s.b.barracks >= TROOPS[k].barracks);
       const dump = s.res.food > 0.8*L.storageCap(s);
@@ -112,6 +119,8 @@ function simulate(minutes, enemyLuck, label){
     +' | army '+L.armyPower(s)+' (upkeep '+L.upkeepPerSec(s).toFixed(1)+'/s, food prod '+L.prodPerSec(s,'food').toFixed(1)+'/s)'
     +' | mastery '+L.masteryLvl(s)+' | quests '+s.questIdx+'/24');
   console.log('-- buildings: '+Object.entries(s.b).map(([k,v])=>k+':'+v).join(' '));
+  console.log('-- heroes: '+(Object.entries(s.heroes).map(([k,h])=>k+' L'+h.lvl).join(', ')||'none')
+    +' | spoils: '+(Object.entries(s.spoils).map(([k,n])=>k+(n>1?'×'+n:'')).join(', ')||'none'));
   console.log('-- valor left '+Math.floor(s.valor)+' spent '+valorSpent+' | famine events (recent log) '+famines
     +' | build-idle '+Math.round(100*idleBuild/T)+'% | at-cap '+Math.round(100*cappedTime/T)+'%');
   console.log('');

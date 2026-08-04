@@ -1,14 +1,16 @@
 // Crownhold UI: renders state to DOM, wires input to logic actions.
 
 import {
-  BUILDINGS, TROOPS, HEROES, MASTERY, QUESTS, RES_META,
+  BUILDINGS, TROOPS, MASTERY, QUESTS, RES_META,
+  HERO_POOL, HERO_SLOTS, SPOILS, RARITY,
   WAVE_MS, FIRST_WAVE_MS, SHIELD_MS,
 } from './defs.js';
 import {
-  fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, heroLvl,
-  prodPerSec, upkeepPerSec, buildCost, buildTime, canAfford, armyPower,
+  fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap,
+  prodPerSec, prodMult, upkeepPerSec, buildCost, buildTime, canAfford, armyPower,
   wavePower, streakMult, finishCost, xpNeed,
   startUpgrade, startTraining, finishBuildNow, finishTrainNow, patrol, raiseShield,
+  chooseOption, rerollChoice,
 } from './logic.js';
 import { store, freshState, save } from './state.js';
 
@@ -90,7 +92,7 @@ function renderHold(S){
     const lvl = S.b[k];
     const lockedTH = d.th && S.b.townhall < d.th;
     const fxTxt = d.prod
-      ? '+'+(d.rate*Math.max(lvl,1)*(1+0.06*heroLvl(S,'steward'))).toFixed(1)+' '+d.prod+'/s'+(lvl===0?' when built':'')
+      ? '+'+(d.rate*Math.max(lvl,1)*prodMult(S,d.prod)).toFixed(1)+' '+d.prod+'/s'+(lvl===0?' when built':'')
       : d.fx;
     h += '<div class="bcard'+(lockedTH?' locked':'')+'">'
       + '<div class="head"><span>'+d.icon+'</span><span class="name">'+d.name+'</span>'
@@ -151,20 +153,36 @@ function renderMuster(S){
 }
 
 function renderHeroes(S){
-  let h = '<section class="panel"><h2>Heroes</h2>';
-  for(const [k,d] of Object.entries(HEROES)){
-    const hero = S.heroes[k];
-    if(!hero.on){
-      h += '<div class="hero locked"><span class="hname">'+d.icon+' ???</span>'
-        + '<div class="hmeta">'+d.hint+' to recruit</div></div>';
-    }else{
-      const need = xpNeed(hero.lvl);
-      const pct = hero.lvl>=10 ? 100 : Math.min(100, 100*hero.xp/need);
-      h += '<div class="hero"><span class="hname">'+d.icon+' '+d.name+'</span>'
-        + '<div class="hmeta">Level '+hero.lvl+' · '+d.fx(hero.lvl)
-        + (hero.lvl>=10?' · max':' · '+fmt(hero.xp)+'/'+fmt(need)+' xp')+'</div>'
-        + '<div class="xpbar"><i style="width:'+pct+'%"></i></div></div>';
-    }
+  const owned = Object.entries(S.heroes);
+  let h = '<section class="panel"><h2>Heroes <span style="letter-spacing:.05em">'+owned.length+'/'+HERO_SLOTS.length+' · drafted, never pulled</span></h2>';
+  for(const [k,hero] of owned){
+    const d = HERO_POOL[k];
+    if(!d) continue;
+    const need = xpNeed(hero.lvl);
+    const pct = hero.lvl>=10 ? 100 : Math.min(100, 100*hero.xp/need);
+    h += '<div class="hero"><span class="hname">'+d.icon+' '+d.name+'</span>'
+      + ' <span class="rar rar-'+d.rarity+'">'+RARITY[d.rarity].tag+'</span>'
+      + '<div class="hmeta">Level '+hero.lvl+' · '+d.fx(hero.lvl)
+      + (hero.lvl>=10?' · max':' · '+fmt(hero.xp)+'/'+fmt(need)+' xp')+'</div>'
+      + '<div class="xpbar"><i style="width:'+pct+'%"></i></div></div>';
+  }
+  for(let i = S.offersDone; i < HERO_SLOTS.length; i++){
+    h += '<div class="hero locked"><span class="hname">❔ An empty seat at the table</span>'
+      + '<div class="hmeta">'+HERO_SLOTS[i].hint+' — a draft of three will answer</div></div>';
+  }
+  h += '</section>';
+  return h;
+}
+
+function renderSpoils(S){
+  const owned = Object.entries(S.spoils||{});
+  if(!owned.length) return '';
+  let h = '<section class="panel"><h2>Spoils of War</h2>';
+  for(const [k,n] of owned){
+    const d = SPOILS[k];
+    if(!d) continue;
+    h += '<div class="trow"><span>'+d.icon+'</span><span class="tname">'+d.name+(n>1?' ×'+n:'')+'</span>'
+      + '<span class="spacer"></span><span class="tmeta">'+d.fx+(n>1?' each':'')+'</span></div>';
   }
   h += '</section>';
   return h;
@@ -224,7 +242,7 @@ function renderFx(S){
       + '<p class="sub">Hold the frontier. Pay in effort, never in coin.</p>'
       + '<div class="pillars">'
       + '<p><b>No cash shop.</b> Every timer can be finished instantly — with Valor, a currency you can only earn by playing.</p>'
-      + '<p><b>Heroes are milestones,</b> not lottery tickets. Reach the goal, gain the hero.</p>'
+      + '<p><b>Heroes are drafted,</b> never gambled. Milestones offer three champions — you choose who stays. No banners, no pity timers, no pulls.</p>'
       + '<p><b>Losing never spirals.</b> A band that beats you returns <i>weaker</i>, not stronger — raids only escalate when you win. And armies eat: feed your muster or it deserts.</p>'
       + '</div>'
       + '<button class="primary" data-act="intro" style="font-size:.95rem;padding:.6rem 1.6rem">Take the field</button>'
@@ -233,13 +251,46 @@ function renderFx(S){
   return h;
 }
 
+function renderChoice(S){
+  const c = S.choice;
+  if(!c) return '';
+  const isHero = c.type==='hero';
+  let cards = '';
+  c.options.forEach((id, i) => {
+    if(isHero){
+      const d = HERO_POOL[id];
+      cards += '<button class="choice-card" data-act="choose" data-i="'+i+'">'
+        + '<span class="cicon">'+d.icon+'</span>'
+        + '<span class="rar rar-'+d.rarity+'">'+RARITY[d.rarity].tag+'</span>'
+        + '<span class="cname">'+d.name+'</span>'
+        + '<span class="cfx">'+d.fx(1)+' per level</span>'
+        + '</button>';
+    }else{
+      const d = SPOILS[id];
+      cards += '<button class="choice-card" data-act="choose" data-i="'+i+'">'
+        + '<span class="cicon">'+d.icon+'</span>'
+        + '<span class="rar" style="color:var(--ink-dim)">'+(d.stack?'Stacks':'Unique')+'</span>'
+        + '<span class="cname">'+d.name+'</span>'
+        + '<span class="cfx">'+d.fx+'</span>'
+        + '</button>';
+    }
+  });
+  return '<div class="overlay"><div class="card" style="max-width:42rem">'
+    + '<h1 style="font-size:1.5rem">'+(isHero?'A DRAFT OF CHAMPIONS':'SPOILS OF WAR')+'</h1>'
+    + '<div class="rule"></div>'
+    + '<p class="sub">'+(isHero?'Three answer the call. One may stay.':'Claim one prize from the routed warband.')+'</p>'
+    + '<div class="choice-grid">'+cards+'</div>'
+    + (c.reroll>0 ? '<button data-act="rerollChoice" '+(S.valor<5?'disabled':'')+'>Redraw the offer · 5 ⚜ Valor</button>' : '')
+    + '</div></div>';
+}
+
 export function render(){
   const S = store.s;
   app.innerHTML = renderHeader(S) + renderThreat(S)
     + '<main>' + renderHold(S)
-    + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderMastery(S) + renderQuest(S) + renderChronicle(S) + '</div>'
+    + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderSpoils(S) + renderMastery(S) + renderQuest(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
-  fx.innerHTML = renderFx(S);
+  fx.innerHTML = renderFx(S) + (S.seenIntro ? renderChoice(S) : '');
 }
 
 /* ── input ── */
@@ -251,6 +302,8 @@ const ACTIONS = {
   finishTrain: () => finishTrainNow(store.s, Date.now()),
   patrol:      () => patrol(store.s, Date.now()),
   raiseShield: () => raiseShield(store.s, Date.now()),
+  choose:      b => chooseOption(store.s, Number(b.dataset.i), Date.now()),
+  rerollChoice:() => rerollChoice(store.s, Date.now()),
   intro: () => { store.s.seenIntro = true; },
   about: () => { store.s.seenIntro = false; },
   reset: () => {

@@ -197,6 +197,22 @@ section.panel{
 .pillars{text-align:left;display:flex;flex-direction:column;gap:.6rem;margin:0 auto 1.5rem;max-width:26rem}
 .pillars p{font-size:.88rem;color:var(--ink)}
 .pillars b{color:var(--gold);font-weight:600}
+/* draft choices */
+.choice-grid{display:flex;gap:.7rem;justify-content:center;flex-wrap:wrap;margin:1rem 0 1.2rem}
+.choice-card{
+  width:11rem;border:1px solid var(--edge);border-radius:4px;background:var(--panel-2);
+  padding:.9rem .8rem;display:flex;flex-direction:column;gap:.35rem;align-items:center;
+  text-align:center;font-family:var(--serif);cursor:pointer;
+}
+.choice-card:hover{border-color:var(--gold)}
+.choice-card .cicon{font-size:1.7rem}
+.choice-card .cname{font-size:.95rem;color:var(--ink)}
+.choice-card .cfx{font-family:var(--sans);font-size:.72rem;color:var(--ink-dim)}
+.rar{font-family:var(--sans);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase}
+.rar-common{color:var(--ink-dim)}
+.rar-rare{color:var(--info)}
+.rar-epic{color:var(--gold)}
+
 footer{
   margin-top:1.2rem;display:flex;gap:1rem;align-items:center;
   font-family:var(--sans);font-size:.68rem;color:var(--ink-dim);
