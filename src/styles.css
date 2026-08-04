@@ -232,6 +232,14 @@ section.panel{
 .stat-note b{color:var(--ink)}
 .trow{flex-wrap:wrap}
 .tier-tag{font-family:var(--sans);font-size:.6rem;color:var(--gold);letter-spacing:.08em}
+.trow.mine{color:var(--gold)}
+.card.dsheet input{
+  width:100%;margin-top:.15rem;padding:.4rem .5rem;
+  font-family:var(--sans);font-size:.85rem;color:var(--ink);
+  background:#191410;border:1px solid var(--edge);border-radius:3px;
+}
+.card.dsheet input:focus{outline:2px solid var(--gold);outline-offset:1px}
+.card.dsheet label{display:block;margin:.5rem 0}
 .info-btn{
   font-size:.72rem;padding:.1rem .45rem;border:1px solid var(--edge);background:none;
   color:var(--ink-dim);cursor:pointer;border-radius:3px;

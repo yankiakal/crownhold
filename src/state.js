@@ -36,6 +36,29 @@ export function freshState(now, seed){
   };
 }
 
+/* Progress earned while nobody was watching: production net of upkeep, plus the
+   standing caravan's runs. No battles and no desertion happen unattended.
+   Shared by the browser's save-load and the server's fast-forward. */
+export function applyOffline(s, awayMs){
+  const gained = [];
+  for(const r of Object.keys(RES_META)){
+    let g = prodPerSec(s, r) * awayMs/1000;
+    if(r==='food') g -= upkeepPerSec(s) * awayMs/1000;   // the muster ate while you were gone
+    if(g >= 1){ s.res[r] = Math.min(s.res[r]+g, storageCap(s)); gained.push('+'+fmt(g)+' '+RES_META[r].lbl.toLowerCase()); }
+    else if(g < 0) s.res[r] = Math.max(0, s.res[r]+g); // drain, but no desertion offline
+  }
+  if(gained.length) pushLog(s, 'While you were away, the hold produced '+gained.join(', ')+' (after feeding the muster).', 'gold');
+  if(s.caravan){
+    const cycles = Math.floor(awayMs / (expedCdMs(s) + CARAVAN_GRACE));
+    const y = caravanYields(s);
+    if(cycles > 0 && y){
+      for(const [r,v] of Object.entries(y)) s.res[r] = Math.min(s.res[r] + v*cycles, storageCap(s));
+      pushLog(s, '⛺ Your standing caravan ran '+EXPEDITIONS[s.caravan].name+' '+cycles+'× while you were away: '
+        + Object.entries(y).map(([r,v])=>'+'+fmt(v*cycles)+' '+r).join(', ')+'.', 'gold');
+    }
+  }
+}
+
 export function load(now){
   try{
     const raw = localStorage.getItem(SAVE_KEY);
@@ -80,26 +103,7 @@ export function load(now){
     if(!s.marches) s.marches = [];
     // offline production (capped at 2 hours), net of army upkeep
     const away = Math.min(Math.max(now - (s.lastSeen||now), 0), 7200000);
-    if(away > 60000){
-      const gained = [];
-      for(const r of Object.keys(RES_META)){
-        let g = prodPerSec(s, r) * away/1000;
-        if(r==='food') g -= upkeepPerSec(s) * away/1000;   // the muster ate while you were gone
-        if(g >= 1){ s.res[r] = Math.min(s.res[r]+g, storageCap(s)); gained.push('+'+fmt(g)+' '+RES_META[r].lbl.toLowerCase()); }
-        else if(g < 0) s.res[r] = Math.max(0, s.res[r]+g); // drain, but no desertion offline
-      }
-      if(gained.length) pushLog(s, 'While you were away, the hold produced '+gained.join(', ')+' (after feeding the muster).', 'gold');
-      // the standing caravan kept running while you were gone
-      if(s.caravan){
-        const cycles = Math.floor(away / (expedCdMs(s) + CARAVAN_GRACE));
-        const y = caravanYields(s);
-        if(cycles > 0 && y){
-          for(const [r,v] of Object.entries(y)) s.res[r] = Math.min(s.res[r] + v*cycles, storageCap(s));
-          pushLog(s, '⛺ Your standing caravan ran '+EXPEDITIONS[s.caravan].name+' '+cycles+'× while you were away: '
-            + Object.entries(y).map(([r,v])=>'+'+fmt(v*cycles)+' '+r).join(', ')+'.', 'gold');
-        }
-      }
-    }
+    if(away > 60000) applyOffline(s, away);
     if(s.nextWave < now) s.nextWave = now + 60000;
     if(s.banner) s.banner = null;
     return s;

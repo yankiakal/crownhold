@@ -10,19 +10,24 @@ A Kingshot-style kingdom-defense strategy game — same loop, no pay-to-win.
 ## Project layout
 
 ```
-game.html         Vite dev entry
-index.html        built single-file release (artifact-ready; regenerate, don't edit)
-src/defs.js       game data: buildings, troops, heroes, mastery, quests
-src/logic.js      ALL game rules — pure functions, injectable time & rng
-src/state.js      fresh state, localStorage persistence, save migration
-src/ui.js         DOM rendering + input
-src/main.js       boot + 250ms tick loop
-sim/sim.js        balance bot driving the real logic.tick()
+game.html          Vite dev entry
+index.html         built single-file release (artifact-ready; regenerate, don't edit)
+src/defs.js        game data: buildings, troops, heroes, mastery, quests
+src/logic.js       ALL game rules — pure functions, injectable time & rng
+src/world.js       the Frontier: map tiles, marches, camp battles
+src/actions.js     every player action, one table (client + server dispatch it)
+src/state.js       fresh state, offline progress, persistence, save migration
+src/net.js         client sync layer (offline unless a server is configured)
+src/ui.js          DOM rendering + input
+src/main.js        boot + 250ms tick loop
+server/server.js   authoritative server: accounts, state, leaderboard
+sim/sim.js         balance bot driving the real logic.tick()
 ```
 
-`src/logic.js` is the single source of truth for game rules. The browser, the
-balance sim, and the future multiplayer server all import it — if you change a
-number in `src/defs.js`, run the sim before trusting it.
+`src/logic.js`, `src/world.js` and `src/actions.js` are the single source of
+truth for the rules. The browser, the balance sim, and the server all import
+them — the game cannot disagree with itself. If you change a number in
+`src/defs.js`, run the sim before trusting it.
 
 ## Workflow
 
@@ -30,8 +35,20 @@ number in `src/defs.js`, run the sim before trusting it.
 npm install       # once
 npm run dev       # live-reload dev server (opens game.html)
 npm run sim       # balance check: bot plays 90-min and 4-h sessions, prints pacing
-npm run build     # dist/game.html → strips wrapper → ./index.html (the release file)
+npm run build     # dist/ (deployable PWA) + ./index.html (artifact release)
+npm run server    # authoritative server on :8787, also serves dist/
+npm run deploy    # build + publish dist/ to GitHub Pages
 ```
+
+Live: **https://yankiakal.github.io/crownhold/** — see [DEPLOY.md](DEPLOY.md).
+
+## Online play
+
+The game is offline-first: with no server it plays exactly as before, saving to
+localStorage. Run `npm run server`, click **☁ Play online**, enter
+`http://localhost:8787` and found a hold — from then on the server owns the
+state (actions round-trip, progress is fast-forwarded server-side on demand,
+and holds appear on a shared leaderboard).
 
 ## Game loop (prototype)
 

@@ -92,6 +92,28 @@ This is the anti-gacha: same excitement of the roll, none of the wallet.
   rosters and meaningfully different end states (power, upkeep profile), while
   overall pacing stays inside the v0.3 targets.
 
+## Going online (v1.1 — the authoritative server)
+
+`server/server.js` imports the same rule modules the browser runs
+(`logic.js`, `world.js`, `actions.js`), so there is exactly one definition of
+what an action does. Architecture notes:
+
+- **No game loop.** This genre ticks slowly, so state is stored per account with
+  a `lastSeen` stamp and *fast-forwarded on demand*: a request arrives, the hold
+  catches up (production, queues, quests, caravans — never unattended battles),
+  the action applies, the state saves. One process handles thousands of holds.
+- **Client prediction.** The browser keeps ticking locally so the display stays
+  smooth, and pulls authoritative state every 10s; the server's copy always wins.
+- **Offline-first.** With no server configured the game is exactly what it was —
+  localStorage, no account, no network. Online is opt-in.
+- **Honest security line.** Actions are validated against a whitelist and all
+  outcomes are computed server-side, which is the foundation PvP needs. What is
+  still missing before competitive play: HTTPS, a real session store, a database
+  instead of a JSON file, and rate limits per account rather than per IP.
+- **Next on this layer:** alliances, an arena of async battles against other
+  holds' snapshot armies, and seasons (which is also where the cosmetic passes
+  from MONETIZATION.md live).
+
 ## The long game (v0.8 — pacing to months, not minutes)
 
 Target: **6–12 months of meaningful progression** for a regular free player — long

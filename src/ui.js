@@ -17,10 +17,9 @@ import {
   armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
   maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost,
   wavePower, streakMult, finishCost, xpNeed,
-  startUpgrade, startTraining, finishBuildNow, finishTrainNow, raiseShield,
-  expedition, setCaravan, setStance, setCaptain, useOrder,
-  chooseOption, rerollChoice,
 } from './logic.js';
+import { applyAction, isGameAction } from './actions.js';
+import * as net from './net.js';
 import { store, freshState, save } from './state.js';
 
 const app = document.getElementById('app');
@@ -279,9 +278,31 @@ function renderChronicle(S){
   return h;
 }
 
+function renderLeaderboard(S){
+  if(!net.isOnline()) return '';
+  const rows = net.leaderboardRows();
+  let h = '<section class="panel"><h2>The Frontier Holds <span style="letter-spacing:.05em">waves held</span></h2>';
+  if(!rows) h += '<div class="stat-note">Asking the server…</div>';
+  else if(!rows.length) h += '<div class="stat-note">No holds on record yet.</div>';
+  else{
+    const me = net.accountName();
+    for(let i=0;i<rows.length;i++){
+      const r = rows[i];
+      h += '<div class="trow'+(r.name===me?' mine':'')+'"><span class="tmeta">'+(i+1)+'</span>'
+        + '<span class="tname">'+(r.name===me?'★ ':'')+r.name+'</span><span class="spacer"></span>'
+        + '<span class="tmeta">TH'+r.townhall+' · M'+r.mastery+' · pwr '+fmt(r.power)+'</span>'
+        + '<span class="count">'+r.wavesWon+'</span></div>';
+    }
+  }
+  h += '</section>';
+  return h;
+}
+
 function renderFooter(){
   const armed = Date.now() < resetArmedUntil;
+  const who = net.accountName();
   return '<footer><span>Crownhold prototype — every Valor point was earned, none were sold.</span>'
+    + '<button data-act="account">'+(who ? '☁ '+who : '☁ Play online')+'</button>'
     + '<button data-act="codex">📖 Codex — all the rules</button>'
     + '<button data-act="about">About</button>'
     + '<button data-act="reset"'+(armed?' style="color:var(--bad);border-color:var(--bad)"':'')+'>'
@@ -583,7 +604,8 @@ export function render(){
   const S = store.s;
   app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
-    + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderSpoils(S) + renderMastery(S) + renderQuest(S) + renderChronicle(S) + '</div>'
+    + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderSpoils(S)
+      + renderLeaderboard(S) + renderMastery(S) + renderQuest(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
   fx.innerHTML = renderFx(S) + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
   drawMap(S);
@@ -591,45 +613,96 @@ export function render(){
 
 /* ── input ── */
 
-const ACTIONS = {
-  upgrade: b => startUpgrade(store.s, b.dataset.key, Date.now()),
-  train:   b => startTraining(store.s, b.dataset.key, Number(b.dataset.n)||1, Date.now()),
-  finishBuild: () => finishBuildNow(store.s, Date.now()),
-  finishTrain: () => finishTrainNow(store.s, Date.now()),
-  expedition:  b => expedition(store.s, b.dataset.key, Date.now()),
-  caravan:     b => setCaravan(store.s, b.dataset.key, Date.now()),
-  stance:      b => setStance(store.s, b.dataset.key, Date.now()),
-  captain:     b => setCaptain(store.s, b.dataset.key, Date.now()),
-  order:       b => useOrder(store.s, b.dataset.key, Date.now()),
-  raiseShield: () => raiseShield(store.s, Date.now()),
-  choose:      b => chooseOption(store.s, Number(b.dataset.i), Date.now()),
-  rerollChoice:() => rerollChoice(store.s, Date.now()),
-  intro: () => { store.s.seenIntro = true; },
+// UI-only actions: they change what you are looking at, not the hold itself,
+// so they never travel to the server.
+const VIEW_ACTIONS = {
   about: () => { store.s.seenIntro = false; },
   codex: () => { codexOpen = !codexOpen; },
   detail: b => { detail = {type:b.dataset.dtype, key:b.dataset.key}; },
   detailClose: () => { detail = null; },
-  promote: b => promote(store.s, b.dataset.key, Date.now()),
-  march: b => { if(startMarch(store.s, Number(b.dataset.idx), Number(b.dataset.frac), Date.now())) detail = null; },
+  account: () => { acctOpen = true; acctMsg = ''; renderAccount(); },
+  accountClose: () => { acctOpen = false; renderAccount(); },
+  signIn: b => submitAccount(b.dataset.mode),
+  signOut: () => { net.logout(); acctMsg = 'Signed out — your local hold is back.'; renderAccount(); },
   // native confirm() is blocked in sandboxed frames — the button itself asks twice
   reset: () => {
     const now = Date.now();
     if(now < resetArmedUntil){
       resetArmedUntil = 0;
-      store.s = freshState(now);
-      save(store.s, now);
+      if(net.isOnline()) net.resetHold().then(s => { store.s = s; render(); }).catch(()=>{});
+      else { store.s = freshState(now); save(store.s, now); }
     }else{
       resetArmedUntil = now + 5000;
     }
   },
 };
 
+function paramsOf(btn){
+  const d = btn.dataset;
+  return { key:d.key, n:d.n, i:d.i, idx:d.idx, frac:d.frac };
+}
+
 function runAction(btn){
   if(btn.disabled) return;
-  const fn = ACTIONS[btn.dataset.act];
-  if(!fn) return;
-  fn(btn);
+  const act = btn.dataset.act;
+  if(VIEW_ACTIONS[act]){ VIEW_ACTIONS[act](btn); render(); return; }
+  if(!isGameAction(act)) return;
+  const params = paramsOf(btn);
+  if(act === 'march') detail = null;
+  if(net.isOnline()){
+    // the server rules on it, then hands back the truth
+    net.sendAction(act, params)
+      .then(s => { store.s = s; render(); })
+      .catch(err => { acctMsg = err.message; renderAccount(); });
+  }else{
+    applyAction(store.s, act, params, Date.now());
+  }
   render();
+}
+
+/* ── account sheet: lives outside the 4 Hz render so typing is never clobbered ── */
+
+const acctBox = document.createElement('div');
+document.body.appendChild(acctBox);
+let acctOpen = false, acctMsg = '';
+
+function submitAccount(mode){
+  const name = (document.getElementById('acct-name')||{}).value || '';
+  const pw   = (document.getElementById('acct-pw')||{}).value || '';
+  const srv  = (document.getElementById('acct-server')||{}).value || '';
+  net.setServer(srv);
+  acctMsg = 'Contacting the server…'; renderAccount();
+  const fn = mode === 'register' ? net.register : net.login;
+  fn(name, pw)
+    .then(s => {
+      store.s = s;
+      acctOpen = false; acctMsg = '';
+      renderAccount(); render();
+      net.refreshLeaderboard().then(render);
+    })
+    .catch(err => { acctMsg = err.message; renderAccount(); });
+}
+
+export function renderAccount(){
+  if(!acctOpen){ acctBox.innerHTML = ''; return; }
+  const name = net.accountName();
+  acctBox.innerHTML = '<div class="overlay"><div class="card dsheet">'
+    + '<h1 style="font-size:1.15rem">☁ Your Hold Online</h1><div class="rule"></div>'
+    + (name
+      ? '<p class="d-fx">Signed in as <b>'+name+'</b>. This hold lives on the server — it follows you to any device, and it stands on the leaderboard.</p>'
+        + '<div style="display:flex;gap:.6rem;margin-top:.6rem">'
+        + '<button data-act="signOut">Sign out</button>'
+        + '<button class="primary" data-act="accountClose">Back to the walls</button></div>'
+      : '<p class="d-row">Sign in and your hold is kept by the server: the same walls on your phone and your desktop, and a place on the leaderboard. Play offline and nothing leaves this browser.</p>'
+        + '<label class="d-row">Server<br><input id="acct-server" value="'+(net.serverUrl()||'')+'" placeholder="http://localhost:8787"></label>'
+        + '<label class="d-row">Hold name<br><input id="acct-name" maxlength="20" placeholder="Ravenmark"></label>'
+        + '<label class="d-row">Password<br><input id="acct-pw" type="password" placeholder="at least 6 characters"></label>'
+        + '<div style="display:flex;gap:.6rem;margin-top:.6rem;flex-wrap:wrap">'
+        + '<button class="primary" data-act="signIn" data-mode="register">Found a new hold</button>'
+        + '<button data-act="signIn" data-mode="login">Sign in</button>'
+        + '<button data-act="accountClose">Play offline</button></div>')
+    + (acctMsg ? '<p class="d-warn">'+acctMsg+'</p>' : '')
+    + '</div></div>';
 }
 
 export function wire(){

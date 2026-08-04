@@ -33,12 +33,38 @@ Wrap the same build with [Capacitor](https://capacitorjs.com): `npm i
 `npx cap add ios android`. That gives real store listings, push notifications
 (raid alerts!), and in-app purchases for the cosmetic shop. No game code changes.
 
-## Stage 3 — Multiplayer
+## Stage 3 — Multiplayer (server built; hosting is the remaining step)
 
-The server (Node, importing `src/logic.js` + `src/world.js` for authoritative
-state) replaces localStorage saves with accounts, and the Frontier's procedural
-tiles start giving way to other players' holds. Hosting: any small VPS or
-Fly.io/Railway instance covers thousands of players for this genre's tick rates.
+`server/server.js` is the authoritative server: accounts (scrypt-hashed
+passwords, token sessions), per-hold state fast-forwarded on demand, a shared
+leaderboard, and static hosting of `dist/`. It imports the same
+`src/logic.js` / `src/world.js` / `src/actions.js` the browser runs, so client
+and server can never disagree about the rules. Zero npm dependencies.
+
+Run it locally:
+```sh
+npm run build && npm run server     # http://localhost:8787
+```
+Then in the game: **☁ Play online** → server `http://localhost:8787` → found a hold.
+
+**Hosting it (any Node host; ~$0–5/month at prototype scale):**
+```sh
+# Fly.io
+fly launch --now              # detects Node; set PORT via fly.toml if needed
+# or Railway / Render: point at the repo, start command `npm run server`
+```
+Then either serve the client from that same host (it already serves `dist/`) or
+keep the client on Pages and type the server URL into the account sheet — CORS
+is open for exactly that.
+
+**Before real players:** move `server/data/accounts.json` to Postgres or SQLite
+(the shape is already row-per-account), put it behind HTTPS, and add a proper
+session store. The current JSON file is fine for testing and small scale.
+
+## Stage 4 — What multiplayer unlocks next
+
+Alliances, an arena of async battles against other holds' snapshot armies, and
+seasons — the Frontier's procedural tiles giving way to real neighbours.
 
 ## Reality checks
 
