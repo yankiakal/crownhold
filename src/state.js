@@ -16,6 +16,8 @@ export function freshState(now){
     t:{spearman:8,archer:0,knight:0,ballista:0},
     heroes:{}, spoils:{},
     choice:null, choiceQueue:[], offersDone:0,
+    stance:'balanced', captain:null, orderCd:{}, mods:null,
+    waveType:'rabble', upkeepPauseUntil:0, trainFastNext:false, expedBoost:false,
     bq:null, tq:null,
     wave:1, nextWave:now+FIRST_WAVE_MS, wavesWon:0, wavesLost:0,
     trained:0, trainedBy:{},
@@ -54,6 +56,15 @@ export function load(now){
     if(s.choiceQueue==null) s.choiceQueue = [];
     if(s.choice===undefined) s.choice = null;
     if(s.offersDone==null) s.offersDone = Object.keys(s.heroes).length;
+    // v0.7 command layer
+    if(s.stance==null) s.stance = 'balanced';
+    if(s.captain===undefined) s.captain = null;
+    if(s.orderCd==null) s.orderCd = {};
+    if(s.mods===undefined) s.mods = null;
+    if(s.waveType==null) s.waveType = 'rabble';
+    if(s.upkeepPauseUntil==null) s.upkeepPauseUntil = 0;
+    if(s.trainFastNext==null) s.trainFastNext = false;
+    if(s.expedBoost==null) s.expedBoost = false;
     // offline production (capped at 2 hours), net of army upkeep
     const away = Math.min(Math.max(now - (s.lastSeen||now), 0), 7200000);
     if(away > 60000){

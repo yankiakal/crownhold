@@ -3,14 +3,16 @@
 import {
   BUILDINGS, TROOPS, MASTERY, QUESTS, RES_META,
   HERO_POOL, HERO_SLOTS, SPOILS, RARITY,
+  WAVE_TYPES, STANCES, EXPEDITIONS,
   WAVE_MS, FIRST_WAVE_MS, SHIELD_MS,
 } from './defs.js';
 import {
   fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor,
   prodPerSec, prodMult, upkeepPerSec, buildCost, buildTime, canAfford, armyPower,
-  armyBreakdown, trainMult, trainMultFor, bluntFor,
+  armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
   wavePower, streakMult, finishCost, xpNeed,
-  startUpgrade, startTraining, finishBuildNow, finishTrainNow, patrol, raiseShield,
+  startUpgrade, startTraining, finishBuildNow, finishTrainNow, raiseShield,
+  expedition, setStance, setCaptain, useOrder,
   chooseOption, rerollChoice,
 } from './logic.js';
 import { store, freshState, save } from './state.js';
@@ -50,9 +52,11 @@ function renderThreat(S){
   const pct = Math.max(0, Math.min(100, 100*left/total));
   const isWB = S.wave % 5 === 0;
   const scouted = S.b.watchtower >= 1;
-  const est = scouted ? '≈'+Math.round(wavePower(S.wave)*(isWB?1.6:1)*streakMult(S))+' strength'
-                        +(S.streak>0?' (bloodied)':'')
-                      : 'strength unknown — a Watchtower would tell you';
+  const wt = WAVE_TYPES[S.waveType||'rabble'];
+  const est = scouted
+    ? wt.icon+' '+wt.name+' · ≈'+Math.round(wavePower(S.wave)*(isWB?1.6:1)*streakMult(S))+' strength'
+      +(S.streak>0?' (bloodied)':'')+(wt.weakTo?' · weak to '+STANCES[wt.weakTo].name:'')
+    : 'an unknown band — a Watchtower would name it';
   let h = '<div class="threat"><div class="row">';
   if(shielded){
     h += '<span class="title" style="color:var(--gold)">🛡 The Writ of Peace holds</span>'
@@ -66,7 +70,19 @@ function renderThreat(S){
     + '<span class="meta">defeat costs: <b>20% troops · 15% stores</b></span>'
     + '<span class="meta">writs: <b>'+S.shields+'/'+shieldCap(S)+'</b></span>'
     + (S.shields>0 && !shielded ? '<button class="valor-btn" data-act="raiseShield">🛡 Raise shield · 3m</button>' : '')
-    + '</div><div class="bar'+(shielded?'':' threat-fill')+'"><i style="width:'
+    + '</div>';
+  // the stance line: your standing answer to whatever comes up the road
+  const cm = counterMult(S);
+  h += '<div class="stance-row"><span class="meta">stance:</span>';
+  for(const [k,st] of Object.entries(STANCES)){
+    h += '<button class="stance-btn'+(S.stance===k?' active':'')+'" data-act="stance" data-key="'+k+'" title="'+st.hint+'">'
+      + st.icon+' '+st.name+'</button>';
+  }
+  h += '<span class="meta" style="margin-left:auto">'
+    + (scouted ? (cm>1?'✓ right answer: +20% power, fewer casualties':cm<1?'✗ wrong stance for '+wt.name+': −8%':'no counter to find')
+               : 'scouts blind — stance is a guess')
+    + '</span></div>';
+  h += '<div class="bar'+(shielded?'':' threat-fill')+'"><i style="width:'
     + (shielded ? Math.max(0,Math.min(100,100*(S.shieldUntil-now)/SHIELD_MS)) : pct)
     + '%"></i></div></div>';
   return h;
@@ -175,11 +191,15 @@ function renderMuster(S){
     }
   }
   const now = Date.now(), cd = S.patrolReady - now;
-  const th = S.b.townhall;
-  h += '<div style="margin-top:.7rem;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">'
-    + '<button class="primary" data-act="patrol" '+(cd>0?'disabled':'')+'>🐴 Send patrol'
-    + (cd>0?' · '+ftime(cd):'')+'</button>'
-    + '<span class="tmeta" style="font-family:var(--sans);font-size:.65rem;color:var(--ink-dim)">yields +'+(12+6*th)+' food, +'+(12+6*th)+' wood, 25% chance of +'+(10+4*th)+' stone, +2 ⚜ · every '+(perk(S,3)?'17':'25')+'s</span></div>';
+  h += '<div style="margin-top:.7rem">'
+    + '<div class="stat-note">Expeditions — pick a road'+(cd>0?' · next in '+ftime(cd):'')
+    + (S.expedBoost?' · <b style="color:var(--gold)">Rich Trails: next is ×2 and safe</b>':'')+'</div>'
+    + '<div class="exped-row">';
+  for(const [k,e] of Object.entries(EXPEDITIONS)){
+    h += '<button class="exped-btn" data-act="expedition" data-key="'+k+'" '+(cd>0?'disabled':'')+' title="'+e.desc+'">'
+      + e.icon+' '+e.name+'<span>'+e.desc+'</span></button>';
+  }
+  h += '</div></div>';
   h += '</section>';
   return h;
 }
@@ -192,11 +212,19 @@ function renderHeroes(S){
     if(!d) continue;
     const need = xpNeed(hero.lvl);
     const pct = hero.lvl>=10 ? 100 : Math.min(100, 100*hero.xp/need);
+    const isCapt = S.captain===k;
+    const cd = S.orderCd[k]||0;
     h += '<div class="hero"><span class="hname">'+d.icon+' '+d.name+'</span>'
       + ' <span class="rar rar-'+d.rarity+'">'+RARITY[d.rarity].tag+'</span>'
-      + '<div class="hmeta">Level '+hero.lvl+' · '+d.fx(hero.lvl)
+      + '<button class="capt-btn'+(isCapt?' active':'')+'" data-act="captain" data-key="'+k+'" title="Captain: this hero\'s passive counts double">'
+      + (isCapt?'★ Captain':'☆ appoint')+'</button>'
+      + '<div class="hmeta">Level '+hero.lvl+' · '+d.fx(hero.lvl)+(isCapt?' <b style="color:var(--gold)">×2</b>':'')
       + (hero.lvl>=10?' · max':' · '+fmt(hero.xp)+'/'+fmt(need)+' xp')+'</div>'
-      + '<div class="xpbar"><i style="width:'+pct+'%"></i></div></div>';
+      + '<div class="xpbar"><i style="width:'+pct+'%"></i></div>'
+      + '<div class="order-row"><button class="order-btn" data-act="order" data-key="'+k+'" '+(cd>0?'disabled':'')
+      + ' title="'+d.order.desc+'">'+d.order.name+(cd>0?' · in '+cd+' wave'+(cd>1?'s':''):'')+'</button>'
+      + '<span class="tmeta" style="font-family:var(--sans);font-size:.62rem;color:var(--ink-dim)">'+d.order.desc+'</span></div>'
+      + '</div>';
   }
   for(let i = S.offersDone; i < HERO_SLOTS.length; i++){
     h += '<div class="hero locked"><span class="hname">❔ An empty seat at the table</span>'
@@ -316,6 +344,14 @@ function renderCodex(S){
     + '<li><b>Lose</b>: 20% of troops fall, 15% of stores are taken — but the band returns 15% weaker per consecutive loss (floor ~61%) and the next attack waits 2m30s. Raids only escalate when you win.</li>'
     + '</ul>'
 
+    + '<h3>Command — where skill lives</h3>'
+    + '<ul>'
+    + '<li><b>Wave shapes &amp; stances</b>: bands come as Rabble, Riders, Skirmishers, or Brutes. Shield Wall counters Riders, Volley counters Brutes, Charge counters Skirmishers. Right answer: +20% power and 40% fewer casualties. Wrong stance against a shaped band: −8%. Balanced never wins or loses the read. A Watchtower names the incoming band; without one you guess.</li>'
+    + '<li><b>Captain</b>: appoint one hero — their passive counts double. Swap freely; it is a build choice, not a lock.</li>'
+    + '<li><b>Orders</b>: every hero has an active ability on a cooldown measured in waves (Rally, Triage, Requisition…). Battle orders are consumed by the next battle.</li>'
+    + '<li><b>Expeditions</b>: the King&#39;s Road is safe (food/wood, +3 Valor). Wildwood pays stone &amp; iron but a 35% ambush costs ~4% of troops. Barrow Hills pays Valor &amp; Mastery with a 15% Writ chance. One road per cooldown.</li>'
+    + '</ul>'
+
     + '<h3>Valor &amp; Writs</h3>'
     + '<ul>'
     + '<li>Valor comes from wins (5 + wave, capped +15, warbands ×2), quests, patrols (+2), finished buildings (+2), even losses (+2). It is never sold.</li>'
@@ -401,7 +437,10 @@ const ACTIONS = {
   train:   b => startTraining(store.s, b.dataset.key, Number(b.dataset.n)||1, Date.now()),
   finishBuild: () => finishBuildNow(store.s, Date.now()),
   finishTrain: () => finishTrainNow(store.s, Date.now()),
-  patrol:      () => patrol(store.s, Date.now()),
+  expedition:  b => expedition(store.s, b.dataset.key, Date.now()),
+  stance:      b => setStance(store.s, b.dataset.key, Date.now()),
+  captain:     b => setCaptain(store.s, b.dataset.key, Date.now()),
+  order:       b => useOrder(store.s, b.dataset.key, Date.now()),
   raiseShield: () => raiseShield(store.s, Date.now()),
   choose:      b => chooseOption(store.s, Number(b.dataset.i), Date.now()),
   rerollChoice:() => rerollChoice(store.s, Date.now()),

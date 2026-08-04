@@ -6,11 +6,13 @@
 // of the next wave without starving the food economy, patrols on cooldown, and
 // spends Valor to finish long timers.
 
-import { BUILDINGS, TROOPS, RES_META } from '../src/defs.js';
+import { BUILDINGS, TROOPS, RES_META, WAVE_TYPES } from '../src/defs.js';
 import * as L from '../src/logic.js';
 import { freshState } from '../src/state.js';
 
-function simulate(minutes, enemyLuck, label){
+// skilled=true reads the scouts and sets the counter-stance; false stays Balanced.
+// Both use hero orders — the delta isolates the value of paying attention.
+function simulate(minutes, enemyLuck, skilled, label){
   const s = freshState(0);
   s.seenIntro = true;
   // resolveWave rolls enemy strength as 0.88 + rand()*0.24; invert for a fixed roll
@@ -57,7 +59,19 @@ function simulate(minutes, enemyLuck, label){
     if(Object.keys(RES_META).some(r => s.res[r] >= L.storageCap(s)-1)) cappedTime++;
 
     /* ── bot decisions ── */
-    if(t >= (s.patrolReady/1000)) L.patrol(s, ms, rand);
+    // stance: the skilled bot answers the scouted shape; the lazy bot never touches it
+    if(skilled && s.b.watchtower >= 1){
+      const want = WAVE_TYPES[s.waveType]?.weakTo || 'balanced';
+      if(s.stance !== want) L.setStance(s, want, ms);
+    }
+    // orders: fire whatever is ready (battle mods persist until the next battle)
+    for(const id of Object.keys(s.heroes)) if(!(s.orderCd[id]>0)) L.useOrder(s, id, ms);
+    // expeditions: chase the current bottleneck
+    if(t >= (s.patrolReady/1000)){
+      const route = s.valor < 15 ? 'barrows'
+        : (s.res.stone + s.res.iron < s.res.food ? 'wildwood' : 'kingsroad');
+      L.expedition(s, route, ms, rand);
+    }
 
     if(s.bq && s.bq.end-ms > 15000){
       const c = L.finishCost(s.bq.end, ms);
@@ -126,6 +140,7 @@ function simulate(minutes, enemyLuck, label){
   console.log('');
 }
 
-simulate(90, 1.0,  '90 min, average luck');
-simulate(90, 1.12, '90 min, worst-case raid rolls');
-simulate(240, 1.0, '4 hours, average luck');
+simulate(90, 1.0,  true,  '90 min, average luck, SKILLED (reads scouts, counters)');
+simulate(90, 1.0,  false, '90 min, average luck, LAZY (never changes stance)');
+simulate(90, 1.12, true,  '90 min, worst-case rolls, skilled');
+simulate(240, 1.0, true,  '4 hours, average luck, skilled');

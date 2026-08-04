@@ -92,6 +92,25 @@ This is the anti-gacha: same excitement of the roll, none of the wallet.
   rosters and meaningfully different end states (power, upkeep profile), while
   overall pacing stays inside the v0.3 targets.
 
+## The command layer (v0.7 — where skill lives)
+
+The loop was fully automatic; these systems convert attention and decisions into
+power, which is how a strategy game values skill:
+
+- **Wave shapes & stances**: raids arrive as Rabble / Riders / Skirmishers / Brutes.
+  The player sets a stance (Shield Wall / Volley / Charge / Balanced); the right
+  counter is +20% power and −40% casualties, a wrong read −8%. The Watchtower
+  reveals the incoming shape — scouting becomes an information advantage.
+- **Captain**: one appointed hero's passive counts double. A swappable build choice.
+- **Orders**: every hero has an active ability on a waves-based cooldown (Rally,
+  Triage, Expose the Camp, Requisition…). Timing them is tactics.
+- **Expeditions** (replaced the Patrol button): three routes with different
+  yields and risk — safe (King's Road), risky stone/iron with 35% ambush
+  (Wildwood), Valor/Mastery gamble (Barrow Hills).
+- **Measured skill gap**: in the sim, an attentive bot that counters scouted waves
+  reaches wave 65 with 4 losses in 90 minutes; an identical account that never
+  changes stance reaches wave 56 with 8. Attention ≈ nine waves of progression.
+
 ## Balance model (v0.3 — simulator-tuned)
 
 Numbers are tuned with `sim.js`, a bot that plays a full session with the exact game

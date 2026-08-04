@@ -59,18 +59,53 @@ export const RARITY = {
 };
 
 export const HERO_POOL = {
-  marshal:      {name:'Ser Alden, the Marshal',  icon:'⚜️', rarity:'common', fx:l=>'+'+(3*l)+'% troop power',            bonus:{troopPower:0.03}},
-  steward:      {name:'Maren, High Steward',     icon:'📜', rarity:'common', fx:l=>'+'+(5*l)+'% production',             bonus:{production:0.05}},
-  warden:       {name:'Odo, the Night Warden',   icon:'🦉', rarity:'common', fx:l=>'−'+(3*l)+'% training time',          bonus:{trainTime:0.03}},
-  quartermaster:{name:'Petra, Quartermaster',    icon:'⚖️', rarity:'common', fx:l=>'+'+(3*l)+'% raid loot',              bonus:{loot:0.03}},
-  gatekeeper:   {name:'Bram, Gatekeeper',        icon:'🚪', rarity:'common', fx:l=>'+'+(6*l)+' wall power',              bonus:{wallPower:6}},
-  forager:      {name:'Isolde, Forager',         icon:'🧺', rarity:'common', fx:l=>'+'+(4*l)+'% patrol yield',           bonus:{patrolYield:0.04}},
-  drillmaster:  {name:'Corin, Drillmaster',      icon:'🥁', rarity:'rare',   fx:l=>'+'+(2*l)+'% troop power, −'+(2*l)+'% training time', bonus:{troopPower:0.02, trainTime:0.02}},
-  spymaster:    {name:'Sable, Spymaster',        icon:'🗝️', rarity:'rare',   fx:l=>'+'+(1*l)+'% raid blunting',          bonus:{blunt:0.01}},
-  medic:        {name:'Wren, Field Medic',       icon:'🌿', rarity:'rare',   fx:l=>'−'+(3*l)+'% casualties',             bonus:{casualties:0.03}},
-  provisioner:  {name:'Tobias, Provisioner',     icon:'🫙', rarity:'rare',   fx:l=>'−'+(2.5*l)+'% army upkeep',          bonus:{upkeep:0.025}},
-  exile:        {name:'Queen Yara, the Exile',   icon:'👑', rarity:'epic',   fx:l=>'+'+(5*l)+'% troop power',            bonus:{troopPower:0.05}},
-  treasurer:    {name:'Aldric, Crown Treasurer', icon:'🪙', rarity:'epic',   fx:l=>'+'+(5*l)+'% Valor earned',           bonus:{valor:0.05}},
+  marshal:      {name:'Ser Alden, the Marshal',  icon:'⚜️', rarity:'common', fx:l=>'+'+(3*l)+'% troop power',            bonus:{troopPower:0.03},
+                 order:{name:'Rally',           desc:'Next battle: +20% army power.',           cd:4, key:'rally'}},
+  steward:      {name:'Maren, High Steward',     icon:'📜', rarity:'common', fx:l=>'+'+(5*l)+'% production',             bonus:{production:0.05},
+                 order:{name:'Requisition',     desc:'Instantly gain food & wood (60 × Town Hall).', cd:5, key:'requisition'}},
+  warden:       {name:'Odo, the Night Warden',   icon:'🦉', rarity:'common', fx:l=>'−'+(3*l)+'% training time',          bonus:{trainTime:0.03},
+                 order:{name:'Forced March',    desc:'Current training completes instantly.',   cd:5, key:'forcedmarch'}},
+  quartermaster:{name:'Petra, Quartermaster',    icon:'⚖️', rarity:'common', fx:l=>'+'+(3*l)+'% raid loot',              bonus:{loot:0.03},
+                 order:{name:'Plunder Wagons',  desc:'Next win: loot ×2.',                      cd:4, key:'plunder'}},
+  gatekeeper:   {name:'Bram, Gatekeeper',        icon:'🚪', rarity:'common', fx:l=>'+'+(6*l)+' wall power',              bonus:{wallPower:6},
+                 order:{name:'Brace the Gates', desc:'Next battle: wall counts double.',        cd:4, key:'brace'}},
+  forager:      {name:'Isolde, Forager',         icon:'🧺', rarity:'common', fx:l=>'+'+(4*l)+'% expedition yield',       bonus:{patrolYield:0.04},
+                 order:{name:'Rich Trails',     desc:'Next expedition: double yield, no ambush.', cd:3, key:'richtrails'}},
+  drillmaster:  {name:'Corin, Drillmaster',      icon:'🥁', rarity:'rare',   fx:l=>'+'+(2*l)+'% troop power, −'+(2*l)+'% training time', bonus:{troopPower:0.02, trainTime:0.02},
+                 order:{name:'Crash Course',    desc:'Next training batch: −75% time.',         cd:4, key:'crashcourse'}},
+  spymaster:    {name:'Sable, Spymaster',        icon:'🗝️', rarity:'rare',   fx:l=>'+'+(1*l)+'% raid blunting',          bonus:{blunt:0.01},
+                 order:{name:'Expose the Camp', desc:'Next wave arrives 15% weaker.',           cd:4, key:'expose'}},
+  medic:        {name:'Wren, Field Medic',       icon:'🌿', rarity:'rare',   fx:l=>'−'+(3*l)+'% casualties',             bonus:{casualties:0.03},
+                 order:{name:'Triage',          desc:'Next battle: no casualties on a win.',    cd:5, key:'triage'}},
+  provisioner:  {name:'Tobias, Provisioner',     icon:'🫙', rarity:'rare',   fx:l=>'−'+(2.5*l)+'% army upkeep',          bonus:{upkeep:0.025},
+                 order:{name:'Ration Stores',   desc:'Upkeep paused for 60s.',                  cd:5, key:'ration'}},
+  exile:        {name:'Queen Yara, the Exile',   icon:'👑', rarity:'epic',   fx:l=>'+'+(5*l)+'% troop power',            bonus:{troopPower:0.05},
+                 order:{name:'Royal Decree',    desc:'Next battle: +30% army power.',           cd:5, key:'decree'}},
+  treasurer:    {name:'Aldric, Crown Treasurer', icon:'🪙', rarity:'epic',   fx:l=>'+'+(5*l)+'% Valor earned',           bonus:{valor:0.05},
+                 order:{name:'Tithe of War',    desc:'Next battle: Valor ×2.',                  cd:4, key:'tithe'}},
+};
+
+/* ── Command layer: raids have a shape, you choose the answer ── */
+export const WAVE_TYPES = {
+  rabble:     {name:'Rabble',      icon:'🪓', weakTo:null},
+  riders:     {name:'Riders',      icon:'🐎', weakTo:'shieldwall'},
+  skirmishers:{name:'Skirmishers', icon:'🏹', weakTo:'charge'},
+  brutes:     {name:'Brutes',      icon:'💪', weakTo:'volley'},
+};
+export const STANCES = {
+  balanced:  {name:'Balanced',    icon:'⚖️', hint:'No bonus, no penalty'},
+  shieldwall:{name:'Shield Wall', icon:'🛡️', hint:'Counters Riders'},
+  volley:    {name:'Volley',      icon:'🏹', hint:'Counters Brutes'},
+  charge:    {name:'Charge',      icon:'⚔️', hint:'Counters Skirmishers'},
+};
+export const COUNTER_BONUS = 1.2, COUNTER_PENALTY = 0.92, COUNTER_CASUALTY = 0.6;
+
+/* ── Expeditions: three routes, one choice, real trade-offs ── */
+export const EXPEDITION_CD = 45000;
+export const EXPEDITIONS = {
+  kingsroad: {name:"King's Road",  icon:'🛤️', desc:'Safe: food & wood, +3 Valor'},
+  wildwood:  {name:'Wildwood',     icon:'🌲', desc:'Risky: stone & iron haul — 35% ambush costs troops'},
+  barrows:   {name:'Barrow Hills', icon:'⚱️', desc:'Strange: +6 Valor, Mastery — rarely a Writ'},
 };
 
 // hero slots unlock at these milestones; each grants a draft of three

@@ -197,6 +197,28 @@ section.panel{
 .pillars{text-align:left;display:flex;flex-direction:column;gap:.6rem;margin:0 auto 1.5rem;max-width:26rem}
 .pillars p{font-size:.88rem;color:var(--ink)}
 .pillars b{color:var(--gold);font-weight:600}
+/* command layer */
+.stance-row{
+  display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-top:.55rem;
+}
+.stance-row .meta{font-family:var(--sans);font-size:.68rem;color:var(--ink-dim);font-variant-numeric:tabular-nums}
+.stance-btn{font-size:.68rem;padding:.25rem .55rem}
+.stance-btn.active{border-color:var(--gold);color:var(--gold);background:#241c0e}
+.capt-btn{
+  font-size:.6rem;padding:.1rem .4rem;margin-left:.4rem;
+  border:1px solid var(--edge);background:none;color:var(--ink-dim);
+}
+.capt-btn.active{color:var(--gold);border-color:var(--gold-deep)}
+.order-row{display:flex;gap:.5rem;align-items:baseline;margin-top:.3rem;flex-wrap:wrap}
+.order-btn{font-size:.64rem;padding:.2rem .5rem;color:var(--info);border-color:#3d4f5c}
+.order-btn:hover:not(:disabled){border-color:var(--info)}
+.exped-row{display:flex;gap:.5rem;flex-wrap:wrap}
+.exped-btn{
+  flex:1;min-width:9rem;display:flex;flex-direction:column;gap:.15rem;align-items:flex-start;
+  text-align:left;padding:.45rem .6rem;
+}
+.exped-btn span{font-size:.6rem;color:var(--ink-dim);font-weight:400}
+
 /* transparency details */
 .stat-note{
   font-family:var(--sans);font-size:.68rem;color:var(--ink-dim);

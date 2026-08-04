@@ -6,6 +6,8 @@
 import {
   BUILDINGS, TROOPS, MASTERY, QUESTS, RES_META,
   HERO_POOL, HERO_SLOTS, SPOILS, RARITY,
+  WAVE_TYPES, STANCES, COUNTER_BONUS, COUNTER_PENALTY, COUNTER_CASUALTY,
+  EXPEDITIONS, EXPEDITION_CD,
   COST_MULT, TH_COST_MULT, TIME_MULT,
   WAVE_MS, FIRST_WAVE_MS, masteryLvl,
 } from './defs.js';
@@ -22,7 +24,7 @@ export function heroBonus(s, key){
   let b = 0;
   for(const [id,h] of Object.entries(s.heroes)){
     const d = HERO_POOL[id];
-    if(d && d.bonus[key]) b += d.bonus[key]*h.lvl;
+    if(d && d.bonus[key]) b += d.bonus[key]*h.lvl * (s.captain===id ? 2 : 1); // the Captain's passive counts double
   }
   return b;
 }
@@ -196,7 +198,8 @@ export function startTraining(s, key, count, now){
   for(const [r,v] of Object.entries(d.cost)) cost[r] = v*count;
   if(!canAfford(s, cost)) return false;
   payCost(s, cost);
-  const dur = d.time*1000*count*trainMult(s);
+  let dur = d.time*1000*count*trainMult(s);
+  if(s.trainFastNext){ dur *= 0.25; s.trainFastNext = false; }
   s.tq = {key, count, start:now, end:now+dur};
   pushLog(s, 'The Barracks begins drilling '+count+' '+d.name+(count>1?'s':'')+'.');
   return true;
@@ -215,18 +218,99 @@ export function finishTrainNow(s, now){
   s.valor -= c; s.tq.end = now;
   return true;
 }
-export function patrol(s, now, rand=Math.random){
+export function expedition(s, route, now, rand=Math.random){
   s.now = now;
-  if(now < s.patrolReady) return false;
-  s.patrolReady = now + 25000 - (perk(s,3)?8000:0);
-  const mult = (perk(s,9)?2:1) * (1 + heroBonus(s,'patrolYield') + spoilBonus(s,'patrolYield'));
-  const th = s.b.townhall, f = Math.round((12+6*th)*mult), w = Math.round((12+6*th)*mult);
-  gainRes(s,'food',f); gainRes(s,'wood',w); gainValor(s, 2);
-  gainMastery(s, 3, now);
-  let extra = '';
-  if(rand() < 0.25){ const st = Math.round((10+4*th)*mult); gainRes(s,'stone',st); extra = ', +'+st+' stone'; }
-  pushLog(s, 'Your patrol returns: +'+f+' food, +'+w+' wood'+extra+', +2 Valor.', 'gold');
+  if(now < s.patrolReady || !EXPEDITIONS[route]) return false;
+  s.patrolReady = now + EXPEDITION_CD - (perk(s,3)?12000:0);
+  const boost = s.expedBoost ? 2 : 1;
+  const mult = (perk(s,9)?2:1) * (1 + heroBonus(s,'patrolYield') + spoilBonus(s,'patrolYield')) * boost;
+  const th = s.b.townhall;
+  const R = n => Math.round(n*mult);
+
+  if(route==='kingsroad'){
+    const f = R(20+8*th), w = R(20+8*th);
+    gainRes(s,'food',f); gainRes(s,'wood',w); gainValor(s,3); gainMastery(s,4,now);
+    pushLog(s, "🛤️ The King's Road expedition returns: +"+f+' food, +'+w+' wood, +3 Valor.', 'gold');
+  }else if(route==='wildwood'){
+    if(!s.expedBoost && rand() < 0.35){
+      let lost = 0;
+      for(const k of Object.keys(TROOPS)){
+        if(s.t[k] > 0){ const l = Math.ceil(s.t[k]*0.04); s.t[k] -= l; lost += l; }
+      }
+      const st = R((15+5*th)/2), ir = R((6+2*th)/2);
+      gainRes(s,'stone',st); gainRes(s,'iron',ir); gainValor(s,1); gainMastery(s,4,now);
+      pushLog(s, '🌲 Ambush in the Wildwood! '+lost+' troops fall covering the retreat — the survivors still haul +'+st+' stone, +'+ir+' iron.', 'loss');
+    }else{
+      const w = R(15+5*th), st = R(15+5*th), ir = R(6+2*th);
+      gainRes(s,'wood',w); gainRes(s,'stone',st); gainRes(s,'iron',ir); gainValor(s,3); gainMastery(s,4,now);
+      pushLog(s, '🌲 The Wildwood expedition returns heavy: +'+w+' wood, +'+st+' stone, +'+ir+' iron, +3 Valor.', 'gold');
+    }
+  }else{ // barrows
+    const f = R(8+3*th);
+    gainRes(s,'food',f); gainValor(s,6); gainMastery(s,8,now);
+    let extra = '';
+    if(rand() < 0.15){ gainShield(s,1); extra = ' A sealed Writ of Peace lay among the barrow-gifts!'; }
+    pushLog(s, '⚱️ The Barrow Hills expedition returns changed: +'+f+' food, +6 Valor, +8 Mastery.'+extra, 'gold');
+  }
+  s.expedBoost = false;
   return true;
+}
+
+export function setStance(s, stance, now){
+  if(!STANCES[stance]) return false;
+  s.now = now;
+  s.stance = stance;
+  return true;
+}
+export function setCaptain(s, id, now){
+  if(!s.heroes[id]) return false;
+  s.now = now;
+  s.captain = (s.captain===id) ? null : id;
+  return true;
+}
+
+export function freshMods(){ return {powerX:1, wallX:1, lootX:1, valorX:1, enemyX:1, noCasual:false}; }
+export function getMods(s){ if(!s.mods) s.mods = freshMods(); return s.mods; }
+
+export function useOrder(s, id, now){
+  s.now = now;
+  const h = s.heroes[id], d = HERO_POOL[id];
+  if(!h || !d || !d.order) return false;
+  if((s.orderCd[id]||0) > 0) return false;
+  const m = getMods(s);
+  switch(d.order.key){
+    case 'rally':       m.powerX *= 1.2; break;
+    case 'decree':      m.powerX *= 1.3; break;
+    case 'brace':       m.wallX = 2; break;
+    case 'plunder':     m.lootX *= 2; break;
+    case 'tithe':       m.valorX *= 2; break;
+    case 'triage':      m.noCasual = true; break;
+    case 'expose':      m.enemyX *= 0.85; break;
+    case 'requisition': gainRes(s,'food',60*s.b.townhall); gainRes(s,'wood',60*s.b.townhall); break;
+    case 'forcedmarch': if(!s.tq) return false; s.tq.end = now; break;
+    case 'crashcourse': s.trainFastNext = true; break;
+    case 'richtrails':  s.expedBoost = true; break;
+    case 'ration':      s.upkeepPauseUntil = now + 60000; break;
+    default: return false;
+  }
+  s.orderCd[id] = d.order.cd;
+  pushLog(s, d.icon+' '+d.name+' — '+d.order.name+': '+d.order.desc, 'gold');
+  return true;
+}
+
+export function rollWaveType(rand){
+  const r = rand();
+  if(r < 0.25) return 'rabble';
+  if(r < 0.50) return 'riders';
+  if(r < 0.75) return 'skirmishers';
+  return 'brutes';
+}
+export function counterMult(s){
+  const wt = WAVE_TYPES[s.waveType||'rabble'];
+  if(!wt.weakTo) return 1;
+  if(s.stance === wt.weakTo) return COUNTER_BONUS;
+  if(s.stance !== 'balanced') return COUNTER_PENALTY;
+  return 1;
 }
 export function raiseShield(s, now){
   s.now = now;
@@ -242,27 +326,35 @@ export function raiseShield(s, now){
 export function resolveWave(s, now, rand=Math.random){
   const w = s.wave;
   const isWB = w % 5 === 0; // every 5th raid is an elite Warband
-  const label = isWB ? 'Warband' : 'Raid';
+  const wt = WAVE_TYPES[s.waveType||'rabble'];
+  const label = (isWB ? 'Warband' : 'Raid')+' '+w+' ('+wt.name+')';
+  const mods = getMods(s);
+  const cm = counterMult(s);
   const raw = wavePower(w) * (isWB?1.6:1) * (0.88 + rand()*0.24) * streakMult(s);
-  const enemy = raw * (1-bluntMult(s));
-  const mine = armyPower(s);
+  const enemy = raw * (1-bluntMult(s)) * mods.enemyX;
+  const bd = armyBreakdown(s);
+  const mine = Math.round(bd.base*bd.mult*cm*mods.powerX + bd.wall*mods.wallX);
+  const stanceNote = cm > 1 ? ' Your '+STANCES[s.stance].name+' broke their '+wt.name+' (+20%).'
+                  : cm < 1 ? ' Your '+STANCES[s.stance].name+' was the wrong answer to '+wt.name+' (−8%).' : '';
   s.nextWave = now + WAVE_MS;
 
   if(mine >= enemy){
-    // casualties scale with how close it was
+    // casualties scale with how close it was; a right counter-read spills less blood
     const ratio = enemy/Math.max(mine,1);
-    const lossFrac = 0.30 * ratio*ratio * Math.max(0.5, 1 - heroBonus(s,'casualties'));
+    let lossFrac = 0.30 * ratio*ratio * Math.max(0.5, 1 - heroBonus(s,'casualties'));
+    if(cm > 1) lossFrac *= COUNTER_CASUALTY;
+    if(mods.noCasual) lossFrac = 0;
     let lost = 0;
     for(const k of Object.keys(TROOPS)){
       const l = Math.round(s.t[k] * lossFrac * (0.7+rand()*0.6));
       s.t[k] = Math.max(0, s.t[k]-l); lost += l;
     }
-    const lootMult = (isWB?2:1) * (1 + heroBonus(s,'loot') + spoilBonus(s,'loot'));
+    const lootMult = (isWB?2:1) * (1 + heroBonus(s,'loot') + spoilBonus(s,'loot')) * mods.lootX;
     const base = 15*Math.pow(w,0.8);
     const loot = {food:Math.round(base*lootMult), wood:Math.round(base*lootMult),
                   stone:Math.round(0.4*base*lootMult), iron:Math.round(0.2*base*lootMult)};
     for(const [r,v] of Object.entries(loot)) gainRes(s,r,v);
-    const valor = (5+Math.min(w,15)) * (isWB?2:1);
+    const valor = Math.round((5+Math.min(w,15)) * (isWB?2:1) * mods.valorX);
     gainValor(s, valor);
     for(const h of Object.values(s.heroes)) h.xp += (12+3*w)*(isWB?2:1);
     gainMastery(s, (8+2*w)*(isWB?2:1), now);
@@ -271,9 +363,9 @@ export function resolveWave(s, now, rand=Math.random){
       s.warbandsWon++; gainShield(s,1);
       s.choiceQueue.push({type:'spoil', options: rollSpoilOffer(s, rand), reroll:1});
     }
-    pushLog(s, label+' '+w+' repelled! Loot: +'+fmt(loot.food)+' food, +'+fmt(loot.wood)+' wood, +'+fmt(loot.stone)+' stone, +'+fmt(loot.iron)+' iron. +'+valor+' Valor.'
+    pushLog(s, label+' repelled!'+stanceNote+' Loot: +'+fmt(loot.food)+' food, +'+fmt(loot.wood)+' wood, +'+fmt(loot.stone)+' stone, +'+fmt(loot.iron)+' iron. +'+valor+' Valor.'
       +(isWB?' A Writ of Peace was captured — and spoils are yours to choose.':'')+(lost?' Fallen: '+lost+'.':''), 'win');
-    showBanner(s, '⚔️ '+label+' '+w+' repelled — +'+valor+' Valor'+(lost?', '+lost+' fallen':''), 'win', now);
+    showBanner(s, '⚔️ '+label+' repelled — +'+valor+' Valor'+(lost?', '+lost+' fallen':''), 'win', now);
   }else{
     s.streak++;
     s.wavesLost = (s.wavesLost||0)+1;
@@ -283,9 +375,14 @@ export function resolveWave(s, now, rand=Math.random){
     gainValor(s, 2);
     gainMastery(s, 3, now);
     gainShield(s, 1);
-    pushLog(s, label+' '+w+' breaks through the gate and carries off part of your stores — but your defenders bloodied them, and the next assault will come weaker. +2 Valor, and a Writ of Peace is granted.', 'loss');
-    showBanner(s, '🔥 '+label+' '+w+' broke through — they return weaker next time', 'loss', now);
+    pushLog(s, label+' breaks through the gate and carries off part of your stores.'+stanceNote+' Your defenders bloodied them — the next assault will come weaker. +2 Valor, and a Writ of Peace is granted.', 'loss');
+    showBanner(s, '🔥 '+label+' broke through — they return weaker next time', 'loss', now);
   }
+
+  // the battle consumes orders; the next band takes shape on the horizon
+  s.mods = freshMods();
+  for(const id of Object.keys(s.orderCd)) if(s.orderCd[id] > 0) s.orderCd[id]--;
+  s.waveType = rollWaveType(rand);
 }
 
 /* ── the simulation step: everything that happens per tick ── */
@@ -302,7 +399,7 @@ export function tick(s, now, dt, rand=Math.random){
   for(const r of Object.keys(RES_META)) gainRes(s, r, prodPerSec(s,r)*dt);
 
   // armies eat: upkeep drains food; an unfed muster deserts
-  s.res.food -= upkeepPerSec(s)*dt;
+  if(!(s.upkeepPauseUntil > now)) s.res.food -= upkeepPerSec(s)*dt;
   if(s.res.food < 0){
     s.res.food = 0;
     s.famineAcc = (s.famineAcc||0) + dt;
