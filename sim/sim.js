@@ -66,11 +66,15 @@ function simulate(minutes, enemyLuck, skilled, label){
     }
     // orders: fire whatever is ready (battle mods persist until the next battle)
     for(const id of Object.keys(s.heroes)) if(!(s.orderCd[id]>0)) L.useOrder(s, id, ms);
-    // expeditions: chase the current bottleneck
-    if(t >= (s.patrolReady/1000)){
-      const route = s.valor < 15 ? 'barrows'
-        : (s.res.stone + s.res.iron < s.res.food ? 'wildwood' : 'kingsroad');
-      L.expedition(s, route, ms, rand);
+    // expeditions: the skilled bot dispatches by hand; the lazy one sets a caravan and forgets
+    if(skilled){
+      if(t >= (s.patrolReady/1000)){
+        const route = s.valor < 15 ? 'barrows'
+          : (s.res.stone + s.res.iron < s.res.food ? 'wildwood' : 'kingsroad');
+        L.expedition(s, route, ms, rand);
+      }
+    }else if(!s.caravan){
+      L.setCaravan(s, 'kingsroad', ms);
     }
 
     if(s.bq && s.bq.end-ms > 15000){

@@ -14,7 +14,7 @@ import {
   maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost,
   wavePower, streakMult, finishCost, xpNeed,
   startUpgrade, startTraining, finishBuildNow, finishTrainNow, raiseShield,
-  expedition, setStance, setCaptain, useOrder,
+  expedition, setCaravan, setStance, setCaptain, useOrder,
   chooseOption, rerollChoice,
 } from './logic.js';
 import { store, freshState, save } from './state.js';
@@ -174,13 +174,20 @@ function renderMuster(S){
     }
   }
   const now = Date.now(), cd = S.patrolReady - now;
+  let note = cd>0 ? 'next in '+ftime(cd) : 'a road is open';
+  if(cd<=0 && S.caravan) note = '⛺ caravan departs in '+ftime(S.patrolReady+15000-now)+' — dispatch by hand for full yield';
   h += '<div style="margin-top:.7rem">'
-    + '<div class="stat-note">Expeditions — pick a road'+(cd>0?' · next in '+ftime(cd):'')
+    + '<div class="stat-note">Expeditions — '+note
     + (S.expedBoost?' · <b style="color:var(--gold)">Rich Trails: next is ×2 and safe</b>':'')+'</div>'
     + '<div class="exped-row">';
   for(const [k,e] of Object.entries(EXPEDITIONS)){
-    h += '<button class="exped-btn" data-act="expedition" data-key="'+k+'" '+(cd>0?'disabled':'')+' title="'+e.desc+'">'
-      + e.icon+' '+e.name+'<span>'+e.desc+'</span></button>';
+    h += '<div class="exped-col">'
+      + '<button class="exped-btn" data-act="expedition" data-key="'+k+'" '+(cd>0?'disabled':'')+' title="'+e.desc+'">'
+      + e.icon+' '+e.name+'<span>'+e.desc+'</span></button>'
+      + '<button class="cara-btn'+(S.caravan===k?' active':'')+'" data-act="caravan" data-key="'+k+'" '
+      + 'title="Standing caravan: auto-runs this road at half yield — resources only, no Valor, no ambush">'
+      + (S.caravan===k?'⛺ caravan assigned':'⛺ set caravan')+'</button>'
+      + '</div>';
   }
   h += '</div></div>';
   h += '</section>';
@@ -404,6 +411,7 @@ function renderCodex(S){
     + '<li><b>Captain</b>: appoint one hero — their passive counts double. Swap freely; it is a build choice, not a lock.</li>'
     + '<li><b>Orders</b>: every hero has an active ability on a cooldown measured in waves (Rally, Triage, Requisition…). Battle orders are consumed by the next battle.</li>'
     + '<li><b>Expeditions</b>: the King&#39;s Road is safe (food/wood, +3 Valor). Wildwood pays stone &amp; iron but a 35% ambush costs ~4% of troops. Barrow Hills pays Valor &amp; Mastery with a 15% Writ chance. One road per cooldown.</li>'
+    + '<li><b>Standing caravan</b>: assign a road and it auto-runs 15s after each cooldown at half yield — resources only, no Valor, no Mastery, no ambush, and it keeps running while you are away (2h cap). Dispatching by hand always pays roughly 2.7× more.</li>'
     + '</ul>'
 
     + '<h3>Valor &amp; Writs</h3>'
@@ -492,6 +500,7 @@ const ACTIONS = {
   finishBuild: () => finishBuildNow(store.s, Date.now()),
   finishTrain: () => finishTrainNow(store.s, Date.now()),
   expedition:  b => expedition(store.s, b.dataset.key, Date.now()),
+  caravan:     b => setCaravan(store.s, b.dataset.key, Date.now()),
   stance:      b => setStance(store.s, b.dataset.key, Date.now()),
   captain:     b => setCaptain(store.s, b.dataset.key, Date.now()),
   order:       b => useOrder(store.s, b.dataset.key, Date.now()),

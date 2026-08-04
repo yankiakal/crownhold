@@ -254,13 +254,44 @@ export function finishTrainNow(s, now){
   s.valor -= c; s.tq.end = now;
   return true;
 }
+export const CARAVAN_GRACE = 15000, CARAVAN_YIELD = 0.5;
+export function expedCdMs(s){
+  return Math.max(15000, EXPEDITION_CD - (perk(s,3)?12000:0) - 1000*(s.b.tavern||0));
+}
+export function expedMult(s){
+  return (perk(s,9)?2:1) * (1 + heroBonus(s,'patrolYield') + spoilBonus(s,'patrolYield') + 0.03*(s.b.tavern||0));
+}
+/* the standing caravan: set-and-forget half-yield runs — resources only, no
+   Valor, no Mastery, no ambush. Presence stays strictly better. */
+export function caravanYields(s){
+  const m = expedMult(s) * CARAVAN_YIELD, th = s.b.townhall;
+  if(s.caravan==='kingsroad') return {food:Math.round((20+8*th)*m), wood:Math.round((20+8*th)*m)};
+  if(s.caravan==='wildwood')  return {wood:Math.round((15+5*th)*m), stone:Math.round((15+5*th)*m), iron:Math.round((6+2*th)*m)};
+  if(s.caravan==='barrows')   return {food:Math.round((8+3*th)*m)};
+  return null;
+}
+export function caravanRun(s, now){
+  const y = caravanYields(s);
+  if(!y) return false;
+  s.now = now;
+  for(const [r,v] of Object.entries(y)) gainRes(s,r,v);
+  s.patrolReady = now + expedCdMs(s);
+  pushLog(s, '⛺ The standing caravan returns from '+EXPEDITIONS[s.caravan].name+': '
+    + Object.entries(y).map(([r,v])=>'+'+v+' '+r).join(', ')+' (half yield — dispatch by hand for the full run).');
+  return true;
+}
+export function setCaravan(s, route, now){
+  s.now = now;
+  s.caravan = (s.caravan===route || !EXPEDITIONS[route]) ? null : route;
+  return true;
+}
+
 export function expedition(s, route, now, rand=Math.random){
   s.now = now;
   if(now < s.patrolReady || !EXPEDITIONS[route]) return false;
-  s.patrolReady = now + Math.max(15000,
-    EXPEDITION_CD - (perk(s,3)?12000:0) - 1000*(s.b.tavern||0));
+  s.patrolReady = now + expedCdMs(s);
   const boost = s.expedBoost ? 2 : 1;
-  const mult = (perk(s,9)?2:1) * (1 + heroBonus(s,'patrolYield') + spoilBonus(s,'patrolYield') + 0.03*(s.b.tavern||0)) * boost;
+  const mult = expedMult(s) * boost;
   const th = s.b.townhall;
   const R = n => Math.round(n*mult);
 
@@ -503,6 +534,9 @@ export function tick(s, now, dt, rand=Math.random){
       pushLog(s, d.name+' rises to level '+h.lvl+'.', 'gold');
     }
   }
+
+  // the standing caravan departs on its own if you leave the road idle
+  if(s.caravan && now >= s.patrolReady + CARAVAN_GRACE) caravanRun(s, now);
 
   if(s.banner && now > s.banner.until) s.banner = null;
 }

@@ -1,7 +1,8 @@
 // Crownhold state: fresh-state shape, persistence, save migration.
 
-import { RES_META, FIRST_WAVE_MS } from './defs.js';
-import { prodPerSec, upkeepPerSec, storageCap, pushLog, fmt } from './logic.js';
+import { RES_META, FIRST_WAVE_MS, EXPEDITIONS } from './defs.js';
+import { prodPerSec, upkeepPerSec, storageCap, pushLog, fmt,
+         expedCdMs, caravanYields, CARAVAN_GRACE } from './logic.js';
 
 export const SAVE_KEY = 'crownhold-save-v1';
 
@@ -25,7 +26,7 @@ export function freshState(now){
     trained:0, trainedBy:{},
     mxp:0, shields:0, shieldUntil:0, warbandsWon:0, streak:0, famineAcc:0,
     questIdx:0,
-    patrolReady:0,
+    patrolReady:0, caravan:null,
     log:[], banner:null,
     seenIntro:false,
     now, lastSeen:now,
@@ -70,6 +71,7 @@ export function load(now){
     if(s.upkeepPauseUntil==null) s.upkeepPauseUntil = 0;
     if(s.trainFastNext==null) s.trainFastNext = false;
     if(s.expedBoost==null) s.expedBoost = false;
+    if(s.caravan===undefined) s.caravan = null;
     // offline production (capped at 2 hours), net of army upkeep
     const away = Math.min(Math.max(now - (s.lastSeen||now), 0), 7200000);
     if(away > 60000){
@@ -81,6 +83,16 @@ export function load(now){
         else if(g < 0) s.res[r] = Math.max(0, s.res[r]+g); // drain, but no desertion offline
       }
       if(gained.length) pushLog(s, 'While you were away, the hold produced '+gained.join(', ')+' (after feeding the muster).', 'gold');
+      // the standing caravan kept running while you were gone
+      if(s.caravan){
+        const cycles = Math.floor(away / (expedCdMs(s) + CARAVAN_GRACE));
+        const y = caravanYields(s);
+        if(cycles > 0 && y){
+          for(const [r,v] of Object.entries(y)) s.res[r] = Math.min(s.res[r] + v*cycles, storageCap(s));
+          pushLog(s, '⛺ Your standing caravan ran '+EXPEDITIONS[s.caravan].name+' '+cycles+'× while you were away: '
+            + Object.entries(y).map(([r,v])=>'+'+fmt(v*cycles)+' '+r).join(', ')+'.', 'gold');
+        }
+      }
     }
     if(s.nextWave < now) s.nextWave = now + 60000;
     if(s.banner) s.banner = null;
