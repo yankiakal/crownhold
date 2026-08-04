@@ -12,8 +12,10 @@ export function freshState(now){
   return {
     res:{food:120,wood:120,stone:60,iron:0},
     valor:0,
-    b:{townhall:1,farm:1,lumberyard:1,quarry:0,ironmine:0,barracks:0,wall:0,watchtower:0},
+    b:{townhall:1,farm:1,lumberyard:1,quarry:0,ironmine:0,barracks:0,wall:0,watchtower:0,
+       tavern:0,granary:0,academy:0,hospital:0,warehouse:0},
     t:{spearman:8,archer:0,knight:0,ballista:0},
+    tier:{spearman:1,archer:1,knight:1,ballista:1},
     heroes:{}, spoils:{},
     choice:null, choiceQueue:[], offersDone:0,
     stance:'balanced', captain:null, orderCd:{}, mods:null,
@@ -56,6 +58,9 @@ export function load(now){
     if(s.choiceQueue==null) s.choiceQueue = [];
     if(s.choice===undefined) s.choice = null;
     if(s.offersDone==null) s.offersDone = Object.keys(s.heroes).length;
+    // v0.8 long road
+    if(s.tier==null) s.tier = {spearman:1,archer:1,knight:1,ballista:1};
+    for(const k of ['tavern','granary','academy','hospital','warehouse']) if(s.b[k]==null) s.b[k] = 0;
     // v0.7 command layer
     if(s.stance==null) s.stance = 'balanced';
     if(s.captain===undefined) s.captain = null;

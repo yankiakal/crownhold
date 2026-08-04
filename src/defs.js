@@ -3,19 +3,34 @@
 
 export const BUILDINGS = {
   townhall:  {name:'Town Hall',  icon:'🏰', fx:'Raises storage caps; gates every other building.',
-              cost:{wood:120,stone:90}, time:20, max:10},
-  farm:      {name:'Farm',       icon:'🌾', prod:'food', rate:2.0, cost:{wood:30},           time:8,  max:10},
-  lumberyard:{name:'Lumberyard', icon:'🪵', prod:'wood', rate:1.6, cost:{food:30},           time:8,  max:10},
-  quarry:    {name:'Quarry',     icon:'⛰️', prod:'stone',rate:1.0, cost:{wood:60,food:40},   time:12, max:10},
-  ironmine:  {name:'Iron Mine',  icon:'⚒️', prod:'iron', rate:0.7, cost:{wood:80,stone:60},  time:15, max:10, th:3},
-  barracks:  {name:'Barracks',   icon:'⚔️', fx:'Trains troops; each level trains 8% faster.',
-              cost:{wood:60,stone:30},  time:15, max:10},
+              cost:{wood:200,stone:150}, time:20, max:20},
+  farm:      {name:'Farm',       icon:'🌾', prod:'food', rate:2.0, cost:{wood:30},           time:8,  max:20},
+  lumberyard:{name:'Lumberyard', icon:'🪵', prod:'wood', rate:1.6, cost:{food:30},           time:8,  max:20},
+  quarry:    {name:'Quarry',     icon:'⛰️', prod:'stone',rate:1.0, cost:{wood:60,food:40},   time:12, max:20},
+  ironmine:  {name:'Iron Mine',  icon:'⚒️', prod:'iron', rate:0.7, cost:{wood:80,stone:60},  time:15, max:20, th:3},
+  barracks:  {name:'Barracks',   icon:'⚔️', fx:'Trains troops; each level trains 6% faster.',
+              cost:{wood:60,stone:30},  time:15, max:20},
   wall:      {name:'Wall',       icon:'🧱', fx:'+18 defense power per level.',
-              cost:{stone:90,wood:40},  time:18, max:10, th:2},
-  watchtower:{name:'Watchtower', icon:'🗼', fx:'Scouts raid strength; blunts attacks 5% per level.',
-              cost:{wood:120,stone:80,iron:20}, time:20, max:6, th:3},
+              cost:{stone:90,wood:40},  time:18, max:20, th:2},
+  watchtower:{name:'Watchtower', icon:'🗼', fx:'Scouts raid shape & strength; blunts attacks 4% per level.',
+              cost:{wood:120,stone:80,iron:20}, time:20, max:10, th:3},
+  tavern:    {name:'Tavern',     icon:'🍺', fx:'Expeditions: −1s cooldown and +3% yield per level.',
+              cost:{wood:90,food:60},   time:14, max:15, th:2},
+  granary:   {name:'Granary',    icon:'🏺', fx:'+2% food production and +3% storage per level.',
+              cost:{wood:100,stone:40}, time:16, max:15, th:3},
+  academy:   {name:'War Academy',icon:'🎓', fx:'Each level unlocks the next troop tier.',
+              cost:{stone:150,iron:60}, time:25, max:9,  th:4},
+  hospital:  {name:'Hospital',   icon:'⛑️', fx:'−4% battle casualties per level.',
+              cost:{wood:120,food:80},  time:18, max:15, th:4},
+  warehouse: {name:'Warehouse',  icon:'📦', fx:'Defeats plunder 4% less of your stores per level.',
+              cost:{stone:130,wood:80}, time:18, max:15, th:5},
 };
-export const COST_MULT = 1.55, TH_COST_MULT = 1.7, TIME_MULT = 1.42;
+// polynomial curves: early levels are quick, late levels are the long road
+export const COST_EXP = 2.0, TIME_EXP = 1.6;
+
+/* ── troop tiers: the same soldier, forged better. Unlocked by the War Academy ── */
+export const TIERS = ['I','II','III','IV','V','VI','VII','VIII','IX','X'];
+export const TIER_POWER = 0.25, TIER_UPKEEP = 0.18, TIER_COST = 0.22;
 
 /* upkeep: food/sec per soldier — armies eat. This is what keeps army size in
    equilibrium with your farms instead of scaling to infinity. */
@@ -31,14 +46,24 @@ export const TROOPS = {
 export const MASTERY = [
   {need:60,   fx:'+6% production'},
   {need:190,  fx:'+6% troop power'},
-  {need:400,  fx:'Patrol cooldown −8s'},
+  {need:400,  fx:'Expedition cooldown −12s'},
   {need:700,  fx:'+15% storage'},
   {need:1100, fx:'−12% build & training time'},
   {need:1600, fx:'Another champion answers (hero slot)'},
   {need:2200, fx:'Writ of Peace capacity +1'},
   {need:2900, fx:'+8% production & troop power'},
-  {need:3700, fx:'Patrols return double resources'},
+  {need:3700, fx:'Expeditions return double resources'},
   {need:4600, fx:'+15% troop power — High Sovereign'},
+  {need:5800, fx:'+8% production'},
+  {need:7300, fx:'+8% troop power'},
+  {need:9200, fx:'+10% storage'},
+  {need:11600,fx:'Writ of Peace capacity +1'},
+  {need:14700,fx:'−10% casualties'},
+  {need:18600,fx:'−8% army upkeep'},
+  {need:23500,fx:'+15% raid loot'},
+  {need:29700,fx:'−10% build & training time'},
+  {need:37500,fx:'+10% Valor earned'},
+  {need:47500,fx:'+20% troop power — Crown Eternal'},
 ];
 
 export function masteryLvl(s){
@@ -159,6 +184,12 @@ export const QUESTS = [
   {txt:'Reach Mastery 6',                check:s=>masteryLvl(s)>=6,   reward:{valor:15},          rtxt:'+15 Valor'},
   {txt:'Repel 25 raids',                 check:s=>s.wavesWon>=25,     reward:{valor:25},          rtxt:'+25 Valor'},
   {txt:'Reach Town Hall 10',             check:s=>s.b.townhall>=10,   reward:{valor:50},          rtxt:'+50 Valor'},
+  {txt:'Build the War Academy',          check:s=>s.b.academy>=1,     reward:{valor:15},          rtxt:'+15 Valor'},
+  {txt:'Promote a troop to Tier II',     check:s=>s.tier && Object.values(s.tier).some(t=>t>=2), reward:{valor:15}, rtxt:'+15 Valor'},
+  {txt:'Reach Town Hall 12',             check:s=>s.b.townhall>=12,   reward:{valor:30,shield:1}, rtxt:'+30 Valor, +1 Writ'},
+  {txt:'Reach Mastery 12',               check:s=>masteryLvl(s)>=12,  reward:{valor:20},          rtxt:'+20 Valor'},
+  {txt:'Reach Town Hall 15',             check:s=>s.b.townhall>=15,   reward:{valor:40,shield:1}, rtxt:'+40 Valor, +1 Writ'},
+  {txt:'Reach Town Hall 20',             check:s=>s.b.townhall>=20,   reward:{valor:100},         rtxt:'+100 Valor'},
 ];
 
 export const RES_META = {

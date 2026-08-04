@@ -204,11 +204,6 @@ section.panel{
 .stance-row .meta{font-family:var(--sans);font-size:.68rem;color:var(--ink-dim);font-variant-numeric:tabular-nums}
 .stance-btn{font-size:.68rem;padding:.25rem .55rem}
 .stance-btn.active{border-color:var(--gold);color:var(--gold);background:#241c0e}
-.capt-btn{
-  font-size:.6rem;padding:.1rem .4rem;margin-left:.4rem;
-  border:1px solid var(--edge);background:none;color:var(--ink-dim);
-}
-.capt-btn.active{color:var(--gold);border-color:var(--gold-deep)}
 .order-row{display:flex;gap:.5rem;align-items:baseline;margin-top:.3rem;flex-wrap:wrap}
 .order-btn{font-size:.64rem;padding:.2rem .5rem;color:var(--info);border-color:#3d4f5c}
 .order-btn:hover:not(:disabled){border-color:var(--info)}
@@ -226,18 +221,21 @@ section.panel{
 }
 .stat-note b{color:var(--ink)}
 .trow{flex-wrap:wrap}
-.tdetail{
-  flex-basis:100%;font-family:var(--sans);font-size:.66rem;color:var(--ink-dim);
-  display:none;gap:.4rem;align-items:baseline;padding-left:1.6rem;
-}
-.trow:hover .tdetail,.trow.open .tdetail{display:flex}
-.tdetail .cost{font-size:.66rem;display:inline-flex}
+.tier-tag{font-family:var(--sans);font-size:.6rem;color:var(--gold);letter-spacing:.08em}
 .info-btn{
-  font-size:.6rem;padding:.05rem .3rem;border:none;background:none;
-  color:var(--ink-dim);cursor:pointer;
+  font-size:.72rem;padding:.1rem .45rem;border:1px solid var(--edge);background:none;
+  color:var(--ink-dim);cursor:pointer;border-radius:3px;
 }
-.info-btn:hover{color:var(--gold)}
-.trow.open .info-btn{color:var(--gold)}
+.info-btn:hover{color:var(--gold);border-color:var(--gold-deep)}
+
+/* tap-to-inspect detail sheet */
+.card.dsheet{max-width:26rem;text-align:left}
+.card.dsheet h1{text-align:center;letter-spacing:.06em}
+.d-fx{font-size:.9rem;color:var(--ink);font-style:italic;margin-bottom:.4rem}
+.d-row{font-family:var(--sans);font-size:.78rem;color:var(--ink-dim);margin:.3rem 0;font-variant-numeric:tabular-nums}
+.d-row b{color:var(--ink)}
+.d-delta{font-family:var(--sans);font-size:.78rem;color:var(--info);margin:.4rem 0}
+.d-warn{font-family:var(--sans);font-size:.75rem;color:var(--bad);margin:.3rem 0}
 .m-row{
   display:flex;gap:.4rem;align-items:baseline;
   font-family:var(--sans);font-size:.68rem;color:var(--ink-dim);

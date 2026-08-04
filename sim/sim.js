@@ -94,6 +94,7 @@ function simulate(minutes, enemyLuck, skilled, label){
       if(eligible('townhall')) pick = 'townhall';
       else if(s.b.quarry===0 && eligible('quarry')) pick = 'quarry';
       else if(s.b.barracks===0 && eligible('barracks')) pick = 'barracks';
+      else if(s.b.academy < 6 && eligible('academy')) pick = 'academy';
       else {
         const prodOf = {food:'farm',wood:'lumberyard',stone:'quarry',iron:'ironmine'};
         const order = [...Object.keys(RES_META)].sort((a,b)=>s.res[a]-s.res[b]);
@@ -101,9 +102,15 @@ function simulate(minutes, enemyLuck, skilled, label){
         if(!pick && s.b.wall<s.b.townhall && eligible('wall')) pick='wall';
         if(!pick && s.b.barracks<s.b.townhall && eligible('barracks')) pick='barracks';
         if(!pick && s.b.watchtower<3 && eligible('watchtower')) pick='watchtower';
+        if(!pick) for(const k of ['tavern','granary','hospital','warehouse']) if(eligible(k)){ pick=k; break; }
       }
       if(pick) L.startUpgrade(s, pick, ms);
       else idleBuild++;
+    }
+
+    // promote troop tiers when the Academy allows and stores permit
+    for(const k of ['ballista','knight','archer','spearman']){
+      if(L.tierOf(s,k) < L.maxTier(s) && L.canAfford(s, L.promoteCost(s,k))){ L.promote(s, k, ms); break; }
     }
 
     // training: keep ahead of the next wave, but never beyond food sustainability
@@ -142,5 +149,5 @@ function simulate(minutes, enemyLuck, skilled, label){
 
 simulate(90, 1.0,  true,  '90 min, average luck, SKILLED (reads scouts, counters)');
 simulate(90, 1.0,  false, '90 min, average luck, LAZY (never changes stance)');
-simulate(90, 1.12, true,  '90 min, worst-case rolls, skilled');
 simulate(240, 1.0, true,  '4 hours, average luck, skilled');
+simulate(480, 1.0, true,  '8 hours, average luck, skilled — the long road');

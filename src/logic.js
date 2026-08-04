@@ -8,7 +8,7 @@ import {
   HERO_POOL, HERO_SLOTS, SPOILS, RARITY,
   WAVE_TYPES, STANCES, COUNTER_BONUS, COUNTER_PENALTY, COUNTER_CASUALTY,
   EXPEDITIONS, EXPEDITION_CD,
-  COST_MULT, TH_COST_MULT, TIME_MULT,
+  COST_EXP, TIME_EXP, TIERS, TIER_POWER, TIER_UPKEEP, TIER_COST,
   WAVE_MS, FIRST_WAVE_MS, masteryLvl,
 } from './defs.js';
 
@@ -39,46 +39,78 @@ export function spoilBonus(s, key){
 
 /* ── derived values ── */
 export function perk(s,n){ return masteryLvl(s)>=n; }
-export function shieldCap(s){ return 2 + (perk(s,7)?1:0) + spoilBonus(s,'shieldCap'); }
-export function storageCapFor(s, thLvl){ return Math.round(800 * Math.pow(thLvl,1.35) * (perk(s,4)?1.15:1)); }
+export function shieldCap(s){ return 2 + (perk(s,7)?1:0) + (perk(s,14)?1:0) + spoilBonus(s,'shieldCap'); }
+export function storageCapFor(s, thLvl){
+  return Math.round(800 * Math.pow(thLvl,1.7)
+    * (1 + 0.03*(s.b.granary||0))
+    * (perk(s,4)?1.15:1) * (perk(s,13)?1.10:1));
+}
 export function storageCap(s){ return storageCapFor(s, s.b.townhall); }
 export function prodMult(s, res){
   const resKey = {food:'foodProd',wood:'woodProd',stone:'stoneProd',iron:'ironProd'}[res];
-  return 1 + heroBonus(s,'production') + (perk(s,1)?0.06:0) + (perk(s,8)?0.08:0) + spoilBonus(s,resKey);
+  return 1 + heroBonus(s,'production') + (perk(s,1)?0.06:0) + (perk(s,8)?0.08:0) + (perk(s,11)?0.08:0)
+       + (res==='food' ? 0.02*(s.b.granary||0) : 0)
+       + spoilBonus(s,resKey);
 }
 export function prodPerSec(s, res){
   let p = 0;
   for(const [k,d] of Object.entries(BUILDINGS)) if(d.prod===res) p += d.rate * s.b[k];
   return p * prodMult(s,res);
 }
+/* ── troop tiers ── */
+export function maxTier(s){ return Math.min(10, (s.b.academy||0)+1); }
+export function tierOf(s,k){ return (s.tier && s.tier[k]) || 1; }
+export function tierPower(s,k){ return TROOPS[k].power * (1 + TIER_POWER*(tierOf(s,k)-1)); }
+export function tierUpkeep(s,k){ return TROOPS[k].upkeep * (1 + TIER_UPKEEP*(tierOf(s,k)-1)); }
+export function tierCostMult(s,k){ return 1 + TIER_COST*(tierOf(s,k)-1); }
+export function promoteCost(s,k){
+  const d = TROOPS[k], n = Math.max(s.t[k],1), next = tierOf(s,k)+1, c = {};
+  for(const [r,v] of Object.entries(d.cost)) c[r] = Math.ceil(v * (1 + TIER_COST*(next-1)) * 0.5 * n);
+  return c;
+}
+export function promote(s, k, now){
+  s.now = now;
+  const cur = tierOf(s,k);
+  if(cur >= maxTier(s)) return false;
+  const c = promoteCost(s,k);
+  if(!canAfford(s,c)) return false;
+  payCost(s,c);
+  s.tier[k] = cur+1;
+  pushLog(s, TROOPS[k].icon+' Every '+TROOPS[k].name+' is reforged to Tier '+TIERS[cur]+' — new recruits will match.', 'gold');
+  return true;
+}
+
 export function upkeepPerSec(s){
   let u = 0;
-  for(const [k,d] of Object.entries(TROOPS)) u += d.upkeep * (s.t[k]||0);
-  return u * Math.max(0.55, 1 - heroBonus(s,'upkeep') - spoilBonus(s,'upkeep'));
+  for(const k of Object.keys(TROOPS)) u += tierUpkeep(s,k) * (s.t[k]||0);
+  return u * Math.max(0.5, 1 - heroBonus(s,'upkeep') - spoilBonus(s,'upkeep') - (perk(s,16)?0.08:0));
 }
 export function buildCost(s,k){
   const d=BUILDINGS[k], lvl=s.b[k], c={};
-  const mult = k==='townhall' ? TH_COST_MULT : COST_MULT;
-  for(const [r,v] of Object.entries(d.cost)) c[r] = Math.round(v * Math.pow(mult,lvl));
+  const mult = Math.max(1, Math.pow(lvl, COST_EXP));
+  for(const [r,v] of Object.entries(d.cost)) c[r] = Math.round(v * mult);
   return c;
 }
 export function buildTime(s,k){
   const spoilMult = Math.max(0.5, 1 - spoilBonus(s,'buildTime'));
-  return Math.min(300, BUILDINGS[k].time * Math.pow(TIME_MULT, s.b[k]) * (perk(s,5)?0.88:1) * spoilMult) * 1000;
+  return Math.min(600, BUILDINGS[k].time * Math.max(1, Math.pow(s.b[k], TIME_EXP))
+    * (perk(s,5)?0.88:1) * (perk(s,18)?0.9:1) * spoilMult) * 1000;
 }
 export function canAfford(s,cost){ return Object.entries(cost).every(([r,v]) => s.res[r] >= v); }
 export function payCost(s,cost){ for(const [r,v] of Object.entries(cost)) s.res[r] -= v; }
 export function trainMultFor(s, barracksLvl){
   const b = Math.max(0, barracksLvl-1);
   return Math.max(0.25,
-    (1 - 0.08*b - heroBonus(s,'trainTime') - spoilBonus(s,'trainTime')) * (perk(s,5)?0.88:1));
+    (1 - 0.06*b - heroBonus(s,'trainTime') - spoilBonus(s,'trainTime'))
+    * (perk(s,5)?0.88:1) * (perk(s,18)?0.9:1));
 }
 export function trainMult(s){ return trainMultFor(s, s.b.barracks); }
 export function armyBreakdown(s){
   let base = 0;
-  for(const [k,d] of Object.entries(TROOPS)) base += d.power * s.t[k];
+  for(const k of Object.keys(TROOPS)) base += tierPower(s,k) * s.t[k];
   const mult = (1 + heroBonus(s,'troopPower') + spoilBonus(s,'troopPower'))
-             * (1 + (perk(s,2)?0.06:0) + (perk(s,8)?0.08:0) + (perk(s,10)?0.15:0));
+             * (1 + (perk(s,2)?0.06:0) + (perk(s,8)?0.08:0) + (perk(s,10)?0.15:0)
+                  + (perk(s,12)?0.08:0) + (perk(s,20)?0.20:0));
   const wall = 18*s.b.wall + heroBonus(s,'wallPower');
   return { base, mult, wall, total: Math.round(base*mult + wall) };
 }
@@ -86,7 +118,7 @@ export function armyPower(s){ return armyBreakdown(s).total; }
 export function wavePower(w){ return Math.round(10*Math.pow(w,1.3) + 5*w); }
 // each consecutive loss bloodies the band: it returns at 85% strength, floor ~61%
 export function streakMult(s){ return Math.pow(0.85, Math.min(s.streak||0, 3)); }
-export function bluntFor(s, towerLvl){ return Math.min(0.4, 0.05*towerLvl + heroBonus(s,'blunt')); }
+export function bluntFor(s, towerLvl){ return Math.min(0.4, 0.04*towerLvl + heroBonus(s,'blunt')); }
 export function bluntMult(s){ return bluntFor(s, s.b.watchtower); }
 export function finishCost(endTs, now){ return Math.max(1, Math.ceil((endTs-now)/4000)); }
 export function xpNeed(lvl){ return Math.round(50*Math.pow(lvl,1.4)); }
@@ -99,7 +131,7 @@ export function pushLog(s, txt, cls){
 }
 export function showBanner(s, txt, cls, now){ s.banner = {txt, cls:cls||'', until:now+4000}; }
 export function gainRes(s, r, amt){ s.res[r] = Math.min(s.res[r]+amt, storageCap(s)); }
-export function gainValor(s, v){ s.valor += Math.round(v * (1 + heroBonus(s,'valor'))); }
+export function gainValor(s, v){ s.valor += Math.round(v * (1 + heroBonus(s,'valor') + (perk(s,19)?0.10:0))); }
 export function gainShield(s, n){ s.shields = Math.min(shieldCap(s), s.shields + (n||1)); }
 export function gainMastery(s, amt, now){
   const before = masteryLvl(s);
@@ -188,14 +220,18 @@ export function startUpgrade(s, key, now){
   pushLog(s, (lvl===0?'Construction of the ':'Work begins on the ')+d.name+(lvl===0?' begins.':' (level '+(lvl+1)+').'));
   return true;
 }
+export function trainCost(s, key, count){
+  const d = TROOPS[key], c = {};
+  for(const [r,v] of Object.entries(d.cost)) c[r] = Math.ceil(v * count * tierCostMult(s,key));
+  return c;
+}
 export function startTraining(s, key, count, now){
   s.now = now;
   if(s.tq) return false;
   const d = TROOPS[key];
   if(s.b.barracks < d.barracks) return false;
   count = Number(count)||1;
-  const cost = {};
-  for(const [r,v] of Object.entries(d.cost)) cost[r] = v*count;
+  const cost = trainCost(s, key, count);
   if(!canAfford(s, cost)) return false;
   payCost(s, cost);
   let dur = d.time*1000*count*trainMult(s);
@@ -221,9 +257,10 @@ export function finishTrainNow(s, now){
 export function expedition(s, route, now, rand=Math.random){
   s.now = now;
   if(now < s.patrolReady || !EXPEDITIONS[route]) return false;
-  s.patrolReady = now + EXPEDITION_CD - (perk(s,3)?12000:0);
+  s.patrolReady = now + Math.max(15000,
+    EXPEDITION_CD - (perk(s,3)?12000:0) - 1000*(s.b.tavern||0));
   const boost = s.expedBoost ? 2 : 1;
-  const mult = (perk(s,9)?2:1) * (1 + heroBonus(s,'patrolYield') + spoilBonus(s,'patrolYield')) * boost;
+  const mult = (perk(s,9)?2:1) * (1 + heroBonus(s,'patrolYield') + spoilBonus(s,'patrolYield') + 0.03*(s.b.tavern||0)) * boost;
   const th = s.b.townhall;
   const R = n => Math.round(n*mult);
 
@@ -341,7 +378,8 @@ export function resolveWave(s, now, rand=Math.random){
   if(mine >= enemy){
     // casualties scale with how close it was; a right counter-read spills less blood
     const ratio = enemy/Math.max(mine,1);
-    let lossFrac = 0.30 * ratio*ratio * Math.max(0.5, 1 - heroBonus(s,'casualties'));
+    let lossFrac = 0.30 * ratio*ratio
+      * Math.max(0.15, 1 - heroBonus(s,'casualties') - 0.04*(s.b.hospital||0) - (perk(s,15)?0.10:0));
     if(cm > 1) lossFrac *= COUNTER_CASUALTY;
     if(mods.noCasual) lossFrac = 0;
     let lost = 0;
@@ -349,7 +387,7 @@ export function resolveWave(s, now, rand=Math.random){
       const l = Math.round(s.t[k] * lossFrac * (0.7+rand()*0.6));
       s.t[k] = Math.max(0, s.t[k]-l); lost += l;
     }
-    const lootMult = (isWB?2:1) * (1 + heroBonus(s,'loot') + spoilBonus(s,'loot')) * mods.lootX;
+    const lootMult = (isWB?2:1) * (1 + heroBonus(s,'loot') + spoilBonus(s,'loot') + (perk(s,17)?0.15:0)) * mods.lootX;
     const base = 15*Math.pow(w,0.8);
     const loot = {food:Math.round(base*lootMult), wood:Math.round(base*lootMult),
                   stone:Math.round(0.4*base*lootMult), iron:Math.round(0.2*base*lootMult)};
@@ -370,8 +408,9 @@ export function resolveWave(s, now, rand=Math.random){
     s.streak++;
     s.wavesLost = (s.wavesLost||0)+1;
     s.nextWave = now + WAVE_MS*2; // a loss buys a longer breather
+    const protect = Math.min(0.6, 0.04*(s.b.warehouse||0)); // the Warehouse hides part of your stores
     for(const k of Object.keys(TROOPS)) s.t[k] = Math.floor(s.t[k]*0.8);
-    for(const r of Object.keys(RES_META)) s.res[r] = Math.floor(s.res[r]*0.85);
+    for(const r of Object.keys(RES_META)) s.res[r] = Math.floor(s.res[r]*(1 - 0.15*(1-protect)));
     gainValor(s, 2);
     gainMastery(s, 3, now);
     gainShield(s, 1);
@@ -459,7 +498,7 @@ export function tick(s, now, dt, rand=Math.random){
   // hero levels
   for(const [id,h] of Object.entries(s.heroes)){
     const d = HERO_POOL[id];
-    while(h.lvl < 10 && h.xp >= xpNeed(h.lvl)){
+    while(h.lvl < 20 && h.xp >= xpNeed(h.lvl)){
       h.xp -= xpNeed(h.lvl); h.lvl++;
       pushLog(s, d.name+' rises to level '+h.lvl+'.', 'gold');
     }

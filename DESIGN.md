@@ -92,6 +92,30 @@ This is the anti-gacha: same excitement of the roll, none of the wallet.
   rosters and meaningfully different end states (power, upkeep profile), while
   overall pacing stays inside the v0.3 targets.
 
+## The long game (v0.8 — pacing to months, not minutes)
+
+Target: **6–12 months of meaningful progression** for a regular free player — long
+enough to retain, short enough that the cap is a real destination (Kingshot's
+multi-year VIP grind is the anti-pattern). The rule at every stage: a level-3
+player and a level-18 player should both finish a session having visibly moved.
+
+Prototype-scale proof (simulator, perfect always-online play — a strict upper
+bound on human pace): 90 min ≈ TH 6/20 · 4 h ≈ TH 14, Mastery 18/20 ·
+TH 20 + Mastery 20 ≈ 7.5 h. A human at ~1 h/day plays this curve for weeks; the
+live game then scales timers/costs 10–50× to land in the 6–12 month window.
+Polynomial (level²) cost curves keep early levels snappy and late levels long.
+
+Progression ladders (all free, all parallel — there is always a next rung):
+- **Town Hall 1–20** gating 13 buildings (Tavern, Granary, War Academy, Hospital,
+  Warehouse joined in v0.8, each with a distinct lever).
+- **Troop tiers I–X** via the War Academy; promotion reforges the whole class.
+- **Mastery 1–20** (the VIP replacement), **heroes to level 20**, spoils stacking.
+- Roadmap ladders, in order: **hero gear** (crafted from raid drops), **player/lord
+  gear**, **seasons** (leagues + cosmetic passes), **arena** (async PvP vs snapshot
+  armies — needs the server), alliance tech. Seasons are also the revenue engine —
+  see [MONETIZATION.md](MONETIZATION.md); servers are covered by cosmetics + the
+  supporter pass at even modest scale.
+
 ## The command layer (v0.7 — where skill lives)
 
 The loop was fully automatic; these systems convert attention and decisions into

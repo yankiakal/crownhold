@@ -6,10 +6,12 @@ import {
   WAVE_TYPES, STANCES, EXPEDITIONS,
   WAVE_MS, FIRST_WAVE_MS, SHIELD_MS,
 } from './defs.js';
+import { TIERS } from './defs.js';
 import {
   fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor,
   prodPerSec, prodMult, upkeepPerSec, buildCost, buildTime, canAfford, armyPower,
   armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
+  maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost,
   wavePower, streakMult, finishCost, xpNeed,
   startUpgrade, startTraining, finishBuildNow, finishTrainNow, raiseShield,
   expedition, setStance, setCaptain, useOrder,
@@ -114,27 +116,9 @@ function renderHold(S){
       : d.fx;
     h += '<div class="bcard'+(lockedTH?' locked':'')+'">'
       + '<div class="head"><span>'+d.icon+'</span><span class="name">'+d.name+'</span>'
-      + '<span class="lvl">'+(lvl===0?'not built':'LVL '+lvl)+'</span></div>'
+      + '<button class="info-btn" data-act="detail" data-dtype="building" data-key="'+k+'" title="details">ⓘ</button>'
+      + '<span class="lvl">'+(lvl===0?'not built':'LVL '+lvl+'/'+d.max)+'</span></div>'
       + '<div class="fx">'+fxTxt+'</div>';
-    // what the NEXT level actually gives — no hidden math
-    let delta = '';
-    if(lvl < d.max && !lockedTH){
-      if(d.prod){
-        const cur = d.rate*lvl*prodMult(S,d.prod), nxt = d.rate*(lvl+1)*prodMult(S,d.prod);
-        delta = '+'+cur.toFixed(1)+'/s → +'+nxt.toFixed(1)+'/s';
-      }else if(k==='townhall'){
-        delta = 'storage '+fmt(storageCap(S))+' → '+fmt(storageCapFor(S,lvl+1));
-      }else if(k==='wall'){
-        delta = 'defense +'+(18*lvl)+' → +'+(18*(lvl+1));
-      }else if(k==='barracks'){
-        delta = lvl===0 ? 'unlocks troop training'
-          : 'train speed ×'+trainMult(S).toFixed(2)+' → ×'+trainMultFor(S,lvl+1).toFixed(2);
-      }else if(k==='watchtower'){
-        delta = lvl===0 ? 'reveals raid strength; blunts 5%'
-          : 'blunts '+Math.round(bluntFor(S,lvl)*100)+'% → '+Math.round(bluntFor(S,lvl+1)*100)+'%';
-      }
-    }
-    if(delta) h += '<div style="font-family:var(--sans);font-size:.68rem;color:var(--info)">'+delta+'</div>';
     if(lockedTH){
       h += '<div class="tmeta" style="font-family:var(--sans);font-size:.7rem;color:var(--ink-dim)">Requires Town Hall '+d.th+'</div>';
     }else if(lvl >= d.max){
@@ -170,10 +154,13 @@ function renderMuster(S){
     }
     for(const [k,d] of Object.entries(TROOPS)){
       const locked = S.b.barracks < d.barracks;
-      h += '<div class="trow'+(unitInfoOpen[k]?' open':'')+'">'
-        + '<span>'+d.icon+'</span><span class="tname">'+d.name+'</span>'
-        + '<span class="tmeta">pwr '+d.power+'</span>'
-        + '<button class="info-btn" data-act="unitinfo" data-key="'+k+'" title="unit details">ⓘ</button>'
+      const tier = tierOf(S,k);
+      const canPromote = !locked && tier < maxTier(S);
+      h += '<div class="trow">'
+        + '<span>'+d.icon+'</span><span class="tname">'+d.name+' <b class="tier-tag">'+TIERS[tier-1]+'</b></span>'
+        + '<span class="tmeta">pwr '+tierPower(S,k).toFixed(0)+'</span>'
+        + '<button class="info-btn" data-act="detail" data-dtype="troop" data-key="'+k+'" title="unit details'+(canPromote?' — promotion available!':'')+'">'
+        + (canPromote?'⬆':'ⓘ')+'</button>'
         + '<span class="spacer"></span>';
       if(locked){
         h += '<span class="tmeta">Barracks '+d.barracks+'</span>';
@@ -183,10 +170,6 @@ function renderMuster(S){
           + '<button data-act="train" data-key="'+k+'" data-n="5" '+(S.tq?'disabled':'')+'>+5</button>'
           + '<button data-act="train" data-key="'+k+'" data-n="25" '+(S.tq?'disabled':'')+'>+25</button>';
       }
-      // per-unit economics: revealed on hover (desktop) or ⓘ (touch); full table lives in the Codex
-      h += '<span class="tdetail">each: '+costHtml(S, d.cost)
-        + ' · ⏱ '+(d.time*trainMult(S)).toFixed(1)+'s'
-        + ' · eats '+d.upkeep.toFixed(2)+' food/s</span>';
       h += '</div>';
     }
   }
@@ -210,20 +193,14 @@ function renderHeroes(S){
   for(const [k,hero] of owned){
     const d = HERO_POOL[k];
     if(!d) continue;
-    const need = xpNeed(hero.lvl);
-    const pct = hero.lvl>=10 ? 100 : Math.min(100, 100*hero.xp/need);
     const isCapt = S.captain===k;
     const cd = S.orderCd[k]||0;
-    h += '<div class="hero"><span class="hname">'+d.icon+' '+d.name+'</span>'
+    h += '<div class="hero"><span class="hname">'+(isCapt?'★ ':'')+d.icon+' '+d.name+'</span>'
       + ' <span class="rar rar-'+d.rarity+'">'+RARITY[d.rarity].tag+'</span>'
-      + '<button class="capt-btn'+(isCapt?' active':'')+'" data-act="captain" data-key="'+k+'" title="Captain: this hero\'s passive counts double">'
-      + (isCapt?'★ Captain':'☆ appoint')+'</button>'
-      + '<div class="hmeta">Level '+hero.lvl+' · '+d.fx(hero.lvl)+(isCapt?' <b style="color:var(--gold)">×2</b>':'')
-      + (hero.lvl>=10?' · max':' · '+fmt(hero.xp)+'/'+fmt(need)+' xp')+'</div>'
-      + '<div class="xpbar"><i style="width:'+pct+'%"></i></div>'
-      + '<div class="order-row"><button class="order-btn" data-act="order" data-key="'+k+'" '+(cd>0?'disabled':'')
-      + ' title="'+d.order.desc+'">'+d.order.name+(cd>0?' · in '+cd+' wave'+(cd>1?'s':''):'')+'</button>'
-      + '<span class="tmeta" style="font-family:var(--sans);font-size:.62rem;color:var(--ink-dim)">'+d.order.desc+'</span></div>'
+      + '<button class="info-btn" data-act="detail" data-dtype="hero" data-key="'+k+'" title="hero details">ⓘ</button>'
+      + '<div class="order-row"><span class="hmeta">L'+hero.lvl+' · '+d.fx(hero.lvl)+(isCapt?' <b style="color:var(--gold)">×2</b>':'')+'</span>'
+      + '<button class="order-btn" data-act="order" data-key="'+k+'" '+(cd>0?'disabled':'')
+      + ' title="'+d.order.desc+'">'+d.order.name+(cd>0?' · '+cd+'w':'')+'</button></div>'
       + '</div>';
   }
   for(let i = S.offersDone; i < HERO_SLOTS.length; i++){
@@ -298,7 +275,80 @@ function renderFooter(){
 }
 
 let codexOpen = false;
-const unitInfoOpen = {};
+let detail = null; // {type:'building'|'troop'|'hero', key} — the tap-to-inspect sheet
+
+function renderDetail(S){
+  if(!detail) return '';
+  const k = detail.key;
+  let body = '', title = '';
+
+  if(detail.type==='building'){
+    const d = BUILDINGS[k]; if(!d) return '';
+    const lvl = S.b[k];
+    title = d.icon+' '+d.name+' — '+(lvl===0?'not built':'level '+lvl+'/'+d.max);
+    body += '<p class="d-fx">'+(d.prod ? '+'+d.rate+' '+d.prod+'/s per level' : d.fx)+'</p>';
+    if(d.th && S.b.townhall < d.th) body += '<p class="d-warn">Requires Town Hall '+d.th+'</p>';
+    if(lvl < d.max){
+      let delta = '';
+      if(d.prod) delta = '+'+(d.rate*lvl*prodMult(S,d.prod)).toFixed(1)+'/s → +'+(d.rate*(lvl+1)*prodMult(S,d.prod)).toFixed(1)+'/s';
+      else if(k==='townhall') delta = 'storage '+fmt(storageCap(S))+' → '+fmt(storageCapFor(S,lvl+1));
+      else if(k==='wall') delta = 'defense +'+(18*lvl)+' → +'+(18*(lvl+1));
+      else if(k==='barracks') delta = 'train speed ×'+trainMult(S).toFixed(2)+' → ×'+trainMultFor(S,lvl+1).toFixed(2);
+      else if(k==='watchtower') delta = 'blunts '+Math.round(bluntFor(S,lvl)*100)+'% → '+Math.round(bluntFor(S,lvl+1)*100)+'%';
+      else if(k==='academy') delta = 'unlocks troop Tier '+TIERS[Math.min(9,lvl+1)];
+      else if(k==='tavern') delta = 'expedition bonus +'+(3*lvl)+'% → +'+(3*(lvl+1))+'%';
+      else if(k==='granary') delta = 'food +'+(2*lvl)+'%, storage +'+(3*lvl)+'% → +'+(2*(lvl+1))+'% / +'+(3*(lvl+1))+'%';
+      else if(k==='hospital') delta = 'casualties −'+(4*lvl)+'% → −'+(4*(lvl+1))+'%';
+      else if(k==='warehouse') delta = 'stores protected '+(4*lvl)+'% → '+(4*(lvl+1))+'%';
+      if(delta) body += '<p class="d-delta">Next level: '+delta+'</p>';
+      body += '<p class="d-row">Cost: '+costHtml(S, buildCost(S,k))+' · ⏱ '+ftime(buildTime(S,k))+'</p>';
+      const capped = k!=='townhall' && lvl >= S.b.townhall;
+      if(capped) body += '<p class="d-warn">Town Hall must lead — raise it first.</p>';
+      body += '<button class="primary" data-act="upgrade" data-key="'+k+'" '
+        + ((S.bq||!canAfford(S,buildCost(S,k))||capped||(d.th&&S.b.townhall<d.th))?'disabled':'')+'>'
+        + (lvl===0?'Build':'Upgrade to '+(lvl+1))+'</button>';
+    } else body += '<p class="d-delta" style="color:var(--gold)">Fully raised.</p>';
+  }
+
+  else if(detail.type==='troop'){
+    const d = TROOPS[k]; if(!d) return '';
+    const tier = tierOf(S,k), mt = maxTier(S);
+    title = d.icon+' '+d.name+' — Tier '+TIERS[tier-1];
+    body += '<div class="d-row">You muster <b>'+S.t[k]+'</b> · power '+tierPower(S,k).toFixed(1)+' each · eats '+tierUpkeep(S,k).toFixed(2)+' food/s each</div>'
+      + '<div class="d-row">Train: '+costHtml(S, trainCost(S,k,1))+' · ⏱ '+(d.time*trainMult(S)).toFixed(1)+'s each · needs Barracks '+d.barracks+'</div>';
+    if(tier < mt){
+      const pc = promoteCost(S,k);
+      body += '<p class="d-delta">Promote all to Tier '+TIERS[tier]+': power '+tierPower(S,k).toFixed(1)+' → '
+        + (d.power*(1+0.25*tier)).toFixed(1)+' each (upkeep rises too)</p>'
+        + '<p class="d-row">'+costHtml(S,pc)+'</p>'
+        + '<button class="primary" data-act="promote" data-key="'+k+'" '+(canAfford(S,pc)?'':'disabled')+'>⬆ Promote to Tier '+TIERS[tier]+'</button>';
+    }else if(tier < 10){
+      body += '<p class="d-warn">Tier '+TIERS[tier]+' needs War Academy level '+tier+'.</p>';
+    }else body += '<p class="d-delta" style="color:var(--gold)">Highest tier — none finer in the realm.</p>';
+  }
+
+  else if(detail.type==='hero'){
+    const d = HERO_POOL[k], hero = S.heroes[k]; if(!d||!hero) return '';
+    const need = xpNeed(hero.lvl);
+    const isCapt = S.captain===k, cd = S.orderCd[k]||0;
+    title = (isCapt?'★ ':'')+d.icon+' '+d.name;
+    body += '<p class="d-fx"><span class="rar rar-'+d.rarity+'">'+RARITY[d.rarity].tag+'</span> · Level '+hero.lvl
+      + (hero.lvl>=20?' (max)':' · '+fmt(hero.xp)+'/'+fmt(need)+' xp from defending raids')+'</p>'
+      + '<div class="xpbar"><i style="width:'+(hero.lvl>=20?100:Math.min(100,100*hero.xp/need))+'%"></i></div>'
+      + '<p class="d-row">Passive: '+d.fx(hero.lvl)+(isCapt?' — <b style="color:var(--gold)">doubled as Captain</b>':'')+'</p>'
+      + '<p class="d-row">Order — <b>'+d.order.name+'</b>: '+d.order.desc+' Cooldown '+d.order.cd+' waves.'+(cd>0?' Ready in '+cd+'.':'')+'</p>'
+      + '<div style="display:flex;gap:.6rem;margin-top:.5rem">'
+      + '<button class="primary" data-act="captain" data-key="'+k+'">'+(isCapt?'Relieve of command':'★ Appoint Captain')+'</button>'
+      + '<button data-act="order" data-key="'+k+'" '+(cd>0?'disabled':'')+'>Use '+d.order.name+'</button>'
+      + '</div>';
+  }
+
+  return '<div class="overlay" data-act-bg="detailClose"><div class="card dsheet">'
+    + '<h1 style="font-size:1.15rem">'+title+'</h1><div class="rule"></div>'
+    + body
+    + '<button data-act="detailClose" style="margin-top:.8rem">Close</button>'
+    + '</div></div>';
+}
 
 function renderCodex(S){
   if(!codexOpen) return '';
@@ -322,15 +372,16 @@ function renderCodex(S){
     + '<h3>Economy</h3>'
     + '<div class="tscroll"><table>'+prodRows+'</table></div>'
     + '<ul>'
-    + '<li>Storage cap: 800 × Town&nbsp;Hall<sup>1.35</sup> — currently <b>'+fmt(storageCap(S))+'</b>. Production beyond it is wasted.</li>'
+    + '<li>Storage cap: 800 × Town&nbsp;Hall<sup>1.7</sup>, +3% per Granary level — currently <b>'+fmt(storageCap(S))+'</b>. Production beyond it is wasted.</li>'
     + '<li>Offline: the hold produces (and the muster eats) for up to 2 hours while you are away. No raids strike while you are gone.</li>'
-    + '<li>Build costs rise ×1.55 per level (Town Hall ×1.7). One build queue, one training queue.</li>'
+    + '<li>Build costs scale with level² — early levels are quick, the late road is long. One build queue, one training queue.</li>'
     + '</ul>'
 
     + '<h3>The Muster</h3>'
     + '<div class="tscroll"><table><tr><th>Troop</th><th>Power</th><th>Cost each</th><th>Time each*</th><th>Eats</th><th>Needs</th></tr>'+troopRows+'</table></div>'
     + '<ul>'
-    + '<li>*time shown includes your current ×'+tm.toFixed(2)+' training multiplier (Barracks −8%/level, plus heroes, spoils, Mastery).</li>'
+    + '<li>*time shown includes your current ×'+tm.toFixed(2)+' training multiplier (Barracks −6%/level, plus heroes, spoils, Mastery). Costs/power/upkeep shown are Tier I — each tier is +25% power, +18% upkeep, +22% cost.</li>'
+    + '<li><b>Tiers</b>: the War Academy unlocks Tier II–X. Promoting reforges every unit of that class at once (cost scales with how many you own).</li>'
     + '<li>Army power = troop power × bonuses + 18 per Wall level.</li>'
     + '<li><b>Armies eat.</b> If food hits 0, roughly 2% of troops desert every 10s until the muster is affordable again.</li>'
     + '</ul>'
@@ -427,7 +478,7 @@ export function render(){
     + '<main>' + renderHold(S)
     + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderSpoils(S) + renderMastery(S) + renderQuest(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
-  fx.innerHTML = renderFx(S) + (S.seenIntro ? renderChoice(S) + renderCodex(S) : '');
+  fx.innerHTML = renderFx(S) + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
 }
 
 /* ── input ── */
@@ -447,7 +498,9 @@ const ACTIONS = {
   intro: () => { store.s.seenIntro = true; },
   about: () => { store.s.seenIntro = false; },
   codex: () => { codexOpen = !codexOpen; },
-  unitinfo: b => { const k = b.dataset.key; unitInfoOpen[k] = !unitInfoOpen[k]; },
+  detail: b => { detail = {type:b.dataset.dtype, key:b.dataset.key}; },
+  detailClose: () => { detail = null; },
+  promote: b => promote(store.s, b.dataset.key, Date.now()),
   reset: () => {
     if(confirm('Raze the hold and start over? Your save will be erased.')){
       store.s = freshState(Date.now());
