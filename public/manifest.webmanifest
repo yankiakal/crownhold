@@ -1,0 +1,13 @@
+{
+  "name": "Crownhold",
+  "short_name": "Crownhold",
+  "description": "Hold the frontier. Pay in effort, never in coin.",
+  "start_url": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#171310",
+  "theme_color": "#171310",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

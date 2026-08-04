@@ -197,6 +197,13 @@ section.panel{
 .pillars{text-align:left;display:flex;flex-direction:column;gap:.6rem;margin:0 auto 1.5rem;max-width:26rem}
 .pillars p{font-size:.88rem;color:var(--ink)}
 .pillars b{color:var(--gold);font-weight:600}
+/* the frontier map */
+#worldmap{
+  width:100%;max-width:640px;display:block;margin:0 auto .5rem;
+  border:1px solid var(--edge);border-radius:4px;background:#1b1511;
+  cursor:pointer;touch-action:manipulation;
+}
+
 /* command layer */
 .stance-row{
   display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-top:.55rem;

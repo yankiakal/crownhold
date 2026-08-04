@@ -3,14 +3,17 @@
 import { RES_META, FIRST_WAVE_MS, EXPEDITIONS } from './defs.js';
 import { prodPerSec, upkeepPerSec, storageCap, pushLog, fmt,
          expedCdMs, caravanYields, CARAVAN_GRACE } from './logic.js';
+import { genWorld } from './world.js';
 
 export const SAVE_KEY = 'crownhold-save-v1';
 
 // single mutable slot so every module sees the same state object (reset swaps it)
 export const store = { s: null };
 
-export function freshState(now){
+export function freshState(now, seed){
   return {
+    world: genWorld(seed != null ? seed : Math.floor(Math.random()*2**31)),
+    marches: [],
     res:{food:120,wood:120,stone:60,iron:0},
     valor:0,
     b:{townhall:1,farm:1,lumberyard:1,quarry:0,ironmine:0,barracks:0,wall:0,watchtower:0,
@@ -72,6 +75,9 @@ export function load(now){
     if(s.trainFastNext==null) s.trainFastNext = false;
     if(s.expedBoost==null) s.expedBoost = false;
     if(s.caravan===undefined) s.caravan = null;
+    // v1.0 the Frontier
+    if(!s.world) s.world = genWorld(Math.floor(Math.random()*2**31));
+    if(!s.marches) s.marches = [];
     // offline production (capped at 2 hours), net of army upkeep
     const away = Math.min(Math.max(now - (s.lastSeen||now), 0), 7200000);
     if(away > 60000){

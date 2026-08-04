@@ -1,7 +1,10 @@
 // Turns Vite's full-document build into the artifact-ready fragment at ./index.html.
 // The artifact host wraps published files in its own doctype/head/body skeleton,
 // so the shipped file must carry content only (title/style/script/divs, no wrapper).
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, copyFileSync } from 'fs';
+
+// full document → dist/index.html, the deployable PWA (GitHub Pages, Netlify, …)
+copyFileSync('dist/game.html', 'dist/index.html');
 
 let html = readFileSync('dist/game.html', 'utf8');
 html = html
@@ -10,6 +13,7 @@ html = html
   .replace(/<\/?head[^>]*>/gi, '')
   .replace(/<\/?body[^>]*>/gi, '')
   .replace(/<meta[^>]*>/gi, '')
+  .replace(/<link[^>]*(manifest|icon)[^>]*>/gi, '')
   .trim();
 
 if (/(src|href)\s*=\s*["']https?:/i.test(html))

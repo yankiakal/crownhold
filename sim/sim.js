@@ -8,12 +8,13 @@
 
 import { BUILDINGS, TROOPS, RES_META, WAVE_TYPES } from '../src/defs.js';
 import * as L from '../src/logic.js';
+import * as W from '../src/world.js';
 import { freshState } from '../src/state.js';
 
 // skilled=true reads the scouts and sets the counter-stance; false stays Balanced.
 // Both use hero orders — the delta isolates the value of paying attention.
 function simulate(minutes, enemyLuck, skilled, label){
-  const s = freshState(0);
+  const s = freshState(0, 42); // fixed map seed keeps runs comparable
   s.seenIntro = true;
   // resolveWave rolls enemy strength as 0.88 + rand()*0.24; invert for a fixed roll
   const rand = () => (enemyLuck - 0.88) / 0.24;
@@ -38,6 +39,7 @@ function simulate(minutes, enemyLuck, skilled, label){
     }
 
     L.tick(s, ms, 1, rand);
+    W.tickWorld(s, ms, rand);
 
     // draft decisions: always take the first offer
     if(s.choice){
@@ -66,6 +68,29 @@ function simulate(minutes, enemyLuck, skilled, label){
     }
     // orders: fire whatever is ready (battle mods persist until the next battle)
     for(const id of Object.keys(s.heroes)) if(!(s.orderCd[id]>0)) L.useOrder(s, id, ms);
+    // marches: the skilled bot raids the frontier when the wall can spare a quarter of the army
+    if(skilled && s.marches.length < W.marchSlots(s)){
+      const nextEnemy = L.wavePower(s.wave)*(s.wave%5===0?1.6:1)*1.12;
+      if(L.armyPower(s) > 2.2*nextEnemy){
+        let target = -1;
+        const q = {}; for(const k of Object.keys(TROOPS)) q[k] = Math.floor(s.t[k]*0.25);
+        for(let i=0;i<s.world.tiles.length;i++){
+          const tl = s.world.tiles[i];
+          if(tl.respawnAt || W.tileBusy(s,i) || tl.type!=='camp') continue;
+          if(W.marchPower(s,q) > 1.5*W.campPower(s,tl)){ target=i; break; }
+        }
+        if(target<0){
+          const scarce = ['iron','stone','wood','food'].sort((a,b)=>s.res[a]-s.res[b])[0];
+          for(let i=0;i<s.world.tiles.length;i++){
+            const tl = s.world.tiles[i];
+            if(tl.respawnAt || W.tileBusy(s,i)) continue;
+            const tt = W.TILE_TYPES[tl.type];
+            if(tt.kind==='gather' && tt.res===scarce){ target=i; break; }
+          }
+        }
+        if(target>=0) W.startMarch(s, target, 0.25, ms);
+      }
+    }
     // expeditions: the skilled bot dispatches by hand; the lazy one sets a caravan and forgets
     if(skilled){
       if(t >= (s.patrolReady/1000)){

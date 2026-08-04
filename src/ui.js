@@ -8,6 +8,10 @@ import {
 } from './defs.js';
 import { TIERS } from './defs.js';
 import {
+  TILE_TYPES, MAP_W, MAP_H, CX, CY, TRAVEL_MS_PER_TILE, GATHER_MS,
+  tileDist, marchSlots, tileBusy, marchPower, campPower, gatherYield, startMarch,
+} from './world.js';
+import {
   fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor,
   prodPerSec, prodMult, upkeepPerSec, buildCost, buildTime, canAfford, armyPower,
   armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
@@ -338,6 +342,37 @@ function renderDetail(S){
     }else body += '<p class="d-delta" style="color:var(--gold)">Highest tier — none finer in the realm.</p>';
   }
 
+  else if(detail.type==='tile'){
+    const tile = S.world.tiles[k]; if(!tile) return '';
+    const tt = TILE_TYPES[tile.type];
+    const travel = tileDist(tile)*TRAVEL_MS_PER_TILE;
+    title = tt.icon+' '+tt.name+' '+TIERS[tile.lvl-1];
+    if(tile.respawnAt){
+      body += '<p class="d-warn">Worked out — regrows in '+ftime(tile.respawnAt-Date.now())+'.</p>';
+    }else{
+      body += '<p class="d-row">Distance '+tileDist(tile)+' — '+ftime(travel)+' each way.</p>';
+      if(tt.kind==='gather')
+        body += '<p class="d-delta">Yields ~'+fmt(gatherYield(S,tile))+' '+tt.res+' after '+ftime(GATHER_MS)+' of work.</p>';
+      else if(tt.kind==='camp')
+        body += '<p class="d-delta">Camp strength ≈'+campPower(S,tile)+'. Victory: loot, Valor, Mastery — and the camp burns.</p>'
+          + '<p class="d-warn">Defeat costs a third of the marchers.</p>';
+      else
+        body += '<p class="d-delta">Explorers return with Valor, Mastery, and a 20% chance of a Writ of Peace.</p>';
+      const busy = tileBusy(S,k), full = S.marches.length >= marchSlots(S);
+      if(busy) body += '<p class="d-warn">A march is already bound here.</p>';
+      else if(full) body += '<p class="d-warn">All march slots are in use (Town Hall 10 grants a second).</p>';
+      else{
+        const home = armyPower(S);
+        body += '<p class="d-row">Your home power is <b>'+home+'</b> — troops you send stop defending until they return.</p>'
+          + '<div style="display:flex;gap:.5rem;margin-top:.5rem">'
+          + '<button data-act="march" data-idx="'+k+'" data-frac="0.25">March ¼</button>'
+          + '<button data-act="march" data-idx="'+k+'" data-frac="0.5">March ½</button>'
+          + '<button class="primary" data-act="march" data-idx="'+k+'" data-frac="1">March all</button>'
+          + '</div>';
+      }
+    }
+  }
+
   else if(detail.type==='hero'){
     const d = HERO_POOL[k], hero = S.heroes[k]; if(!d||!hero) return '';
     const need = xpNeed(hero.lvl);
@@ -417,6 +452,14 @@ function renderCodex(S){
     + '<li><b>Standing caravan</b>: assign a road and it auto-runs 15s after each cooldown at half yield — resources only, no Valor, no Mastery, no ambush, and it keeps running while you are away (2h cap). Dispatching by hand always pays roughly 2.7× more.</li>'
     + '</ul>'
 
+    + '<h3>The Frontier</h3>'
+    + '<ul>'
+    + '<li>Tap a map tile to inspect and <b>march</b> on it: resource nodes (worked for a large haul), Bandit Camps (burned for loot, Valor and Mastery), Ancient Ruins (Valor, Mastery, 20% Writ).</li>'
+    + '<li>Travel costs 12s per tile each way; gathering takes 60s. Marching troops carry their own rations and <b>do not defend the wall</b> until they return.</li>'
+    + '<li>Camp battles use your march&#39;s power (heroes and Mastery apply; no wall, no stance). Defeat costs a third of the marchers.</li>'
+    + '<li>One march slot; Town Hall 10 grants a second. Worked tiles regrow in ~4 minutes, sometimes richer.</li>'
+    + '</ul>'
+
     + '<h3>Valor &amp; Writs</h3>'
     + '<ul>'
     + '<li>Valor comes from wins (5 + wave, capped +15, warbands ×2), quests, patrols (+2), finished buildings (+2), even losses (+2). It is never sold.</li>'
@@ -486,13 +529,64 @@ function renderChoice(S){
     + '</div></div>';
 }
 
+function renderWorld(S){
+  const slots = marchSlots(S);
+  let h = '<section class="panel"><h2>The Frontier <span style="letter-spacing:.05em">marches '+S.marches.length+'/'+slots+' · troops away don’t defend the wall</span></h2>';
+  h += '<canvas id="worldmap" width="'+(MAP_W*56)+'" height="'+(MAP_H*56)+'"></canvas>';
+  const now = Date.now();
+  for(const m of S.marches){
+    const tile = S.world.tiles[m.tile], tt = TILE_TYPES[tile.type];
+    const n = Object.values(m.troops).reduce((a,b)=>a+b,0);
+    const phase = !m.resolved ? 'outbound · arrives '+ftime(m.arriveAt-now)
+                              : 'returning · home '+ftime(m.homeAt-now);
+    h += '<div class="stat-note">🚩 '+n+' troops → '+tt.icon+' '+tt.name+' — '+phase+'</div>';
+  }
+  if(!S.marches.length)
+    h += '<div class="stat-note">Tap a tile to inspect it and send a march.</div>';
+  h += '</section>';
+  return h;
+}
+
+function drawMap(S){
+  const cv = document.getElementById('worldmap');
+  if(!cv) return;
+  const ctx = cv.getContext('2d'), C = 56;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  for(let y=0;y<MAP_H;y++) for(let x=0;x<MAP_W;x++){
+    ctx.fillStyle = (x+y)%2 ? '#241d17' : '#221b15';
+    ctx.fillRect(x*C+1, y*C+1, C-2, C-2);
+  }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const marchTargets = new Set(S.marches.map(m=>m.tile));
+  S.world.tiles.forEach((t,i)=>{
+    const cx = t.x*C+C/2, cy = t.y*C+C/2;
+    if(t.respawnAt){
+      ctx.globalAlpha = 0.35;
+      ctx.font = '20px serif'; ctx.fillText('⏳', cx, cy);
+      ctx.globalAlpha = 1;
+      return;
+    }
+    ctx.font = '24px serif';
+    ctx.fillText(TILE_TYPES[t.type].icon, cx, cy-4);
+    ctx.fillStyle = '#d9a441'; ctx.font = '9px sans-serif';
+    ctx.fillText('I'.repeat(t.lvl), cx, cy+18);
+    if(marchTargets.has(i)){
+      ctx.strokeStyle = '#d9a441'; ctx.lineWidth = 2;
+      ctx.strokeRect(t.x*C+3, t.y*C+3, C-6, C-6);
+    }
+  });
+  ctx.font = '28px serif';
+  ctx.fillText('🏰', CX*C+C/2, CY*C+C/2);
+}
+
 export function render(){
   const S = store.s;
-  app.innerHTML = renderHeader(S) + renderThreat(S)
+  app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
     + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderSpoils(S) + renderMastery(S) + renderQuest(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
   fx.innerHTML = renderFx(S) + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
+  drawMap(S);
 }
 
 /* ── input ── */
@@ -516,6 +610,7 @@ const ACTIONS = {
   detail: b => { detail = {type:b.dataset.dtype, key:b.dataset.key}; },
   detailClose: () => { detail = null; },
   promote: b => promote(store.s, b.dataset.key, Date.now()),
+  march: b => { if(startMarch(store.s, Number(b.dataset.idx), Number(b.dataset.frac), Date.now())) detail = null; },
   // native confirm() is blocked in sandboxed frames — the button itself asks twice
   reset: () => {
     const now = Date.now();
@@ -540,6 +635,15 @@ function runAction(btn){
 export function wire(){
   // pointerdown so the 4 Hz re-render can never swallow a click
   document.addEventListener('pointerdown', e => {
+    // taps on the world map open the tile's sheet
+    if(e.target && e.target.id === 'worldmap'){
+      const rect = e.target.getBoundingClientRect();
+      const x = Math.floor((e.clientX-rect.left)/rect.width*MAP_W);
+      const y = Math.floor((e.clientY-rect.top)/rect.height*MAP_H);
+      const idx = store.s.world.tiles.findIndex(t => t.x===x && t.y===y);
+      if(idx >= 0){ detail = {type:'tile', key:idx}; render(); }
+      return;
+    }
     const btn = e.target.closest('button[data-act]');
     if(btn) runAction(btn);
   });
