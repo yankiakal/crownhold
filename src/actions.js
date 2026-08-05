@@ -8,7 +8,7 @@ import {
   chooseOption, rerollChoice, promote, saveFormation, deleteFormation, setArenaTeam,
   startGear, finishGearNow, setPetOut, setSkill,
 } from './logic.js';
-import { startMarch, startHunt } from './world.js';
+import { startMarch, startHunt, startVoyage } from './world.js';
 import { TROOPS } from './defs.js';
 
 /* Marches arrive as flat form fields (`t_spearman=120`) so the same params
@@ -49,6 +49,7 @@ export const GAME_ACTIONS = {
   promote:      (s,p,now)      => promote(s, p.key, now),
   march:        (s,p,now)      => startMarch(s, Number(p.idx), troopsFrom(p), now, p.long === '1', partyFrom(p)),
   hunt:         (s,p,now)      => startHunt(s, Number(p.idx), troopsFrom(p), now, partyFrom(p)),
+  voyage:       (s,p,now)      => startVoyage(s, p.x, p.y, troopsFrom(p), partyFrom(p), now),
   petOut:       (s,p,now)      => setPetOut(s, p.key || null, now),
   skill:        (s,p,now)      => setSkill(s, p.mode, p.n, p.key || null, now),
   saveForm:     (s,p,now)      => saveFormation(s, p.key, partyFrom(p), troopsFrom(p), now),

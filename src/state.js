@@ -4,6 +4,8 @@ import { RES_META, BUILDINGS, FIRST_WAVE_MS, EXPEDITIONS } from './defs.js';
 import { prodPerSec, upkeepPerSec, storageCap, capFor, refineStep, bankRest, pushLog, fmt,
          courtSeats, expedCdMs, caravanYields, CARAVAN_GRACE } from './logic.js';
 import { genWorld } from './world.js';
+import { genIsle } from './isle.js';
+import { seasonNo } from './defs.js';
 
 export const SAVE_KEY = 'crownhold-save-v1';
 
@@ -13,6 +15,7 @@ export const store = { s: null };
 export function freshState(now, seed){
   return {
     world: genWorld(seed != null ? seed : Math.floor(Math.random()*2**31)),
+    isle: genIsle(seed != null ? seed : Math.floor(Math.random()*2**31), seasonNo(now)),
     marches: [],
     res:{food:120,wood:120,stone:60,iron:0,steel:0,runestone:0,rations:0,trueore:0,truegold:0},
     achieved:{}, campsBurned:0, ruinsRaided:0, winStreak:0, bestStreakWon:0,
@@ -162,6 +165,9 @@ export function migrate(s, now){
     if(s.world.spawnAt==null) s.world.spawnAt = 0;
     // v1.27: hero skills — three slots, chosen not levelled
     for(const h of Object.values(s.heroes)) if(!Array.isArray(h.skills)) h.skills = [null,null,null];
+    // v1.29: the Salt Isle
+    if(!s.isle || !Array.isArray(s.isle.cells))
+      s.isle = genIsle(Math.floor(Math.random()*2**31), seasonNo(now));
     // v1.15: one training queue became one per yard
     if(!s.tq || typeof s.tq !== 'object' || s.tq.key){
       const old = s.tq && s.tq.key ? s.tq : null;

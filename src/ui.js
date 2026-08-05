@@ -15,6 +15,7 @@ import {
   tileDist, marchSlots, tileBusy, marchPower, campPower, gatherYield, startMarch,
   heroCanLead, marchCapacity, fitColumn, bestLeaders, marchParty as partyOf,
   beastPower, beastBusy, marchSpeed,
+  isleReady, rationCost, voyageTime, voyageBlockedBy, refPower,
   LONG_HAUL_WORK, LONG_HAUL_YIELD,
 } from './world.js';
 import {
@@ -33,6 +34,7 @@ import { CHRONICLE, SEASON_LORE } from './lore.js';
 import { REGALIA, WARGEAR, GEAR_MAX, GEAR_PER_LEVEL, gearCost, gearTime,
          regaliaTier, wargearTier, wargearTotal, gearLevels, costLabel } from './gear.js';
 import { SKILLS, SKILL_SLOTS, SLOT_AT, slotsOpen, legalSkills } from './skills.js';
+import { ISLE_W, ISLE_H, ISLE_TH, ISLE_SITES, RATION_COST, cellAt, charted } from './isle.js';
 import {
   STANCE_BEATS, CLASS_ANSWER, stanceMult, composition, answerBonusForClass,
   committedTroops, forcePower,
@@ -553,6 +555,57 @@ function renderDaily(S){
        : 'Clear every line for +'+DAILY_BONUS.valor+' Valor and a Writ.')+'</span></div>';
   h += '</section>';
   return h;
+}
+
+/* The Salt Isle. A fogged grid you learn by landing on it — so the panel's job is
+   to show how little you know, and make the one ship you have feel like a choice. */
+function renderIsle(S){
+  if(!isleReady(S)){
+    if(S.b.townhall < ISLE_TH - 3) return '';   // don't tease it from a great distance
+    return '<section class="panel"><h2>The Salt Isle <span style="letter-spacing:.05em">out of reach</span></h2>'
+      + '<div class="stat-note">There are charts in the Great Library of an island off the coast — wrecks, barrows, '
+      + 'and a metal the mainland has never smelted. A hold of <b>Town Hall '+ISLE_TH+'</b> could victual a ship for it. '
+      + 'Yours is '+S.b.townhall+'.</div></section>';
+  }
+  const isle = S.isle;
+  if(!isle) return '';
+  const v = isle.voyage, now = Date.now();
+  const cost = rationCost(S), have = Math.floor(S.res.rations || 0);
+  let h = '<section class="panel"><h2>The Salt Isle <span style="letter-spacing:.05em">'
+    + charted(isle)+'% charted · '+(isle.sailed||0)+' landings this season</span></h2>';
+
+  if(v){
+    const c = cellAt(isle, v.x, v.y), d = ISLE_SITES[c.site];
+    const n = Object.values(v.troops).reduce((a,b)=>a+b,0);
+    h += '<div class="stat-note">⛵ At sea — '+n+' aboard, bound for '+d.icon+' <b>'+d.name+'</b>. '
+      + 'Home in <b>'+ftime(v.end-now)+'</b>. There is no recalling a ship.</div>';
+  }else{
+    h += '<div class="stat-note">One ship, one voyage at a time — however many columns you can field on the '
+      + 'mainland. A crossing takes <b>'+ftime(voyageTime(S))+'</b> and costs <b>'+cost+' 🥘 Rations</b>'
+      + (have < cost ? ' <span style="color:var(--bad)">(you have '+have+')</span>' : ' (you have '+have+')')
+      + '. Nothing on the Isle regrows; it is redrawn when the season turns.</div>';
+  }
+
+  // the chart itself
+  h += '<div class="islegrid">';
+  for(let y = 0; y < ISLE_H; y++) for(let x = 0; x < ISLE_W; x++){
+    const c = cellAt(isle, x, y);
+    const sailing = v && v.x === x && v.y === y;
+    if(!c.known){
+      h += '<div class="isle fog" title="uncharted">·</div>';
+    }else{
+      const d = ISLE_SITES[c.site];
+      h += '<button class="isle'+(c.spent?' spent':'')+(sailing?' sailing':'')+'"'
+        + ' data-act="detail" data-dtype="isle" data-key="'+x+','+y+'"'
+        + ' title="'+esc(d.name+' '+TIERS[c.tier-1]+(c.spent?' — stripped':''))+'">'
+        + d.icon+'<span class="t">'+'I'.repeat(c.tier)+'</span></button>';
+    }
+  }
+  h += '</div>';
+  const left = isle.cells.filter(c => c.known && !c.spent).length;
+  h += '<div class="stat-note">'+left+' charted site'+(left===1?'':'s')+' still worth landing on. '
+    + 'Isle Ore is the only thing the Truegold Crucible will eat, and the only place it comes from is here.</div>';
+  return h + '</section>';
 }
 
 /* The Rift — realm against realm. A scoreboard, never a conquest. */
@@ -1231,6 +1284,39 @@ function renderDetail(S){
     }
   }
 
+  else if(detail.type==='isle'){
+    const [x, y] = String(k).split(',').map(Number);
+    const c = S.isle && cellAt(S.isle, x, y);
+    if(!c) return '';
+    const d = ISLE_SITES[c.site];
+    const blocked = voyageBlockedBy(S, x, y);
+    const fit = fitColumn(S, marchWant, marchParty);
+    title = d.icon+' '+d.name+' '+TIERS[c.tier-1];
+    body += '<p class="d-row" style="font-style:italic;opacity:.8">'+d.blurb+'</p>';
+    const oreLo = d.ore[0]*c.tier, oreHi = d.ore[1]*c.tier;
+    body += '<p class="d-delta">Carries home <b>'+oreLo+'–'+oreHi+' 🪨 Isle Ore</b>'
+      + (d.res ? ', plus '+Object.entries(d.res).map(([r,a]) =>
+          fmt(Math.round(a*(0.6+0.4*c.tier)))+' '+r).join(' and ') : '')
+      + (d.valor ? ', '+(d.valor*c.tier)+' Valor' : '')
+      + (d.writ ? ', and a Writ of Peace' : '')+'.</p>';
+    if(d.fight > 0)
+      body += '<p class="d-warn">Held against you at ≈<b>'+fmt(Math.round(refPower(S)*d.fight*(0.7+0.3*c.tier)))
+        + '</b>. Losses here wound, as everywhere the Unpaid are not involved.</p>';
+    else
+      body += '<p class="d-row" style="opacity:.75">Undefended — this one is work, not a fight.</p>';
+    if(c.spent) body += '<p class="d-warn">Stripped. The Isle refills when the season turns.</p>';
+    else if(blocked) body += '<p class="d-warn">'+blocked+'.</p>';
+    else{
+      body += renderColumnComposer(S);
+      if(fit.total)
+        body += '<p class="d-delta">Your party lands at <b>'+marchPower(S, fit.troops, marchParty, 'host')+'</b>.</p>';
+      body += '<p class="d-row">The crossing takes <b>'+ftime(voyageTime(S))+'</b> and costs <b>'
+        + rationCost(S)+' 🥘 Rations</b>. Landing charts the water around it.</p>'
+        + '<button class="primary" data-act="voyage" data-x="'+x+'" data-y="'+y+'" '+columnAttrs()
+        + (fit.total?'':' disabled')+'>'+(fit.total?'⛵ Sail — '+fit.total+' aboard':'Choose who sails')+'</button>';
+    }
+  }
+
   else if(detail.type==='beast'){
     const b = (S.world.beasts||[])[k]; if(!b) return '';
     const d = BEASTS[b.species];
@@ -1475,6 +1561,24 @@ function renderCodex(S){
     + '<h3>Chat</h3>'
     + '<ul><li>Four rooms: the whole state, your alliance, direct messages, and private groups anyone can make. The 💬 button sits bottom-right whenever you are signed in.</li></ul>'
 
+    + '<h3>The Salt Isle</h3>'
+    + '<ul>'
+    + '<li><b>A second map that plays the opposite way.</b> The Frontier is your doorstep: many columns at once, '
+    + 'everything visible, nodes that regrow. The Isle is <b>fogged</b> (landing charts the water around it, permanently), '
+    + '<b>one voyage at a time</b> however many march slots you own, <b>hours long with no recall</b>, and it <b>does not '
+    + 'regrow</b> — sites are spent when worked, and the whole chart is redrawn when the season turns.</li>'
+    + '<li><b>Rations, not troops, are the gate.</b> A crossing costs '+RATION_COST+' Rations before the Victualler '
+    + 'discounts it (2% a level, to half). So how often you can sail is set by a building rather than by how often you look '
+    + 'at your phone. Yours costs <b>'+(store.s?rationCost(store.s):RATION_COST)+'</b> and takes <b>'
+    + (store.s?ftime(voyageTime(store.s)):'3h')+'</b>.</li>'
+    + '<li>Six kinds of site, from undefended Salt Shoals to the Bonereef and the Drowned Hall. The rich ones are the rare '
+    + 'ones, which is what makes uncovering them worth the fog. Fights there <b>wound only</b>, like everywhere the Unpaid '
+    + 'are not involved.</li>'
+    + '<li><b>Isle Ore is the only resource in the game with no building behind it.</b> It cannot be produced, only carried '
+    + 'home — and it is the only thing the Truegold Crucible will eat. That chain is the whole reason to sail.</li>'
+    + '<li>The chart is generated from the season, so everyone sailing the same fortnight is learning the same island.</li>'
+    + '</ul>'
+
     + '<h3>The Frontier</h3>'
     + '<ul>'
     + '<li>Tap a map tile to inspect and <b>march</b> on it: resource nodes (worked for a large haul), Bandit Camps (burned for loot, Valor and Mastery), Ancient Ruins (Valor, Mastery, 20% Writ).</li>'
@@ -1718,7 +1822,7 @@ export function render(){
   app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
     + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderPets(S) + renderRegalia(S) + renderSpoils(S)
-      + renderDaily(S) + renderEvent(S) + renderRift(S) + renderRally(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
+      + renderDaily(S) + renderIsle(S) + renderEvent(S) + renderRift(S) + renderRally(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
       + renderAchievements(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
   fx.innerHTML = renderFx(S) + renderLore(S)
@@ -1872,7 +1976,8 @@ const VIEW_ACTIONS = {
 
 function paramsOf(btn){
   const d = btn.dataset;
-  const p = { key:d.key, n:d.n, i:d.i, idx:d.idx, frac:d.frac, long:d.long, mode:d.mode, heroes:d.heroes };
+  const p = { key:d.key, n:d.n, i:d.i, idx:d.idx, frac:d.frac, long:d.long, mode:d.mode,
+              heroes:d.heroes, x:d.x, y:d.y };
   for(const k of Object.keys(TROOPS)) if(d['t_'+k] != null) p['t_'+k] = d['t_'+k];
   return p;
 }
@@ -1883,7 +1988,7 @@ function runAction(btn){
   if(VIEW_ACTIONS[act]){ VIEW_ACTIONS[act](btn); render(); return; }
   if(!isGameAction(act)) return;
   const params = paramsOf(btn);
-  if(act === 'march'){ detail = null; marchParty = []; marchWant = {}; }
+  if(act === 'march' || act === 'hunt' || act === 'voyage'){ detail = null; marchParty = []; marchWant = {}; }
   if(act === 'skill') skillSlotOpen = null;   // a choice made folds the menu away
   if(net.isOnline()){
     // the server rules on it, then hands back the truth

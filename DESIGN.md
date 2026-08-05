@@ -250,6 +250,53 @@ Regalia and all 32 heroes. Measured: a full Regalia is ~10 hours of exclusive
 forge time; kitting an entire roster is several hundred. Runestone enters at
 tier 6, so early gear never blocks on the Runeworks (TH22).
 
+### The Salt Isle (v1.29) — a second map that plays the opposite way
+
+A second map is only worth building if it plays differently from the first,
+otherwise it is the same errand at a different address. Every property of the
+Isle is the Frontier inverted, and each inversion is doing a job:
+
+| | The Frontier | The Salt Isle |
+|---|---|---|
+| Visibility | all of it, always | **fogged**; landing charts the water around it, permanently |
+| Concurrency | up to 8 columns | **one ship**, however many march slots you own |
+| Duration | minutes | **hours**, and no recall |
+| Gate | attention | **Rations** — a building, not a habit |
+| Persistence | nodes regrow | **spent when worked**; the chart is redrawn each season |
+
+The fog is the important one: it makes the map a thing you *learn*, and turns
+uncovering a Drowned Hall into an event rather than a spawn. Charted percentage is
+the only progress bar in the game that measures knowledge instead of power.
+
+**Rations as the gate** is what keeps the Isle from becoming another daily chore.
+How often you can sail is set by the Victualler's level (2% off per level, to
+half), so it rewards having built the building rather than having checked your
+phone. Measured: a level-15 Victualler brings a crossing from 260 Rations to 182,
+and a level-20 Command Centre brings 3 hours down to 2h06m.
+
+**Isle Ore is the only resource in the game with no building behind it.** It
+cannot be produced, only carried home, and it is the only thing the Truegold
+Crucible will eat. That chain — Victualler → voyage → ore → Crucible → Truegold —
+is the entire reason to sail, and it means the Crucible deliberately idles between
+voyages. It is a reason to go, not a treadmill.
+
+The site resolves **on return, not on departure**, so a voyage is a wager. Fights
+there wound only, like everywhere the Unpaid are not involved.
+
+The chart is seeded from the season number, so everyone sailing the same fortnight
+is learning the same island — which makes it something an alliance can actually
+talk about.
+
+Verified end to end: 224 aboard (capped by the three captains, not by the Isle),
+all home, the site stripped, five new cells charted, 3 ore refined into exactly
+0.75 Truegold, a second ship refused while the first is at sea, and the chart
+reset when the tide turned.
+
+Architectural note: the voyage code lives in `world.js` rather than `logic.js`,
+because it needs `marchPower`, `marchCapacity` and `refPower` — and `logic.js`
+importing `world.js` back would have made a cycle. The Isle is a map; maps live in
+`world.js`.
+
 ### Hero skills — choices, not levels (v1.27)
 
 Kingshot's hero skills work because they are *where hero shards go*. The currency

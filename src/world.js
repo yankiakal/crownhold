@@ -4,7 +4,8 @@
 
 import { TROOPS, TIME_SCALE, HERO_POOL, BEASTS, BEAST_UNLOCK, BEAST_COUNT, BEAST_ROAM_MS,
          BEAST_RESPAWN_MS,
-         MARCH_HEROES, MARCH_BASE_CAP, CAP_PER_HERO, CAP_PER_LEVEL } from './defs.js';
+         MARCH_HEROES, MARCH_BASE_CAP, CAP_PER_HERO, CAP_PER_LEVEL, seasonNo } from './defs.js';
+import { ISLE_TH, VOYAGE_MS, RATION_COST, ISLE_SITES, genIsle, cellAt, revealAround } from './isle.js';
 import { scoreDeed } from './events.js';
 import { takeCasualties } from './logic.js';
 import {
@@ -457,6 +458,9 @@ export function tickWorld(s, now, rand=Math.random){
       s.marches.splice(i,1);
     }
   }
+  // the ship, and the tide that redraws the chart each season
+  isleSeasonCheck(s, now);
+  voyageStep(s, now, rand);
   // the herds: restock on a cadence, and move what is not being hunted
   if(!s.world.beasts || (s.world.beasts.length < BEAST_COUNT && now >= (s.world.spawnAt || 0)))
     spawnBeasts(s, now, rand);
@@ -468,4 +472,123 @@ export function tickWorld(s, now, rand=Math.random){
       t.lvl = 1 + Math.floor(rand()*3);
     }
   }
+}
+
+/* ── the Salt Isle ──
+   Lives here rather than in logic.js because a voyage needs marchPower,
+   marchCapacity and refPower, and logic.js importing this file back would make a
+   cycle. The Isle is a map; maps live in world.js.
+
+   One voyage at a time, hours long, no recall. What it costs is Rations and the
+   column; what it brings home is Isle Ore, which nothing else can produce. The
+   site resolves on RETURN, not on departure, so a voyage is a wager rather than
+   a purchase. */
+export function isleReady(s){ return (s.b.townhall || 0) >= ISLE_TH; }
+export function rationCost(s){
+  // the Victualler makes sailing cheaper as it grows: a full one halves the cost
+  return Math.round(RATION_COST * Math.max(0.5, 1 - 0.02 * (s.b.kitchen || 0)));
+}
+export function voyageTime(s){
+  // the Command Center runs the shipping too, so a well-found ship crosses faster
+  return Math.round(VOYAGE_MS * Math.max(0.55, 1 - 0.015 * (s.b.command || 0)));
+}
+export function voyageBlockedBy(s, x, y){
+  if(!isleReady(s)) return 'The charts mean nothing until Town Hall ' + ISLE_TH;
+  if(!s.isle) return 'No chart yet';
+  if(s.isle.voyage) return 'Your ship is already at sea';
+  const c = cellAt(s.isle, Number(x), Number(y));
+  if(!c) return 'Nothing there';
+  if(!c.known) return 'That water is not charted';
+  if(c.spent) return 'Already stripped — the Isle refills when the season turns';
+  if((s.res.rations || 0) < rationCost(s)) return 'Not enough Rations to victual her';
+  return null;
+}
+/* A voyage is capped like a march: the same three captains, the same hulls. */
+export function fitIsleColumn(s, want, heroes){ return fitColumn(s, want, heroes); }
+
+export function startVoyage(s, x, y, want, heroes, now){
+  s.now = now;
+  if(voyageBlockedBy(s, x, y)) return false;
+  const party = (Array.isArray(heroes) ? heroes : (heroes ? [heroes] : []))
+    .filter(Boolean).slice(0, MARCH_HEROES);
+  if(new Set(party).size !== party.length) return false;
+  if(party.some(id => !heroCanLead(s, id))) return false;
+  const { troops, total } = fitIsleColumn(s, want, party);
+  if(!total) return false;
+  s.res.rations -= rationCost(s);
+  for(const [k,n] of Object.entries(troops)) s.t[k] -= n;
+  for(const id of party){
+    const at = (s.court || []).indexOf(id);
+    if(at >= 0) s.court.splice(at, 1);
+    if(s.captain === id) s.captain = null;
+  }
+  s.isle.voyage = { x:Number(x), y:Number(y), troops, heroes:party, end: now + voyageTime(s) };
+  const c = cellAt(s.isle, Number(x), Number(y));
+  pushLog(s, '⛵ The ship stands out for the '+ISLE_SITES[c.site].name
+    + ' with '+total+' aboard — back in '+ftime(voyageTime(s))+'.', 'gold');
+  return true;
+}
+
+export function voyageStep(s, now, rand = Math.random){
+  const v = s.isle && s.isle.voyage;
+  if(!v || now < v.end) return;
+  const c = cellAt(s.isle, v.x, v.y);
+  const d = c && ISLE_SITES[c.site];
+  s.isle.voyage = null;
+  // the column always comes home; the Isle wounds, like every other PvE place
+  for(const [k,n] of Object.entries(v.troops)) s.t[k] = (s.t[k] || 0) + n;
+  if(!d) return;
+  const party = (v.heroes || []).filter(id => HERO_POOL[id]);
+  const power = marchPower(s, v.troops, party, 'host');
+  const against = Math.round(refPower(s) * d.fight * (0.7 + 0.3 * c.tier));
+  const won = d.fight === 0 || power >= against;
+  let hurt = 0;
+  if(d.fight > 0){
+    const ratio = against / Math.max(power, 1);
+    const lf = Math.min(0.4, (won ? 0.10 : 0.30) * ratio);
+    for(const k of Object.keys(v.troops)){
+      const l = Math.round(v.troops[k] * lf);
+      if(l > 0){ const r = takeCasualties(s, k, l, true); hurt += r.hurt + r.dead; }
+    }
+  }
+  if(won){
+    const [lo, hi] = d.ore;
+    const ore = Math.round((lo + rand() * (hi - lo)) * c.tier);
+    gainRes(s, 'trueore', ore);
+    const bits = ['+' + ore + ' Isle Ore'];
+    for(const [r, amt] of Object.entries(d.res || {})){
+      const got = Math.round(amt * (0.6 + 0.4 * c.tier));
+      gainRes(s, r, got); bits.push('+' + fmt(got) + ' ' + r);
+    }
+    if(d.valor){ gainValor(s, d.valor * c.tier); bits.push('+' + (d.valor * c.tier) + ' Valor'); }
+    if(d.mxp) gainMastery(s, d.mxp * c.tier, now);
+    if(d.writ){ gainShield(s, 1); bits.push('a Writ of Peace'); }
+    addDeeds(s, party, 'longHaul', now);
+    for(const id of party) if(s.heroes[id]) s.heroes[id].xp += 160;
+    c.spent = true;
+    const found = revealAround(s.isle, v.x, v.y);
+    s.isle.sailed = (s.isle.sailed || 0) + 1;
+    pushLog(s, '⛵ '+d.icon+' '+d.name+' gives up '+bits.join(', ')
+      + (hurt ? ' ('+hurt+' wounded)' : '')
+      + (found.length ? '. The crew charts '+found.length+' more of the coast.' : '.'), 'gold');
+    showBanner(s, '⛵ Home from the '+d.name, 'win', now);
+  }else{
+    gainValor(s, 15); gainMastery(s, 60, now);
+    pushLog(s, '⛵ '+d.icon+' The '+d.name+' threw them off ('+fmt(power)+' against '+fmt(against)
+      + '). The ship comes home light'+(hurt ? ', '+hurt+' wounded' : '')+'.', 'loss');
+    showBanner(s, '⛵ Driven off the '+d.name, 'loss', now);
+  }
+}
+
+/* The Isle refills when the season turns, and is redrawn — new water, new wrecks.
+   What you learned about the old chart is spent with it, which is what keeps the
+   Isle a fortnightly expedition rather than a map you finish once. */
+export function isleSeasonCheck(s, now){
+  if(!s.isle) return;
+  const season = seasonNo(now);
+  if(s.isle.season === season) return;
+  const sailed = s.isle.sailed || 0;
+  s.isle = genIsle(s.isle.seed, season);
+  if(sailed) pushLog(s, '⛵ The tides turn and the Salt Isle is another island — '
+    + 'new water, new wrecks, and the old chart worth nothing.', 'gold');
 }
