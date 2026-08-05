@@ -32,6 +32,7 @@ import { applyAction, isGameAction } from './actions.js';
 import { CHRONICLE, SEASON_LORE } from './lore.js';
 import { REGALIA, WARGEAR, GEAR_MAX, GEAR_PER_LEVEL, gearCost, gearTime,
          regaliaTier, wargearTier, wargearTotal, gearLevels, costLabel } from './gear.js';
+import { SKILLS, SKILL_SLOTS, SLOT_AT, slotsOpen, legalSkills } from './skills.js';
 import {
   STANCE_BEATS, CLASS_ANSWER, stanceMult, composition, answerBonusForClass,
   committedTroops, forcePower,
@@ -385,6 +386,52 @@ function renderPets(S){
   if(!own.length)
     h += '<div class="stat-note" style="font-style:italic">Nothing has followed you home yet. Hunt the frontier.</div>';
   return h + '</section>';
+}
+
+/* Skills. Three slots, opened by investment, filled by choice, reassignable for
+   nothing — so the picker is the whole system and it lives in the hero's sheet. */
+let skillSlotOpen = null;   // {hero, slot} while a slot's menu is expanded
+
+function renderSkills(S, id){
+  const open = slotsOpen(S, id);
+  const eq = (S.heroes[id].skills || []);
+  const legal = legalSkills(S, id, HERO_POOL);
+  let h = '<p class="d-row" style="margin-top:.7rem"><b>Skills</b> '
+    + '<span class="hmeta">'+open+' of '+SKILL_SLOTS+' slots open · '+legal.length
+    + ' to choose from · change them any time, for nothing</span></p>';
+  for(let n = 1; n <= SKILL_SLOTS; n++){
+    const gate = SLOT_AT[n-1];
+    if(n > open){
+      h += '<div class="skillslot locked"><span class="tname">Slot '+n+'</span>'
+        + '<span class="hmeta">opens '+gate.hint+'</span></div>';
+      continue;
+    }
+    const cur = SKILLS[eq[n-1]] ? eq[n-1] : null;
+    const d = cur && SKILLS[cur];
+    const expanded = skillSlotOpen && skillSlotOpen.hero === id && skillSlotOpen.slot === n;
+    h += '<div class="skillslot'+(expanded?' open':'')+'">'
+      + '<span class="tname">'+(d ? d.icon+' '+d.name : '— empty —')+'</span>'
+      + '<span class="hmeta">'+(d ? d.fx : 'nothing chosen')+'</span>'
+      + '<span class="spacer"></span>'
+      + '<button data-act="skillPick" data-mode="'+id+'" data-n="'+n+'">'
+      + (expanded ? 'Close' : d ? 'Change' : 'Choose')+'</button></div>';
+    if(!expanded) continue;
+    h += '<div class="leadpick">';
+    if(cur) h += '<button class="lead" data-act="skill" data-mode="'+id+'" data-n="'+n+'" data-key="">'
+      + '✕ Leave the slot empty</button>';
+    for(const sk of legal){
+      const sd = SKILLS[sk];
+      const taken = eq.includes(sk) && eq[n-1] !== sk;
+      h += '<button class="lead'+(eq[n-1]===sk?' on':'')+(taken?' dim':'')+'" data-act="skill" '
+        + 'data-mode="'+id+'" data-n="'+n+'" data-key="'+sk+'">'
+        + sd.icon+' '+sd.name
+        + ' <span class="rar" style="color:var(--ink-dim)">'+(sd.where==='court'?'in court':'in the field')
+        + (sd.cls ? ' · '+TROOPS[sd.cls].name : '')+'</span>'
+        + '<span class="hmeta">'+sd.fx+(taken?' · already slotted':'')+'</span></button>';
+    }
+    h += '</div>';
+  }
+  return h;
 }
 
 /* One forgeable piece — used for both the Regalia and a hero's kit. */
@@ -1160,7 +1207,10 @@ function renderDetail(S){
         body += '<p class="d-row">Your home power is <b>'+armyPower(S)+'</b> — troops you send stop defending until they return.</p>'
           + renderColumnComposer(S);
         if(fit.total)
-          body += '<p class="d-delta">This column fights at <b>'+marchPower(S, fit.troops, marchParty)+'</b>'
+          // tell marchPower what it is facing, or Camp-Breaker would be missing
+          // from the preview and present in the battle
+          body += '<p class="d-delta">This column fights at <b>'
+            + marchPower(S, fit.troops, marchParty, tt.kind==='camp' ? 'camp' : null)+'</b>'
             + (tt.kind==='camp' ? ' against ≈'+campPower(S,tile) : '')+'.</p>';
         const none = fit.total === 0;
         body += '<div style="display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap">'
@@ -1185,7 +1235,7 @@ function renderDetail(S){
     const b = (S.world.beasts||[])[k]; if(!b) return '';
     const d = BEASTS[b.species];
     const fit = fitColumn(S, marchWant, marchParty);
-    const mine = Math.round(marchPower(S, fit.troops, marchParty) * (1 + petBonus(S,'hunt')));
+    const mine = Math.round(marchPower(S, fit.troops, marchParty, 'beast') * (1 + petBonus(S,'hunt')));
     const enemy = beastPower(S, b);
     title = d.icon+' '+d.name+' '+TIERS[b.lvl-1];
     body += '<p class="d-row" style="font-style:italic;opacity:.8">'+d.blurb+'</p>'
@@ -1303,6 +1353,7 @@ function renderDetail(S){
     }else{
       body += '<p class="d-row" style="opacity:.7;margin-top:.6rem">Wargear needs the Forge — Steel is what it eats.</p>';
     }
+    body += renderSkills(S, k);
     if(away) body += '<p class="d-warn">They are out with a column and cannot take a chair until it comes home.</p>';
     else if(!seated && full) body += '<p class="d-warn">Every chair is taken ('+seats+'). Stand someone down, or raise the Tavern.</p>';
     body += '<div style="display:flex;gap:.6rem;margin-top:.5rem;flex-wrap:wrap">'
@@ -1501,6 +1552,15 @@ function renderCodex(S){
     + 'a tier-6 blade is a tier-6 blade for everyone, so there is nothing to reroll and nothing to sell rerolls of. '
     + 'One smithing queue serves it all, which is the real cost: a full Regalia is about ten hours of exclusive forge time, '
     + 'and kitting an entire roster is hundreds.</li>'
+    + '<li><b>Skills are choices, not levels.</b> '+Object.keys(SKILLS).length+' exist; which ones a hero may take '
+    + 'depends on their troop class, so every captain has a different legal set of around twenty. Three slots open with '
+    + 'investment (one from the start, one at level 10, one at 3★) — but the skills themselves never level, and you can '
+    + 'reassign them any time for nothing. Many carry a real cost: Hard March trades haul for power, Light Packs trades '
+    + 'power for haul, Careful Route buys lives with time. A skill that is simply better than the alternative would not '
+    + 'be a choice, only a tax on not reading a wiki.</li>'
+    + '<li><b>The interesting ones are conditional.</b> One Purpose pays +30% if every soldier in the column is one class; '
+    + 'Mixed Arms pays +18% if you field three or more. Camp-Breaker, Beast-Bane and Host-Breaker each pay against one '
+    + 'kind of enemy. These are what make the season’s temper worth reading — the right build changes when the muster does.</li>'
     + '<li>Heroes level to 20 on raid XP. Spoils are permanent; most stack.</li>'
     + '<li>Mastery: the full 10-perk track is listed in its panel with exact XP thresholds. XP comes from every kind of play.</li>'
     + '</ul>'
@@ -1681,7 +1741,13 @@ const VIEW_ACTIONS = {
   codex: () => { codexOpen = !codexOpen; },
   lore: () => { loreOpen = !loreOpen; },
   detail: b => { detail = {type:b.dataset.dtype, key:b.dataset.key}; },
-  detailClose: () => { detail = null; },
+  detailClose: () => { detail = null; skillSlotOpen = null; },
+  // expanding a skill slot's menu is a view state, not a change to the hold
+  skillPick: b => {
+    const hero = b.dataset.mode, slot = Number(b.dataset.n);
+    skillSlotOpen = (skillSlotOpen && skillSlotOpen.hero === hero && skillSlotOpen.slot === slot)
+      ? null : { hero, slot };
+  },
   // assembling a column: all view state until the march order is actually given
   pickLead: b => {
     const k = b.dataset.key, at = marchParty.indexOf(k);
@@ -1818,6 +1884,7 @@ function runAction(btn){
   if(!isGameAction(act)) return;
   const params = paramsOf(btn);
   if(act === 'march'){ detail = null; marchParty = []; marchWant = {}; }
+  if(act === 'skill') skillSlotOpen = null;   // a choice made folds the menu away
   if(net.isOnline()){
     // the server rules on it, then hands back the truth
     net.sendAction(act, params)

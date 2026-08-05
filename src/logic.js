@@ -22,6 +22,7 @@ import {
 import { RESEARCH, techLvl, techBonus, techFlat, techCost, techTime, techAvailable } from './research.js';
 import { REGALIA, WARGEAR, GEAR_MAX, gearCost, gearTime, regaliaBonus, regaliaTier,
          wargearTier, gearLevels } from './gear.js';
+import { SKILLS, SKILL_SLOTS, COND_FX, slotsOpen, skillLegal, equipped } from './skills.js';
 import { scoreDeed, eventState, currentEvent, claimableMilestones } from './events.js';
 import { dailyState, dailyProgress, DAILY_BONUS } from './daily.js';
 
@@ -159,7 +160,7 @@ export function seatHero(s, id, now){
    call sites, so production, Valor, troop power and casualties all pick it up
    wherever they are already computed. */
 export function heroBonus(s, key){
-  let b = regaliaBonus(s, key);
+  let b = regaliaBonus(s, key) + skillCourt(s, key);
   for(const id of courtActive(s)){
     const d = HERO_POOL[id];
     if(d && d.bonus[key]) b += d.bonus[key]*effLvl(s,id) * (s.captain===id ? 2 : 1); // the Captain's passive counts double
@@ -191,6 +192,79 @@ export function affinity(s, heroes, troopKey){
     if(d && h && d.cls === troopKey) b += CLASS_AFFINITY * effLvl(s, id);
   }
   return b;
+}
+
+/* ── skills ──
+   Aggregated exactly like lead traits and court passives, so a skill needs no
+   new plumbing at the point of use: it lands on the same keys everything else
+   already reads. Conditional skills are separate because they need to see the
+   column's actual composition and what it is fighting. */
+export function skillTotal(s, heroes, key){
+  const list = Array.isArray(heroes) ? heroes : (heroes ? [heroes] : []);
+  let b = 0;
+  for(const id of list)
+    for(const k of equipped(s, id)){
+      const d = SKILLS[k];
+      if(d.where === 'field' && d.mods && d.mods[key]) b += d.mods[key];
+    }
+  return b;
+}
+/* The seated court's skills. Folded into heroBonus, so production, Valor,
+   troop power and the rest pick them up wherever they are already computed. */
+export function skillCourt(s, key){
+  let b = 0;
+  for(const id of courtActive(s))
+    for(const k of equipped(s, id)){
+      const d = SKILLS[k];
+      if(d.where === 'court' && d.mods && d.mods[key]) b += d.mods[key];
+    }
+  return b;
+}
+/* Class-branch skills lift only that captain's own troop class. */
+export function skillClass(s, heroes, troopKey){
+  const list = Array.isArray(heroes) ? heroes : (heroes ? [heroes] : []);
+  let b = 0;
+  for(const id of list){
+    const hd = HERO_POOL[id];
+    if(!hd || hd.cls !== troopKey) continue;
+    for(const k of equipped(s, id)){
+      const d = SKILLS[k];
+      if(d.mods && d.mods.cls) b += d.mods.cls;
+    }
+  }
+  return b;
+}
+/* Conditional skills: `troops` is the column, `against` is 'camp' | 'beast' |
+   'host' | null, `atCap` whether the column rides full. */
+export function skillCond(s, heroes, troops, against, atCap){
+  const list = Array.isArray(heroes) ? heroes : (heroes ? [heroes] : []);
+  const kinds = Object.keys(TROOPS).filter(k => (troops[k] || 0) > 0);
+  let b = 0;
+  for(const id of list)
+    for(const k of equipped(s, id)){
+      const c = SKILLS[k].cond;
+      if(!c) continue;
+      if(c === 'pure'  && kinds.length === 1) b += COND_FX.pure;
+      if(c === 'mixed' && kinds.length >= 3)  b += COND_FX.mixed;
+      if(c === 'full'  && atCap)              b += COND_FX.full;
+      if(c === against)                       b += COND_FX[c] || 0;
+    }
+  return b;
+}
+
+export function setSkill(s, id, slot, key, now){
+  const h = s.heroes[id];
+  if(!h || !HERO_POOL[id]) return false;
+  const n = Number(slot);
+  if(!(n >= 1 && n <= slotsOpen(s, id))) return false;
+  if(key && !skillLegal(s, id, key, HERO_POOL)) return false;
+  s.now = now;
+  h.skills = Array.isArray(h.skills) ? h.skills.slice(0, SKILL_SLOTS) : [];
+  while(h.skills.length < SKILL_SLOTS) h.skills.push(null);
+  // the same skill twice would just be a doubled number, which is not a choice
+  if(key) for(let i = 0; i < h.skills.length; i++) if(i !== n-1 && h.skills[i] === key) h.skills[i] = null;
+  h.skills[n-1] = key || null;
+  return true;
 }
 
 /* ── the arena five ──
@@ -225,7 +299,7 @@ export function perk(s,n){ return masteryLvl(s)>=n; }
 export function shieldCap(s){ return 2 + (perk(s,7)?1:0) + (perk(s,14)?1:0) + spoilBonus(s,'shieldCap'); }
 export function storageCapFor(s, thLvl){
   return Math.round(800 * Math.pow(thLvl,1.7)
-    * (1 + 0.03*(s.b.granary||0) + techBonus(s,'logistics') + petBonus(s,'store'))
+    * (1 + 0.03*(s.b.granary||0) + techBonus(s,'logistics') + petBonus(s,'store') + skillCourt(s,'store'))
     * (perk(s,4)?1.15:1) * (perk(s,13)?1.10:1));
 }
 export function storageCap(s){ return storageCapFor(s, s.b.townhall); }
@@ -293,7 +367,7 @@ export function promote(s, k, now){
 export function woundShare(s){ return Math.min(0.75, 0.30 + 0.045 * (s.b.hospital || 0)); }
 export function woundedCap(s){
   const l = s.b.hospital || 0;
-  return Math.round((30 + 40 * l * (1 + 0.08 * l)) * (1 + petBonus(s,'mend')));
+  return Math.round((30 + 40 * l * (1 + 0.08 * l)) * (1 + petBonus(s,'mend') + skillCourt(s,'mend')));
 }
 export function woundedTotal(s){
   return Object.values(s.wounded || {}).reduce((a,b) => a + (b||0), 0);
@@ -560,7 +634,7 @@ export function chooseOption(s, idx, now){
   if(!c || idx<0 || idx>=c.options.length) return false;
   const id = c.options[idx];
   if(c.type==='hero'){
-    s.heroes[id] = {lvl:1, xp:0, stars:0, deeds:0};
+    s.heroes[id] = {lvl:1, xp:0, stars:0, deeds:0, gear:{}, skills:[null,null,null]};
     const d = HERO_POOL[id];
     s.court = s.court || [];
     // a free chair is filled straight away so the draft never feels inert

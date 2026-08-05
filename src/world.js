@@ -10,6 +10,7 @@ import { takeCasualties } from './logic.js';
 import {
   tierPower, heroBonus, spoilBonus, perk, wavePower, leadBonus, leadTotal, affinity, heroAway,
   effLvl, addDeeds, petBonus, gainBond, gainPetXp,
+  skillTotal, skillClass, skillCond,
   gainRes, gainValor, gainShield, gainMastery, pushLog, showBanner, fmt, ftime,
 } from './logic.js';
 
@@ -158,13 +159,22 @@ export function tileBusy(s, idx){ return (s.marches||[]).some(m => m.tile===idx)
 /* A column's strength: the hold's standing bonuses, plus what its three leaders
    are worth. Troops are counted class by class, so a hero's affinity lifts only
    the soldiers they actually know how to handle. */
-export function marchPower(s, troops, heroes){
+/* Note that SKILLS MULTIPLY rather than joining the additive pool. A skill that
+   says "+12% column power" has to deliver exactly 12%, or the label is a lie —
+   and added into a bracket that already holds hero, spoil and lead bonuses, +0.12
+   came out as +9.7%. Everything a skill claims is applied on its own factor so
+   the number in the tooltip is the number you get. */
+export function marchPower(s, troops, heroes, against){
   let p = 0;
   for(const k of Object.keys(TROOPS))
-    p += tierPower(s,k) * (troops[k]||0) * (1 + affinity(s, heroes, k));
-  return Math.round(p * (1 + heroBonus(s,'troopPower') + spoilBonus(s,'troopPower') + leadTotal(s, heroes, 'power'))
+    p += tierPower(s,k) * (troops[k]||0) * (1 + affinity(s, heroes, k)) * (1 + skillClass(s, heroes, k));
+  const total = Object.values(troops).reduce((a,b)=>a+(b||0), 0);
+  const atCap = total > 0 && total >= marchCapacity(s, heroes);
+  return Math.round(p
+    * (1 + heroBonus(s,'troopPower') + spoilBonus(s,'troopPower') + leadTotal(s, heroes, 'power'))
     * (1 + (perk(s,2)?0.06:0) + (perk(s,8)?0.08:0) + (perk(s,10)?0.15:0)
-         + (perk(s,12)?0.08:0) + (perk(s,20)?0.20:0)));
+         + (perk(s,12)?0.08:0) + (perk(s,20)?0.20:0))
+    * (1 + skillTotal(s, heroes, 'power') + skillCond(s, heroes, troops, against || null, atCap)));
 }
 /* Can this hero take a column out right now? */
 export function heroCanLead(s, id){
@@ -175,9 +185,9 @@ export function heroCanLead(s, id){
 export function marchCapacity(s, heroes){
   const list = (Array.isArray(heroes) ? heroes : (heroes ? [heroes] : []))
     .filter(id => s.heroes[id] && HERO_POOL[id]).slice(0, MARCH_HEROES);
-  let cap = MARCH_BASE_CAP;
+  let cap = MARCH_BASE_CAP + skillTotal(s, list, 'cap');
   for(const id of list) cap += CAP_PER_HERO + CAP_PER_LEVEL * effLvl(s, id);
-  return Math.round(cap);
+  return Math.max(1, Math.round(cap));
 }
 /* The strongest available party, highest level first — used to preview capacity
    and by the sim's bot. Ties break on id so the pick is deterministic. */
@@ -268,7 +278,7 @@ export function startMarch(s, idx, want, now, longHaul, heroes){
   if(total === 0) return false;
   for(const [k,n] of Object.entries(troops)) s.t[k] -= n;
   const travel = Math.round(tileDist(tile)*TRAVEL_MS_PER_TILE*marchSpeed(s)
-    * Math.max(0.4, 1 - leadTotal(s, party, 'speed')));
+    * Math.max(0.4, (1 - leadTotal(s, party, 'speed')) * (1 - skillTotal(s, party, 'speed'))));
   const work = kind==='gather' ? (long ? LONG_HAUL_WORK : GATHER_MS) : kind==='ruin' ? RUIN_MS : 0;
   const boost = !!s.marchBoost;                   // Fair Winds, spent on this column
   s.marchBoost = false;
@@ -303,10 +313,10 @@ function resolveHunt(s, m, now, rand){
     return;
   }
   const d = BEASTS[b.species];
-  const haul = 1 + leadTotal(s, party, 'haul') + petBonus(s, 'haul');
-  const guard = Math.max(0.25, 1 - leadTotal(s, party, 'guard'));
+  const haul = (1 + leadTotal(s, party, 'haul') + petBonus(s, 'haul')) * (1 + skillTotal(s, party, 'haul'));
+  const guard = Math.max(0.25, (1 - leadTotal(s, party, 'guard')) * (1 - skillTotal(s, party, 'guard')));
   const enemy = beastPower(s, b) * (0.9 + rand()*0.2);
-  const mine = Math.round(marchPower(s, m.troops, party) * (1 + petBonus(s, 'hunt')));
+  const mine = Math.round(marchPower(s, m.troops, party, 'beast') * (1 + petBonus(s, 'hunt')));
   m.woundedBack = {};
   if(mine >= enemy){
     const ratio = enemy/Math.max(mine,1);
@@ -348,11 +358,12 @@ function resolveArrival(s, m, now, rand){
   const tt = TILE_TYPES[tile.type];
   m.resolved = true;
   const party = marchParty(m);
-  const haul = 1 + leadTotal(s, party, 'haul') + petBonus(s, 'haul') + (m.boost ? 0.5 : 0);
-  const guard = Math.max(0.25, 1 - leadTotal(s, party, 'guard'));
+  const haul = (1 + leadTotal(s, party, 'haul') + petBonus(s, 'haul') + (m.boost ? 0.5 : 0))
+    * (1 + skillTotal(s, party, 'haul'));
+  const guard = Math.max(0.25, (1 - leadTotal(s, party, 'guard')) * (1 - skillTotal(s, party, 'guard')));
   if(tt.kind==='camp'){
     const enemy = campPower(s, tile) * (0.88 + rand()*0.24);
-    const mine = marchPower(s, m.troops, party);
+    const mine = marchPower(s, m.troops, party, 'camp');
     if(mine >= enemy){
       const ratio = enemy/Math.max(mine,1);
       const lf = 0.25*ratio*ratio*guard;
@@ -419,9 +430,11 @@ function resolveReturn(s, m, now){
     for(const [r,v] of Object.entries(m.loot)) gainRes(s, r, v);
     txt += ' with '+Object.entries(m.loot).map(([r,v])=>'+'+fmt(v)+' '+r).join(', ');
   }
-  const v = Math.round((m.valor||0) * (1 + leadTotal(s, party, 'valor')));
+  const v = Math.round((m.valor||0)
+    * (1 + leadTotal(s, party, 'valor')) * (1 + skillTotal(s, party, 'valor')));
   if(v){ gainValor(s, v); txt += ', +'+v+' Valor'; }
-  if(m.mxp) gainMastery(s, Math.round(m.mxp * (1 + leadTotal(s, party, 'lore'))), now);
+  if(m.mxp) gainMastery(s, Math.round(m.mxp
+    * (1 + leadTotal(s, party, 'lore')) * (1 + skillTotal(s, party, 'lore'))), now);
   // heroes who actually rode learn more than those who sat at the table
   for(const id of party) if(s.heroes[id]) s.heroes[id].xp += 40 + (m.long ? 120 : 0);
   // and the ride itself counts toward their next star

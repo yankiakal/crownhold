@@ -1245,7 +1245,8 @@ async function api(req, res, url){
     for(const [k,n] of Object.entries(fit.troops)) u.state.t[k] -= n;
     r.joins[u.name] = {
       troops: fit.troops,
-      power: marchPower(u.state, fit.troops, party),
+      // 'host' so Host-Breaker counts here, as it does in the Arena
+      power: marchPower(u.state, fit.troops, party, 'host'),
     };
     const h = hostById(r.host) || HOSTS[0];
     const committed = Object.values(r.joins).reduce((t,j) => t + j.power, 0);

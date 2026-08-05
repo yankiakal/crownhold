@@ -7,6 +7,8 @@
     "dev": "vite --open /game.html",
     "build": "vite build && node scripts/release.js",
     "sim": "node sim/sim.js",
+    "verify": "node sim/verify-skills.mjs",
+    "check": "npm run build && npm run verify && npm run sim",
     "server": "node server/server.js",
     "deploy": "sh scripts/deploy.sh"
   },

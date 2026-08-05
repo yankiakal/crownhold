@@ -99,7 +99,7 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
         for(let i=0;i<s.world.tiles.length;i++){
           const tl = s.world.tiles[i];
           if(tl.respawnAt || W.tileBusy(s,i) || tl.type!=='camp') continue;
-          if(W.marchPower(s,q,party) > 1.5*W.campPower(s,tl)){ target=i; break; }
+          if(W.marchPower(s,q,party,'camp') > 1.5*W.campPower(s,tl)){ target=i; break; }
         }
         if(target<0){
           const scarce = ['iron','stone','wood','food'].sort((a,b)=>s.res[a]-s.res[b])[0];
@@ -113,7 +113,7 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
         let beast = -1;
         for(let i=0;i<(s.world.beasts||[]).length;i++){
           if(W.beastBusy(s,i)) continue;
-          if(W.marchPower(s,q,party) > 1.4*W.beastPower(s, s.world.beasts[i])){ beast=i; break; }
+          if(W.marchPower(s,q,party,'beast') > 1.4*W.beastPower(s, s.world.beasts[i])){ beast=i; break; }
         }
         /* Camps pay nearly twice the loot; beasts pay bond, and bond is the only
            road to a companion. So the errand is chosen by what the hold is short

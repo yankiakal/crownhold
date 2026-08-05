@@ -250,6 +250,77 @@ Regalia and all 32 heroes. Measured: a full Regalia is ~10 hours of exclusive
 forge time; kitting an entire roster is several hundred. Runestone enters at
 tier 6, so early gear never blocks on the Runeworks (TH22).
 
+### Hero skills — choices, not levels (v1.27)
+
+Kingshot's hero skills work because they are *where hero shards go*. The currency
+is the point; the numbers only exist to give it somewhere to land. Strip the
+currency out and levelled skills become a fourth vertical track on top of levels,
+stars and two gear slots — a spreadsheet, not a decision.
+
+So skills here change what a hero **is**, never how big their numbers are:
+
+- **26 skills in a shared pool.** Which ones a hero may take depends on their
+  troop class, so every captain has a different legal set of around twenty. Two
+  heroes of the same class still differ by what you chose; two of different
+  classes differ by what they could ever have chosen.
+- **Three slots, opened by investment** — one from the start, one at level 10,
+  one at 3★. Progression is in *how many* choices you get, not their size.
+- **Freely reassignable, always, for nothing.** A build you cannot change is a
+  mistake you paid for. This is meant to be rethought every fortnight when the
+  temper turns.
+- **Many carry a real cost.** Hard March trades haul for power; Light Packs the
+  reverse; Careful Route buys lives with time; Tight Column buys power with
+  capacity. A skill that is simply better than the alternative is not a choice,
+  it is a tax on not reading a wiki.
+
+The conditional skills are where the actual decisions live: **One Purpose** pays
++30% if every soldier in the column is one class, **Mixed Arms** +18% if you field
+three or more, and **Camp-Breaker / Beast-Bane / Host-Breaker** each pay against
+one kind of enemy. Together with the season's temper this is the loop the whole
+hero system was built for — the right build changes when the muster does, and
+nothing about changing it costs a thing.
+
+Skills aggregate onto the same keys as lead traits and court passives
+(`skillTotal`, `skillCourt`, `skillClass`, `skillCond`), so they needed no new
+plumbing at the point of use — but they **multiply** rather than joining the
+additive pool, and that distinction turned out to matter more than anything else
+in the system.
+
+**Three bugs, and the first is the one worth remembering.** Written in the same
+style as everything else, skills added their percentages into a bracket that
+already held hero, spoil and lead bonuses. Hard March, labelled "+12% column
+power", measured **+9.7%**. Lance Charge, labelled "+30% to knights", measured
+**+24.4%**. Every percentage in the system was diluted by whatever else the hero
+already had — so the number in the tooltip was never the number the player got,
+and the dilution *varied with the hero*, which makes it unlearnable. For a game
+whose whole pitch is showing exact mechanics, a label that is not literally true
+is a defect, not a rounding difference. Everything a skill claims now applies on
+its own factor.
+
+Second: `equipped()` filtered empty slots *before* trimming to the slots you have
+unlocked, which compacted the array — a skill parked in slot 2 slid into slot 1
+and applied for free. Unreachable today (levels and stars never fall) but live the
+instant anything lets a slot close. Slice first, filter second.
+
+Third was in the test itself, which checked One Purpose against a four-class
+column where its condition cannot hold, and read the resulting zero as proof the
+skill was inert.
+
+### The verification suite (`npm run verify`, `npm run check`)
+
+Skills shipped with 48 assertions in `sim/verify-skills.mjs`, because this
+project's characteristic failure is **a system that quietly does nothing** — the
+frontier was mathematically unwinnable for two commits and the only symptom was
+an absence in the simulator's output, which I read as caution. So the suite does
+not check that modules load. It equips each skill alone and measures the figure it
+claims to move, asserts that Lance Charge leaves spearmen *bit-identical*, that
+One Purpose pays exactly nothing on a mixed column, that an unseated captain's
+court skill does nothing at all — and ends with a sweep that fails the run and
+**names** any skill that moves no number anywhere.
+
+`npm run check` chains build → verify → sim, so a red test stops the chain before
+the simulator runs.
+
 ### KvK — realms and the Rift (v1.26)
 
 The last structural gap. Two parts.

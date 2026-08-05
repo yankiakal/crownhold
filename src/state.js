@@ -155,6 +155,8 @@ export function migrate(s, now){
     if(!Array.isArray(s.world.beasts)) s.world.beasts = [];
     if(s.world.roamAt==null) s.world.roamAt = 0;
     if(s.world.spawnAt==null) s.world.spawnAt = 0;
+    // v1.27: hero skills — three slots, chosen not levelled
+    for(const h of Object.values(s.heroes)) if(!Array.isArray(h.skills)) h.skills = [null,null,null];
     // v1.15: one training queue became one per yard
     if(!s.tq || typeof s.tq !== 'object' || s.tq.key){
       const old = s.tq && s.tq.key ? s.tq : null;
