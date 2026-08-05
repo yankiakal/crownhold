@@ -18,13 +18,15 @@ import { join, dirname, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
-import { tick, armyPower, armyBreakdown, tierPower, masteryLvl, upkeepPerSec, gainValor, gainMastery, pushLog,
+import { tick, armyPower, armyBreakdown, tierPower, gainRes, masteryLvl, upkeepPerSec, gainValor, gainMastery, pushLog,
          takeCasualties, capFor } from '../src/logic.js';
 import { SEASON_MS as DEFAULT_SEASON_MS, SEASON_EPOCH, SEASON_ARCS,
          seasonNo as defSeasonNo, seasonEndsIn as defSeasonEndsIn } from '../src/defs.js';
-import { tickWorld, fitColumn, marchPower, bestLeaders } from '../src/world.js';
+import { tickWorld, fitColumn, marchPower, marchSpeed, bestLeaders } from '../src/world.js';
 import { freshState, applyOffline, migrate } from '../src/state.js';
 import { applyAction, isGameAction } from '../src/actions.js';
+import { resolveRaid, inBracket, raidShielded, defenceOf, unlootable,
+         RAID_TRAVEL_MS, RAID_COOLDOWN_MS, RAID_GRACE_MS, LOOTABLE } from '../src/raid.js';
 import { TASKS as MUSTER_TASKS, WEIGHTS as MUSTER_WEIGHTS, weightOf, taskNeed, rollTask,
          taskProgress, musterPeriod, musterEndsIn, musterReward, divisionOf,
          MUSTER_MIN_MEMBERS, REROLL_MS } from '../src/muster.js';
@@ -634,6 +636,81 @@ function rallyView(tag, now){
 /* Resolution is lazy, like everything else here — but it must be checked on
    EVERY request, not just rally endpoints, or a rally nobody happens to poll
    would leave its joiners' troops in limbo indefinitely. */
+/* ── raids in flight ──
+   Held in a single global register and settled at the top of every request, exactly as
+   the rallies are. Resolving them from the attacker's advance() instead would strand a
+   column whenever the attacker closed the tab — which is the bug rallies had before
+   v1.25, and the reason the Watch returns from the sender's side.
+
+   A raid resolves at its arrival time whether or not either player is looking. That is
+   the whole point of an asynchronous war: your wall has to hold while you sleep, which
+   is also why the Watch exists. */
+function resolveRaids(now){
+  db.raids = db.raids || [];
+  let touched = false;
+  for(const r of db.raids){
+    if(r.resolved || now < r.arriveAt) continue;
+    const att = db.users[String(r.from).toLowerCase()];
+    const def = db.users[String(r.to).toLowerCase()];
+    r.resolved = true; touched = true;
+    if(!att || !def){ r.homeAt = now; continue; }     // someone deleted their account mid-flight
+    advance(att, now); advance(def, now);
+    att.state.name = att.name; def.state.name = def.name;
+    /* Shielded between despatch and arrival: the column turns around rather than
+       punching through a Writ. Checked HERE and not only at send time, because the
+       defender may have raised one in the four minutes the ride took. */
+    if(raidShielded(def.state, now)){
+      pushLog(att.state, '🛡️ ' + def.name + ' raised a Writ of Peace before you arrived. '
+        + 'Your column turns for home with nothing.', 'loss');
+      r.outcome = { won:false, refused:true, mine:0, theirs:0, loot:{}, attHurt:0 };
+      continue;
+    }
+    const out = resolveRaid(att.state, def.state, r, now, Math.random);
+    r.outcome = { won: out.won, mine: out.mine, theirs: out.theirs, loot: out.loot,
+                  attHurt: out.attHurt, defHurt: out.defHurt, watchHurt: out.watchHurt,
+                  lifted: out.lifted, watchers: out.watchers };
+    /* Kept on both holds, not only on the in-flight record — the register is emptied
+       when the column gets home, and a battle you cannot look at afterwards may as well
+       not have had a result. Each side sees it from their own side. */
+    att.state.lastRaid = { at: now, against: def.name, won: out.won,
+                           mine: out.mine, theirs: out.theirs, loot: out.loot,
+                           hurt: out.attHurt, theirHurt: out.defHurt + out.watchHurt,
+                           theirWatchers: out.watchers };
+    def.state.lastDefence = { at: now, from: att.name, held: !out.won,
+                              mine: out.theirs, theirs: out.mine, lost: out.loot,
+                              hurt: out.defHurt + out.watchHurt, theirHurt: out.attHurt,
+                              lifted: out.lifted, watchers: out.watchers };
+    r.troops = out.survivors;
+    r.hurt = out.attHurt;
+  }
+  /* Homecoming: the survivors, the wounded into the attacker's own infirmary, and the
+     loot — which arrives WITH the column rather than at the moment of victory, because
+     it has to be carried. */
+  db.raids = (db.raids || []).filter(r => {
+    if(!r.resolved || now < r.homeAt) return true;
+    const att = db.users[String(r.from).toLowerCase()];
+    if(att){
+      advance(att, now);
+      const st = att.state;
+      for(const [k, n] of Object.entries(r.troops || {})) if(n > 0) st.t[k] = (st.t[k] || 0) + n;
+      if(r.hurt){
+        st.wounded = st.wounded || {};
+        const kinds = Object.keys(r.troops || {}).filter(k => (r.troops[k] || 0) > 0);
+        const per = kinds.length ? Math.floor(r.hurt / kinds.length) : 0;
+        for(const k of kinds) st.wounded[k] = (st.wounded[k] || 0) + per;
+      }
+      const loot = (r.outcome && r.outcome.loot) || {};
+      for(const [res, v] of Object.entries(loot)) gainRes(st, res, v);
+      pushLog(st, '🚩 Your column is home from ' + r.to
+        + (Object.keys(loot).length ? ' with ' + Object.entries(loot).map(([x, v]) => v + ' ' + x).join(', ') : '')
+        + '.', Object.keys(loot).length ? 'win' : '');
+    }
+    touched = true;
+    return false;
+  });
+  if(touched) markDirty();
+}
+
 function resolveRallies(now){
   if(!db.rallies) return;
   for(const [tag, r] of Object.entries(db.rallies)){
@@ -958,6 +1035,7 @@ async function api(req, res, url){
      ran when someone happened to poll the rally, an alliance that all logged off
      mid-muster would leave those columns stranded indefinitely. The Rift's
      hold-scoring and its closing are lazy for the same reason. */
+  resolveRaids(now);
   resolveRallies(now);
   tickRift(now);
   closeRift(now);
@@ -1202,6 +1280,95 @@ async function api(req, res, url){
     return send(res, 200, { helped, alliance: allianceView(u.alliance, now) });
   }
 
+  /* ── raids: hold against hold ── */
+
+  if(path === '/api/raid'){
+    advance(u, now);
+    const mine = defenceOf(u.state).total;
+    const key = u.name.toLowerCase();
+    const mineRealm = realmOf(u);
+    /* Bracketed by defensive power on the SAME rule the arena uses, and only inside
+       your own reach — a maxed hold cannot farm a beginner, and cannot reach across
+       realms for one either. */
+    const targets = Object.entries(db.users)
+      .filter(([k, o]) => k !== key && realmOf(o) === mineRealm)
+      .map(([, o]) => {
+        const d = defenceOf(o.state);
+        return {
+          name: o.name, townhall: o.state.b.townhall, power: d.total,
+          watchers: d.watchers, lifted: d.lifted,
+          shielded: raidShielded(o.state, now),
+          ally: !!(u.alliance && o.alliance === u.alliance),
+          inBracket: inBracket(mine, d.total),
+        };
+      })
+      .filter(t => t.inBracket && !t.ally)
+      .sort((a, b) => b.power - a.power)
+      .slice(0, 20);
+    return send(res, 200, { raid: {
+      me: { power: mine, cooldownIn: Math.max(0, (u.state.raidReady || 0) - now),
+            graceIn: Math.max(0, (u.state.graceUntil || 0) - now),
+            shieldIn: Math.max(0, (u.state.shieldUntil || 0) - now) },
+      targets,
+      outgoing: (db.raids || []).filter(r => r.from === u.name).map(r => ({
+        to: r.to, resolved: !!r.resolved,
+        arriveIn: Math.max(0, r.arriveAt - now), homeIn: Math.max(0, r.homeAt - now),
+        outcome: r.outcome || null,
+      })),
+      incoming: (db.raids || []).filter(r => r.to === u.name && !r.resolved).map(r => ({
+        from: r.from, arriveIn: Math.max(0, r.arriveAt - now),
+      })),
+      lastRaid: u.state.lastRaid || null,
+      lastDefence: u.state.lastDefence || null,
+      travelMs: RAID_TRAVEL_MS, graceMs: RAID_GRACE_MS,
+      unlootable: unlootable(), lootable: LOOTABLE,
+    } });
+  }
+
+  if(path === '/api/raid/send'){
+    advance(u, now);
+    if((u.state.raidReady || 0) > now)
+      return send(res, 429, { error:'Your marshals are still regrouping.' });
+    const target = db.users[String(body.to || '').toLowerCase()];
+    if(!target || target === u) return send(res, 404, { error:'No such hold.' });
+    if(u.alliance && target.alliance === u.alliance)
+      return send(res, 400, { error:'They are your own alliance.' });
+    if(realmOf(target) !== realmOf(u))
+      return send(res, 400, { error:'That hold is in another reach.' });
+    advance(target, now);
+    if(raidShielded(target.state, now))
+      return send(res, 400, { error:'A Writ of Peace covers that hold.' });
+    const mine = defenceOf(u.state).total, theirs = defenceOf(target.state).total;
+    if(!inBracket(mine, theirs)) return send(res, 400, { error:'That hold is outside your bracket.' });
+    if((db.raids || []).some(r => r.from === u.name && !r.resolved))
+      return send(res, 400, { error:'You already have a column in the field.' });
+
+    const party = Array.isArray(body.heroes) ? body.heroes.filter(Boolean).slice(0, 3) : [];
+    const fit = fitColumn(u.state, body.troops || {}, party);
+    if(!fit.total) return send(res, 400, { error:'Choose troops to send.' });
+    for(const [k, n] of Object.entries(fit.troops)) u.state.t[k] -= n;
+
+    /* Base and multiplier are fixed at despatch, as the Watch's are, and for the same
+       reason: the column must not weaken in transit because its owner sent their heroes
+       somewhere else afterwards. */
+    const bd = armyBreakdown(u.state);
+    let base = 0;
+    for(const [k, n] of Object.entries(fit.troops)) base += tierPower(u.state, k) * n;
+    const travel = Math.round(RAID_TRAVEL_MS * marchSpeed(u.state));
+    db.raids = db.raids || [];
+    db.raids.push({
+      id: randomBytes(6).toString('hex'), from: u.name, to: target.name,
+      troops: { ...fit.troops }, base: Math.round(base), mult: bd.ownMult,
+      arriveAt: now + travel, homeAt: now + travel * 2, resolved: false, outcome: null,
+    });
+    u.state.raidReady = now + RAID_COOLDOWN_MS;
+    pushLog(u.state, '⚔️ ' + fit.total + ' ride against ' + target.name + '.', 'gold');
+    pushLog(target.state, '🔭 Scouts: a column of ' + fit.total 
+      + ' has been seen on the road, under ' + u.name + '\'s banner.', 'loss');
+    markDirty(); flush();
+    return send(res, 200, { ...publicState(u) });
+  }
+
   /* ── test hooks ──
      OFF unless ALLOW_DEBUG=1 is set in the environment, so a deployed server never
      exposes them. The verification suite needs to move a counter and kit a hold;
@@ -1219,6 +1386,19 @@ async function api(req, res, url){
     markDirty();
     return send(res, 200, { field, value: u.state[field] });
   }
+  if(ALLOW_DEBUG && path === '/api/debug/warp'){
+    /* Rewinds every timestamp the raid layer reads, which is the same thing as moving
+       the clock forward without actually waiting four minutes per assertion. */
+    const ms = Math.max(0, Number(body.ms) || 0);
+    for(const r of (db.raids || [])){ r.arriveAt -= ms; r.homeAt -= ms; }
+    for(const o of Object.values(db.users)){
+      o.state.lastSeen = (o.state.lastSeen || now) - ms;
+      if(o.state.raidReady) o.state.raidReady -= ms;
+    }
+    resolveRaids(now);
+    markDirty();
+    return send(res, 200, { warped: ms });
+  }
   if(ALLOW_DEBUG && path === '/api/debug/kit'){
     advance(u, now);
     const st = u.state;
@@ -1226,7 +1406,7 @@ async function api(req, res, url){
     st.b.barracks = body.strong ? 12 : 5;
     st.b.wall = body.strong ? 12 : 4;
     st.b.academy = body.strong ? 9 : 2;
-    st.t = { spearman: body.strong ? 400 : 60, archer: 0, knight: 0, ballista: 0 };
+    st.t = { spearman: Number(body.spearmen) || (body.strong ? 400 : 60), archer: 0, knight: 0, ballista: 0 };
     st.tier = body.strong ? { spearman:5, archer:1, knight:1, ballista:1 }
                           : { spearman:1, archer:1, knight:1, ballista:1 };
     st.res = { food:9e5, wood:9e5, stone:9e5, iron:9e5, steel:9e5, runestone:9e5,
@@ -1235,7 +1415,8 @@ async function api(req, res, url){
     if(body.strong){
       st.heroes.marshal = { lvl:20, xp:0, stars:3, deeds:0, gear:{}, skills:[null,null,null] };
       st.heroes.exile   = { lvl:20, xp:0, stars:3, deeds:0, gear:{}, skills:[null,null,null] };
-      st.court = ['marshal','exile'];
+      st.heroes.drillmaster = { lvl:20, xp:0, stars:3, deeds:0, gear:{}, skills:[null,null,null] };
+      st.court = ['marshal','exile','drillmaster'];
     }
     st.b.command = body.strong ? 20 : 5;
     markDirty();

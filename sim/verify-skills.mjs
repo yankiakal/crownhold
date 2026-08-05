@@ -457,6 +457,116 @@ console.log('\n── a pre-skills save is inert, not broken ──');
      'fixed→' + draw(fixed) + '  vs  0.99→' + draw(() => 0.99));
 }
 
+/* ── the four rules of hold-against-hold ──
+   Asserted on the pure resolution, not only over HTTP, because these four are the
+   whole difference between this and the game it is modelled on. Whiteout Survival does
+   not sell power to attackers; it sells RELIEF TO VICTIMS, bought in a panic in the ten
+   minutes after someone burned your city. Each rule removes a reason to panic. */
+{
+  console.log('\n── raids: nobody dies, and only stores move ──');
+  const R = await import('../src/raid.js');
+  const mk = (troops, opts = {}) => {
+    const s = hold();
+    s.t = { spearman:0, archer:0, knight:0, ballista:0, ...troops };
+    s.b.hospital = opts.hospital == null ? 0 : opts.hospital;   // NO infirmary on purpose
+    s.b.warehouse = opts.warehouse || 0;
+    s.b.wall = opts.wall == null ? 6 : opts.wall;
+    s.res = { food:40000, wood:40000, stone:20000, iron:9000,
+              steel:5000, runestone:800, rations:300, trueore:5, truegold:2 };
+    return s;
+  };
+
+  const att = mk({ spearman: 400 }), def = mk({ spearman: 60 });
+  att.name = 'Attacker'; def.name = 'Defender';
+  const col = { troops: { spearman: 300 }, base: 0, mult: 2 };
+  for(const [k, n] of Object.entries(col.troops)) col.base += L.tierPower(att, k) * n;
+  const troopsBefore = def.t.spearman;
+  const resBefore = { ...def.res };
+  const out = R.resolveRaid(att, def, col, def.now, () => 0.5);
+  ok('the attack landed', out.won === true, out.mine + ' vs ' + out.theirs);
+
+  /* RULE 1, and the one that matters most: the defender has NO Infirmary at all, and
+     still buries nobody. takeCasualties caps the wounded at the beds available and kills
+     the overflow — right for the Unpaid, and exactly WoS's funnel when the attacker is a
+     person. A raid against a hospital-less hold killed 21 of 120 before this was fixed. */
+  const wounded = Object.values(def.wounded || {}).reduce((a, b) => a + b, 0);
+  ok('every casualty is a wound, with no Infirmary at all',
+     troopsBefore - def.t.spearman === wounded,
+     troopsBefore + ' → ' + def.t.spearman + ', ' + wounded + ' wounded, beds for ' + L.woundedCap(def));
+  /* Tested directly rather than hoped for out of a battle: the first version of this
+     assertion demanded the fight produce more casualties than beds, and a rout only
+     wounded 12 against 30 beds — so it proved nothing about the overflow path, which is
+     the entire point. takeWounds is where the guarantee lives, so that is what is asked. */
+  {
+    const full = hold();
+    full.b.hospital = 0;
+    full.t = { spearman: 500, archer:0, knight:0, ballista:0 };
+    full.wounded = {};
+    const beds = L.woundedCap(full);
+    const r = L.takeWounds(full, 'spearman', beds * 4);
+    const held = Object.values(full.wounded).reduce((a, b) => a + b, 0);
+    ok('takeWounds buries nobody even at four times the beds available',
+       r.dead === 0 && held === beds * 4,
+       held + ' wounded held with beds for ' + beds);
+    const viaCasualties = hold();
+    viaCasualties.b.hospital = 0; viaCasualties.wounded = {};
+    viaCasualties.t = { spearman: 500, archer:0, knight:0, ballista:0 };
+    const c = L.takeCasualties(viaCasualties, 'spearman', L.woundedCap(viaCasualties) * 4, true);
+    ok('while takeCasualties still buries the overflow, as PvE intends',
+       c.dead > 0, c.dead + ' dead, ' + c.hurt + ' wounded — the reason raids needed their own path');
+  }
+
+  /* RULE 2 — the scarce spine of the economy cannot be carted off. */
+  const moved = R.unlootable().filter(r => def.res[r] !== resBefore[r]);
+  ok('refined and carried goods are untouchable', moved.length === 0,
+     moved.length ? 'MOVED: ' + moved.join(', ') : R.unlootable().join(', ') + ' all held');
+  ok('and the base stores did move', R.LOOTABLE.some(r => def.res[r] < resBefore[r]),
+     Object.entries(out.loot).map(([k, v]) => v + ' ' + k).join(', '));
+
+  /* RULE 3 — a column carries what it can carry. */
+  {
+    const rich = mk({ spearman: 60 });
+    rich.name = 'Rich'; rich.res.food = 5_000_000;
+    const tiny = { troops: { spearman: 4 }, base: 0, mult: 40 };
+    for(const [k, n] of Object.entries(tiny.troops)) tiny.base += L.tierPower(att, k) * n;
+    const before = rich.res.food;
+    const o2 = R.resolveRaid(att, rich, tiny, rich.now, () => 0.5);
+    const took = before - rich.res.food;
+    const survivors = Object.values(o2.survivors).reduce((a, b) => a + b, 0);
+    ok('a four-soldier column cannot empty a rich hold',
+       took <= survivors * R.CARRY_PER_TROOP && took < before * 0.01,
+       'took ' + took + ' of ' + before + ' with ' + survivors + ' survivors');
+  }
+
+  /* RULE 4 — losing buys peace, free. */
+  ok('the beaten hold is under grace', (def.graceUntil || 0) > def.now,
+     Math.round(((def.graceUntil||0) - def.now)/60000) + ' minutes');
+  ok('and holds a Writ it did not pay for', (def.shields || 0) >= 1, String(def.shields));
+  ok('grace and Writs both read as shielded', R.raidShielded(def, def.now) === true);
+
+  /* And the bracket, which is the same rule the arena uses rather than a second one. */
+  console.log('\n── the bracket refuses a mismatch ──');
+  ok('an equal hold is fair game', R.inBracket(1000, 1000) === true);
+  ok('twice your strength is still fair', R.inBracket(1000, 2000) === true);
+  ok('a hold you could only bully is refused', R.inBracket(1000, 200) === false);
+  ok('and one that would flatten you is refused', R.inBracket(1000, 5000) === false);
+
+  /* The Watch is felt here — the whole reason it was built. */
+  console.log('\n── a garrison is felt in a real assault ──');
+  {
+    const bare = mk({ spearman: 60 }), held = mk({ spearman: 60 });
+    bare.name = held.name = 'Defender';
+    const solo = R.defenceOf(bare).total;
+    held.watch = [{ from:'Ally', base: 900, mult: R.defenceOf(bare).ownMult * 2.5,
+                    troops: { spearman: 150 }, count: 150, hurt: 0 }];
+    const guarded = R.defenceOf(held).total;
+    ok('a posted Watch raises the wall it stands on', guarded > solo, solo + ' → ' + guarded);
+    ok('and lifts the host\'s own soldiers, not just adds its own',
+       R.defenceOf(held).lifted === true,
+       '×' + R.defenceOf(bare).ownMult.toFixed(2) + ' → ×' + R.defenceOf(held).mult.toFixed(2));
+  }
+}
+
 /* ── the store's guardrail, asserted rather than trusted ──
    Appended here because it is the same kind of check: a claim in a design doc is
    worth nothing unless something fails when it stops being true. */

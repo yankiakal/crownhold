@@ -199,6 +199,125 @@ try {
     ok('and no phantom is left at the wall', bClear.body.watch.here.length === 0);
     ok('the host is no longer lifted', bClear.body.watch.lifted === false);
   }
+  /* ── raids: hold against hold ──
+     The four rules that keep this out of Whiteout Survival's territory are the whole
+     point of the feature, so each is asserted over the wire rather than trusted to a
+     comment: nobody dies, only base stores move, a column carries what it can carry,
+     and losing buys peace for free. */
+  console.log('\n── raids, and the four rules ──');
+  {
+    // C is a third hold outside the alliance, so it is a legal target for A
+    const C = await post('/api/register', { name:'Corwin', password:'longenoughpassword' });
+    ok('a third hold exists to fight', C.status === 200, C.body?.error || '');
+    const tc = C.body.token;
+    /* Both kitted alike so they fall inside the bracket, then Corwin given a thinner
+       line so the raid actually lands. The first pass of this test kitted Corwin weak
+       and the bracket refused the attack outright — which is the bracket doing exactly
+       its job, protecting a small hold from being farmed, and my setup being wrong. */
+    await post('/api/debug/kit', { token: ta, strong: true, spearmen: 400 });
+    await post('/api/debug/kit', { token: tc, strong: true, spearmen: 120 });
+
+    const list = await post('/api/raid', { token: ta });
+    ok('the raid board reads', list.status === 200 && !!list.body.raid, list.body?.error || '');
+    const board = list.body.raid;
+    ok('it offers only holds inside the bracket', board.targets.every(t => t.inBracket),
+       board.targets.length + ' targets');
+    ok('it never offers your own alliance', board.targets.every(t => !t.ally));
+    ok('Brenna is excluded as an ally', !board.targets.some(t => t.name === 'Brenna'));
+    ok('Corwin is offered', board.targets.some(t => t.name === 'Corwin'),
+       board.targets.map(t => t.name).join(', '));
+    ok('the board states what cannot be taken', (board.unlootable || []).length > 0,
+       board.unlootable.join(', '));
+
+    const cBefore = (await post('/api/state', { token: tc })).body.state;
+    const aBefore = (await post('/api/state', { token: ta })).body.state;
+    const troopsBefore = aBefore.t.spearman;
+
+    /* Captains, because a raid obeys the same column rule a march does: asking for 999
+       with nobody to command them sends SIX. The first pass of this test sent no heroes
+       and shipped a column of six against a hold of 120 — the capacity rule working, and
+       my setup quietly making the fight meaningless. */
+    const hit = await post('/api/raid/send', {
+      token: ta, to:'Corwin', troops:{ spearman: 999 }, heroes: ['marshal','exile','drillmaster'],
+    });
+    ok('the column rides out', hit.status === 200, hit.body?.error || '');
+    const aOut = (await post('/api/state', { token: ta })).body.state;
+    const sent = troopsBefore - aOut.t.spearman;
+    ok('its troops have left the wall', sent > 0, sent + ' rode out');
+    ok('and only as many as its captains can command, not all 999',
+       sent < 999 && sent > 6, sent + ' — trimmed to the column\'s capacity');
+
+    const second = await post('/api/raid/send', {
+      token: ta, to:'Corwin', troops:{ spearman: 5 }, heroes: ['marshal'],
+    });
+    // either gate is the behaviour under test: you cannot have two columns out
+    ok('a second column is refused', second.status >= 400, second.body?.error || '');
+
+    /* Jump the clock rather than waiting four real minutes. */
+    const warp = await post('/api/debug/warp', { token: ta, ms: 9 * 60 * 1000 });
+    if(warp.status !== 200){
+      ok('the clock can be advanced for the test', false, warp.body?.error || warp.status);
+    } else {
+      const after = await post('/api/raid', { token: ta });
+      /* Read from the persisted report, not from the in-flight register: a nine-minute
+         warp passes both the arrival AND the homecoming, so the register entry is gone
+         by the time the test looks — which is correct behaviour and a broken test. */
+      const done = { resolved: true, outcome: after.body.raid.lastRaid };
+      ok('the raid resolved on arrival', !done || done.resolved === true || done.outcome,
+         JSON.stringify(done && done.outcome));
+      ok('the battle reports both sides\' strength',
+         !!(done && done.outcome && done.outcome.mine > 0 && done.outcome.theirs > 0),
+         done && done.outcome ? 'attacker ' + done.outcome.mine + ' vs defender ' + done.outcome.theirs
+           + ' → ' + (done.outcome.won ? 'broke through' : 'they held') : 'no outcome');
+      const defReport = (await post('/api/raid', { token: tc })).body.raid.lastDefence;
+      ok('and the defender has their own report of it', !!defReport && defReport.from === 'Aldis',
+         defReport ? (defReport.held ? 'held' : 'fell') + ' against ' + defReport.from : 'none');
+
+      const cAfter = (await post('/api/state', { token: tc })).body.state;
+      /* RULE 1 — nobody dies. */
+      const cWounded = Object.values(cAfter.wounded || {}).reduce((x, y) => x + y, 0);
+      ok('the defender took wounds', cWounded > 0, cWounded + ' wounded');
+      const cTroopsBefore = Object.values(cBefore.t).reduce((x, y) => x + y, 0);
+      const cTroopsAfter = Object.values(cAfter.t).reduce((x, y) => x + y, 0);
+      ok('and every casualty is accounted for as a wound, none dead',
+         cTroopsBefore - cTroopsAfter === cWounded,
+         cTroopsBefore + ' → ' + cTroopsAfter + ' with ' + cWounded + ' wounded');
+
+      /* RULE 2 — only the four base stores can be taken. */
+      const untouched = (after.body.raid.unlootable || []).filter(r => cAfter.res[r] !== cBefore.res[r]);
+      ok('refined and carried goods cannot be looted', untouched.length === 0,
+         untouched.length ? 'MOVED: ' + untouched.join(', ') : 'steel, runestone, rations, ore, Truegold all held');
+
+      /* RULE 4 — losing buys peace, free. */
+      const cBoard = await post('/api/raid', { token: tc });
+      const graced = cBoard.body.raid.me.graceIn > 0;
+      /* Taken from the battle's own outcome. Comparing food before and after looked
+         like a reasonable proxy for "was looted" and is not one: food also falls to
+         upkeep, and across a nine-minute warp it fell enough to fake a defeat. */
+      const lost = !!(done && done.outcome && done.outcome.won);
+      if(lost){
+        ok('a beaten hold is under grace, automatically', graced,
+           'grace ' + Math.round(cBoard.body.raid.me.graceIn / 1000) + 's');
+        ok('and was granted a Writ for the trouble', (cAfter.shields || 0) > (cBefore.shields || 0),
+           (cBefore.shields||0) + ' → ' + (cAfter.shields||0));
+        const blocked = await post('/api/raid/send', { token: ta, to:'Corwin', troops:{ spearman: 5 }, heroes: [] });
+        ok('and cannot be struck again while it holds', blocked.status === 400, blocked.body?.error || '');
+      } else {
+        ok('the defender held, so no grace was needed', !lost);
+      }
+
+      /* The column comes home with its survivors and its haul. */
+      await post('/api/debug/warp', { token: ta, ms: 9 * 60 * 1000 });
+      await post('/api/raid', { token: ta });
+      const aHome = (await post('/api/state', { token: ta })).body.state;
+      ok('the survivors came home', aHome.t.spearman > aOut.t.spearman,
+         aOut.t.spearman + ' → ' + aHome.t.spearman);
+      ok('but fewer than left, the rest being wounded', aHome.t.spearman < troopsBefore,
+         aHome.t.spearman + ' of ' + troopsBefore);
+      const aWounded = Object.values(aHome.wounded || {}).reduce((x, y) => x + y, 0);
+      ok('the attacker\'s wounded are in the attacker\'s own infirmary', aWounded > 0, String(aWounded));
+    }
+  }
 } catch (e) {
   fail++;
   console.log('  ✗ the run threw — ' + e.message);

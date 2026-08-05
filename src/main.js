@@ -23,6 +23,7 @@ net.resume().then(s => {
     net.refreshAlliance().then(render);
     net.refreshMuster().then(render);
     net.refreshWatch().then(render);
+    net.refreshRaid().then(render);
     net.refreshRealm().then(render);
     net.refreshChat().then(() => renderChat());
   }
@@ -51,6 +52,7 @@ setInterval(() => {
       net.refreshAlliance();
       net.refreshMuster();
       net.refreshWatch();
+      net.refreshRaid();
       net.refreshRealm();
     }
     if(now - lastChat > 5000){ lastChat = now; net.refreshChat().then(() => renderChat()); }

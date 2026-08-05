@@ -481,6 +481,65 @@ Three lessons, in order of how much they cost:
    suspicious of. Reproduce first, theorise second. The check that settled it took
    one command: run it twice, unchanged.
 
+### Hold against hold (v1.37) — and the one line the whole thing rests on
+
+The attack side the Watch was built to defend against. This is the system Whiteout
+Survival monetizes hardest, so the anti-P2W line had to be drawn in code rather than in
+this document. **WoS does not sell power to attackers. It sells relief to victims** —
+shields, teleports, instant healing, resource protection, all bought in a panic in the
+ten minutes after someone burned your city. Fear of loss is the product.
+
+Four rules remove the fear without removing the fight, each one a line in `src/raid.js`:
+
+1. **Nobody dies.** Every casualty on both sides is a wound.
+2. **Only food, wood, stone and iron can be taken**, and only the share the Warehouse
+   leaves exposed. Steel, runestone, rations, Isle ore and Truegold — the scarce spine of
+   the economy — cannot be carted off at all.
+3. **A column carries what it can carry.** Loot is capped by the size of the column that
+   came for it: a four-soldier raid on a hold sitting on five million food took 165.
+4. **Losing buys peace, free.** A beaten hold gets a Writ and 30 minutes of grace,
+   automatically. In WoS that window is the checkout page.
+
+Attacks are bracketed by defensive power on the **same rule the arena already used** —
+one bracket in this codebase, not two — so a maxed hold cannot farm a beginner. The test
+suite's first attempt to stage a raid was refused by it, which was the bracket working
+and my setup being wrong.
+
+#### The bug that rule 1 was hiding
+
+`takeCasualties` has always capped the wounded at the beds the Infirmary provides and
+buried the overflow. Its own comment says so: *"`pve` means nobody dies except for want
+of a bed."* For the Unpaid that is a good mechanic — it is why the Hospital matters.
+
+With another player as the attacker it is **exactly the funnel**. The server test found
+it immediately: a raid on a hold with no Hospital took 120 defenders to 69 with only 30
+wounded. **Twenty-one soldiers were gone permanently because there was nowhere to lay
+them down** — which is the precise moment a real game shows you a healing pack.
+
+So raids resolve through `takeWounds()`, which never kills and which the Infirmary's size
+does not get a vote in. The overflow waits in a field camp. The cost stays real — the
+wounded cannot fight, and healing them takes resources and time, both earned — but troops
+cannot be destroyed. Asserted directly rather than hoped for out of a battle:
+`takeWounds` holds 120 wounded against 30 beds and buries nobody, while `takeCasualties`
+given the same numbers kills 90.
+
+#### Where the Watch pays off
+
+A garrison an ally posted is counted by `armyBreakdown`, so it is felt in a real assault:
+a bare hold defending at 606 defended at **3396** with one allied column standing, and its
+own soldiers were lifted from ×1.00 to ×2.50 rather than merely joined. That is the payoff
+for having built the defensive half first.
+
+#### Two things worth keeping
+
+Battle reports **persist on both holds** rather than living only on the in-flight record.
+The register is emptied when a column gets home, and a battle you cannot look at afterwards
+may as well not have had a result. Each side reads it from their own side.
+
+And the panel **states all four rules on screen**. Not as marketing: a player who does not
+know their troops cannot die will play as though they can, and that fear is what the entire
+funnel is built on. Removing the fear only works if you also remove the doubt.
+
 ### The Muster Roll and the Watch (v1.36) — copying Whiteout Survival, minus the funnel
 
 Two systems taken from Whiteout Survival, chosen after checking what we already had —

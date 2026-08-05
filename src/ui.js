@@ -1009,6 +1009,84 @@ function renderResearch(S){
   return h;
 }
 
+/* ── raids: hold against hold ──
+   The system Whiteout Survival monetizes hardest, so the panel states the four rules
+   that keep it out of their territory. Not as marketing — a player who does not KNOW
+   their troops cannot die will play as if they can, which is the fear the whole funnel
+   is built on. Removing the fear only works if you also remove the doubt. */
+function renderRaid(S){
+  if(!net.isOnline()) return '';
+  const r = net.raidData();
+  if(!r) return '';
+  let h = '<section class="panel"><h2>Raids'
+    + ' <span style="letter-spacing:.05em">'+fmt(r.me.power)+' at your wall</span></h2>';
+
+  h += '<div class="stat-note">Hold against hold, and four rules that never change: '
+    + '<b>nobody dies</b> — every casualty on both sides is a wound that heals; '
+    + '<b>only '+r.lootable.join(', ')+' can be taken</b>, and only the share your Warehouse leaves exposed; '
+    + '<b>a column carries what it can carry</b>; and <b>losing buys peace free</b> — a beaten hold '
+    + 'gets a Writ and '+ftime(r.graceMs)+' of grace, automatically. Targets are bracketed by power, '
+    + 'so nobody can farm a smaller hold.</div>';
+
+  if(r.me.graceIn > 0)
+    h += '<div class="stat-note" style="color:var(--good)">You are under grace for '
+      + ftime(r.me.graceIn)+' — no one may strike you.</div>';
+  else if(r.me.shieldIn > 0)
+    h += '<div class="stat-note" style="color:var(--good)">A Writ of Peace covers you for '+ftime(r.me.shieldIn)+'.</div>';
+
+  for(const i of r.incoming)
+    h += '<div class="d-warn">🔭 A column under '+esc(i.from)+'&#39;s banner is on the road — '
+      + ftime(i.arriveIn)+' out.</div>';
+  for(const o of r.outgoing)
+    h += '<div class="trow mine"><span class="tname">Your column at '+esc(o.to)+'</span>'
+      + '<span class="tmeta">'+(o.resolved ? 'riding home' : 'on the road')+'</span>'
+      + '<span class="spacer"></span><span class="count">'
+      + ftime(o.resolved ? o.homeIn : o.arriveIn)+'</span></div>';
+
+  if(r.lastRaid){
+    const l = r.lastRaid;
+    h += '<div class="stat-note">Last raid — '+(l.won ? 'you broke ' : 'you were held by ')
+      + esc(l.against)+' ('+fmt(l.mine)+' vs '+fmt(l.theirs)+')'
+      + (l.won && Object.keys(l.loot||{}).length ? ', hauling '+Object.entries(l.loot).map(([k,v])=>fmt(v)+' '+k).join(', ') : '')
+      + '. '+l.hurt+' of yours wounded, '+l.theirHurt+' of theirs.'
+      + (l.theirWatchers ? ' '+l.theirWatchers+' allied column'+(l.theirWatchers===1?'':'s')+' stood with them.' : '')+'</div>';
+  }
+  if(r.lastDefence){
+    const d = r.lastDefence;
+    h += '<div class="stat-note">Last assault on you — '+esc(d.from)+' '+(d.held ? 'was thrown back' : 'broke through')
+      + ' ('+fmt(d.mine)+' vs '+fmt(d.theirs)+'). '+d.hurt+' of yours wounded, none lost.'
+      + (d.lifted ? ' The Watch at your wall lifted your whole line.' : '')+'</div>';
+  }
+
+  if(r.me.cooldownIn > 0)
+    h += '<div class="stat-note">Your marshals regroup for '+ftime(r.me.cooldownIn)+'.</div>';
+
+  if(!r.targets.length)
+    h += '<div class="stat-note">No hold in your reach is inside your bracket. That is the bracket '
+      + 'working: it will not offer you someone you could only bully.</div>';
+  else {
+    h += '<p class="d-row" style="margin-top:.5rem">In your bracket</p>';
+    for(const t of r.targets)
+      h += '<div class="trow"><span class="tname">'+esc(t.name)+'</span>'
+        + '<span class="tmeta">TH'+t.townhall+' · '+fmt(t.power)
+        + (t.watchers ? ' · '+t.watchers+' allied column'+(t.watchers===1?'':'s')+' standing' : '')
+        + (t.shielded ? ' · under a Writ' : '')+'</span><span class="spacer"></span>'
+        + '<button data-act="raidPick" data-key="'+esc(t.name)+'" '
+        + (t.shielded || r.me.cooldownIn > 0 || r.outgoing.length ? 'disabled' : '')+'>'
+        + (t.shielded ? 'protected' : 'Raid')+'</button></div>';
+    if(raidTarget){
+      const fit = fitColumn(S, marchWant, marchParty);
+      h += '<div class="stat-note">Riding against <b>'+esc(raidTarget)+'</b> — '+ftime(r.travelMs)
+        + ' each way, and they cannot defend your own wall while away.</div>'
+        + renderColumnComposer(S)
+        + '<button class="primary" data-act="raidSend" data-key="'+esc(raidTarget)+'" '
+        + columnAttrs()+(fit.total?'':' disabled')+'>'
+        + (fit.total ? '⚔️ Send '+fit.total+' against '+esc(raidTarget) : 'Choose troops')+'</button>';
+    }
+  }
+  return h + '</section>';
+}
+
 /* ── the Watch ──
    Troops standing at an ally's wall. The rule worth having is the one Whiteout
    Survival uses: everything at a wall fights under the BEST captain present, so a
@@ -1281,7 +1359,8 @@ sceneCanvas.id = 'holdscene';
 let detail = null; // {type:'building'|'troop'|'hero', key} — the tap-to-inspect sheet
 // the column being assembled: up to three leaders and a count per troop type
 let marchParty = [];
-let watchTarget = null;   // which ally the Watch composer is aimed at
+let watchTarget = null;
+let raidTarget = null;    // which hold the raid composer is aimed at   // which ally the Watch composer is aimed at
 let marchWant = {};
 function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]); }
 
@@ -2113,7 +2192,7 @@ export function render(){
   app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
     + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderPets(S) + renderRegalia(S) + renderSpoils(S)
-      + renderDaily(S) + renderIsle(S) + renderEvent(S) + renderRift(S) + renderRally(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderMusterRoll(S) + renderWatch(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
+      + renderDaily(S) + renderIsle(S) + renderEvent(S) + renderRift(S) + renderRally(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderMusterRoll(S) + renderWatch(S) + renderRaid(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
       + renderAchievements(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
   fx.innerHTML = renderFx(S) + renderLore(S) + renderStore(S)
@@ -2250,6 +2329,12 @@ const VIEW_ACTIONS = {
   rallyLaunch: () => {
     net.rallyLaunch()
       .then(d => { if(d.state) store.s = d.state; render(); })
+      .catch(e => { acctMsg = e.message; acctOpen = true; renderAccount(); });
+  },
+  raidPick: b => { raidTarget = (raidTarget === b.dataset.key) ? null : b.dataset.key; render(); },
+  raidSend: b => {
+    net.raidSend(b.dataset.key, fitColumn(store.s, marchWant, marchParty).troops, marchParty)
+      .then(d => { if(d.state) store.s = d.state; raidTarget = null; marchParty = []; marchWant = {}; render(); })
       .catch(e => { acctMsg = e.message; acctOpen = true; renderAccount(); });
   },
   watchPick: b => { watchTarget = (watchTarget === b.dataset.key) ? null : b.dataset.key; render(); },

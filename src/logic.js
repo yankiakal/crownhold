@@ -417,6 +417,25 @@ export function takeCasualties(s, k, n, pve){
   if(hurt) s.wounded[k] = (s.wounded[k] || 0) + hurt;
   return { dead: n - hurt, hurt };
 }
+/* Hold against hold: NOBODY DIES, and the size of your Infirmary does not get a vote.
+   takeCasualties caps the wounded at the beds available and buries the overflow — a
+   fine rule for the Unpaid, and the precise shape of Whiteout Survival's funnel when
+   the attacker is another player. A raid found a hold with no Hospital, and 21 of its
+   120 defenders were gone permanently because there was nowhere to lay them down.
+   That is the moment WoS sells you a healing pack.
+
+   The cost is still real: the wounded cannot fight, and healing them takes resources
+   and time. What it cannot do is destroy troops for good, because permanent loss is
+   what makes a person reach for a wallet. Overflow waits in a field camp. */
+export function takeWounds(s, k, n){
+  n = Math.max(0, Math.round(n));
+  if(!n) return { dead:0, hurt:0 };
+  s.t[k] = Math.max(0, (s.t[k] || 0) - n);
+  s.wounded = s.wounded || {};
+  s.wounded[k] = (s.wounded[k] || 0) + n;
+  return { dead:0, hurt:n };
+}
+
 export function healCost(s){
   const c = {};
   for(const [k,n] of Object.entries(s.wounded || {})){

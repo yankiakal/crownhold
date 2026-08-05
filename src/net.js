@@ -114,6 +114,23 @@ export function arenaData(){ return arena; }
 let ally = null;
 export function allianceData(){ return ally; }
 
+/* ── raids: hold against hold ── */
+let raid = null;
+export function raidData(){ return raid; }
+export async function refreshRaid(){
+  if(!isOnline()) return null;
+  try{
+    const d = await post('/api/raid', { token: session.token });
+    raid = d && d.raid ? d.raid : null;
+    return raid;
+  }catch(e){ raid = null; return null; }
+}
+export async function raidSend(to, troops, heroes){
+  const d = await post('/api/raid/send', { token: session.token, to, troops, heroes });
+  await refreshRaid();
+  return d;
+}
+
 /* ── the Watch ── */
 let watch = null;
 export function watchData(){ return watch; }
