@@ -21,7 +21,7 @@ export function freshState(now, seed){
     valor:0,
     b:{townhall:1,farm:1,lumberyard:1,quarry:0,ironmine:0,barracks:0,wall:0,watchtower:0,
        tavern:0,granary:0,academy:0,hospital:0,warehouse:0,library:0,forge:0,runeworks:0,
-       range:0,stable:0,siegeyard:0,embassy:0},
+       range:0,stable:0,siegeyard:0,embassy:0,command:0},
     t:{spearman:8,archer:0,knight:0,ballista:0},
     tier:{spearman:1,archer:1,knight:1,ballista:1},
     heroes:{}, spoils:{},
@@ -30,7 +30,7 @@ export function freshState(now, seed){
     laurels:1000, defStance:'shieldwall', arenaWins:0, arenaLosses:0,
     arenaReady:0, arenaLast:null,
     waveType:'rabble', upkeepPauseUntil:0, trainFastNext:false, expedBoost:false,
-    bq:null, bq2:null, tq:{},
+    bq:null, bq2:null, tq:{}, hq:null, wounded:{},
     wave:1, nextWave:now+FIRST_WAVE_MS, wavesWon:0, wavesLost:0,
     trained:0, trainedBy:{},
     mxp:0, shields:0, shieldUntil:0, warbandsWon:0, streak:0, famineAcc:0,
@@ -118,7 +118,9 @@ export function load(now){
     if(!s.marches) s.marches = [];
     // v1.4 the deep economy
     for(const r of ['steel','runestone']) if(s.res[r]==null) s.res[r] = 0;
-    for(const k of ['forge','runeworks','library','range','stable','siegeyard','embassy']) if(s.b[k]==null) s.b[k] = 0;
+    for(const k of ['forge','runeworks','library','range','stable','siegeyard','embassy','command']) if(s.b[k]==null) s.b[k] = 0;
+    if(s.wounded==null) s.wounded = {};   // v1.16 the wounded
+    if(s.hq===undefined) s.hq = null;
     // v1.15: one training queue became one per yard
     if(!s.tq || typeof s.tq !== 'object' || s.tq.key){
       const old = s.tq && s.tq.key ? s.tq : null;

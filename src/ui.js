@@ -14,7 +14,7 @@ import {
 } from './world.js';
 import {
   fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor, capFor, isUnlocked,
-  activeTrainings, trainQueue,
+  activeTrainings, trainQueue, woundedTotal, woundedCap, woundShare, healCost, healTime,
   prodPerSec, prodMult, upkeepPerSec, buildCost, buildTime, canAfford, armyPower,
   armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
   valorQuota, valorToday, isRested, QUEUE_KEYS, buildSlots, activeQueues, freeSlot, townhallReq,
@@ -877,6 +877,8 @@ function renderCodex(S){
     + '<li>Build costs scale with level², and build <i>times</i> stretch with level too — a level-3 hut is minutes, a late keep is most of a day. The queue is the wall, and it keeps working while you are away.</li>'
     + '<li><b>A second crew</b> joins at Town Hall '+SECOND_QUEUE_TH+', so two upgrades can run at once (never two on the same building). Training runs on its own queue and is deliberately fast — raids arrive every 75s and the muster has to answer.</li>'
     + '<li><b>Four drilling yards, four queues</b>: the Barracks drills Spearmen, the Archery Range Archers, the Stable Knights, the Siege Yard Ballistas — each on its own timer, so four batches can be in progress at once. A troop type you have no yard for is one you cannot field at all.</li>'
+    + '<li><b>Wounded, not dead</b>: the Infirmary decides how many of the fallen are carried back alive (30% + 4.5% a level, up to 75%) and holds them in its beds. Tending them costs resources and time and returns them whole. With no Infirmary, everyone who falls is simply gone — and nobody can buy a healing speedup here, so the bill is the cost.</li>'
+    + '<li><b>The Command Center</b> grants another march every 6 levels and speeds every column by 2% a level.</li>'
     + '<li><b>The Embassy</b> raises how many alliance helps your own builds may take (+2 a level), on top of what your alliance&#39;s Wide Roads research grants everyone.</li>'
     + '<li><b>Research lives in the Great Library</b> (Town Hall 4). Nothing can be studied without one, and <b>its level is the ceiling on every track</b> — a Library 7 means no study passes 7. Each level also speeds study by 2%. Research runs on its own queue and never competes with the build crews.</li>'
     + '<li><b>Refined goods</b>: the Forge (Town Hall 12) smelts iron and wood into <b>Steel</b> without pause; the Runeworks (Town Hall 22) binds stone and steel into <b>Runestone</b>. Their vaults are small — 10% and 3.5% of your raw storage.</li>'

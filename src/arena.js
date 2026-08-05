@@ -19,6 +19,7 @@ import {
   armyBreakdown, tierPower, gainValor, gainMastery, pushLog, showBanner, fmt,
 } from './logic.js';
 import { scoreDeed } from './events.js';
+import { takeCasualties } from './logic.js';
 
 export const ARENA_CD = 90000, START_LAURELS = 1000, ELO_K = 24;
 // A hold fighting at home is dug in and ready; on top of that sits the wall it
@@ -133,11 +134,11 @@ export function resolveArena(att, def, opts, now, rand = Math.random){
   // casualties: only the committed force, only the attacker
   const ratio = defPower / Math.max(attackPower, 1);
   const lossFrac = Math.min(won ? 0.06 : 0.14, (won ? 0.05 : 0.12) * ratio * ratio + 0.01);
-  let fallen = 0;
+  let fallen = 0, hurt = 0;
   for(const [k,n] of Object.entries(troops)){
     const l = Math.round(n * lossFrac * (0.7 + rand()*0.6));
-    att.t[k] = Math.max(0, (att.t[k] || 0) - l);
-    fallen += l;
+    const r = takeCasualties(att, k, l);
+    fallen += r.dead; hurt += r.hurt;
   }
 
   const attL = att.laurels ?? START_LAURELS, defL = def.laurels ?? START_LAURELS;
@@ -162,7 +163,8 @@ export function resolveArena(att, def, opts, now, rand = Math.random){
     stance: attStance, defStance, text:
       (won ? '🏆 Victory over ' + (def.name||'a rival hold') : '🛡 ' + (def.name||'A rival hold') + ' held')
       + ' — ' + fmt(attackPower) + ' vs ' + fmt(defPower) + '.' + stanceNote + answerNote + siegeNote
-      + ' ' + (fallen ? fallen + ' of ' + sent + ' fell. ' : 'No losses. ')
+      + ' ' + (fallen || hurt ? fallen + ' of ' + sent + ' fell'
+          + (hurt ? ', ' + hurt + ' carried back wounded' : '') + '. ' : 'No losses. ')
       + (delta >= 0 ? '+' : '') + delta + ' Laurels'
       + (won ? ', +15 Valor.' : '.') + ' No stores changed hands.',
   };

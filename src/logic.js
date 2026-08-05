@@ -106,6 +106,65 @@ export function promote(s, k, now){
   return true;
 }
 
+/* ── the wounded ──
+   A battle no longer just deletes soldiers. The Infirmary decides how many of
+   the fallen are carried back alive, holds them up to its capacity, and healing
+   them costs resources and time — so a bad defeat is a bill, not an erasure.
+   (Kingshot sells healing speedups. We sell nothing, so the bill is the cost.) */
+export function woundShare(s){ return Math.min(0.75, 0.30 + 0.045 * (s.b.hospital || 0)); }
+export function woundedCap(s){
+  const l = s.b.hospital || 0;
+  return Math.round(40 * l * (1 + 0.08 * l));
+}
+export function woundedTotal(s){
+  return Object.values(s.wounded || {}).reduce((a,b) => a + (b||0), 0);
+}
+/* Every casualty in the game goes through here — raids, arena, marches, beasts. */
+export function takeCasualties(s, k, n){
+  n = Math.max(0, Math.round(n));
+  if(!n) return { dead:0, hurt:0 };
+  s.t[k] = Math.max(0, (s.t[k] || 0) - n);
+  s.wounded = s.wounded || {};
+  const room = Math.max(0, woundedCap(s) - woundedTotal(s));
+  const hurt = Math.max(0, Math.min(n, Math.round(n * woundShare(s)), room));
+  if(hurt) s.wounded[k] = (s.wounded[k] || 0) + hurt;
+  return { dead: n - hurt, hurt };
+}
+export function healCost(s){
+  const c = {};
+  for(const [k,n] of Object.entries(s.wounded || {})){
+    if(!n) continue;
+    for(const [r,v] of Object.entries(TROOPS[k].cost))
+      c[r] = (c[r] || 0) + Math.ceil(v * 0.35 * n * tierCostMult(s,k));
+  }
+  return c;
+}
+export function healTime(s){
+  const n = woundedTotal(s);
+  if(!n) return 0;
+  const speed = Math.max(0.3, 1 - 0.03 * (s.b.hospital || 0));
+  return Math.round(Math.max(20, n * 1.4) * 1000 * speed);
+}
+export function startHealing(s, now){
+  s.now = now;
+  if(s.hq || !woundedTotal(s)) return false;
+  const cost = healCost(s);
+  if(!canAfford(s, cost)) return false;
+  payCost(s, cost);
+  s.hq = { troops: { ...s.wounded }, start: now, end: now + healTime(s) };
+  s.wounded = {};
+  pushLog(s, '⛑️ The Infirmary takes in '
+    + Object.values(s.hq.troops).reduce((a,b)=>a+b,0)+' wounded.');
+  return true;
+}
+export function finishHealNow(s, now){
+  if(!s.hq) return false;
+  const c = finishCost(s.hq.end, now);
+  if(s.valor < c) return false;
+  s.valor -= c; s.hq.end = now;
+  return true;
+}
+
 export function upkeepPerSec(s){
   let u = 0;
   for(const k of Object.keys(TROOPS)) u += tierUpkeep(s,k) * (s.t[k]||0);
@@ -638,11 +697,12 @@ export function resolveWave(s, now, rand=Math.random){
         - techBonus(s,'medicine') - (perk(s,15)?0.10:0));
     if(cm > 1) lossFrac *= COUNTER_CASUALTY;
     if(mods.noCasual) lossFrac = 0;
-    let lost = 0;
+    let lost = 0, hurtTotal = 0;
     // the cheap line screens the expensive engines: casualties weighted by class
     for(const k of Object.keys(TROOPS)){
       const l = Math.round(s.t[k] * Math.min(0.95, lossFrac*SCREEN[k]) * (0.7+rand()*0.6));
-      s.t[k] = Math.max(0, s.t[k]-l); lost += l;
+      const r = takeCasualties(s, k, l);
+      lost += r.dead; hurtTotal += r.hurt;
     }
     const lootMult = (isWB?2:1) * (1 + heroBonus(s,'loot') + spoilBonus(s,'loot') + techBonus(s,'siegecraft')
       + allyBonus(s,'loot') + (perk(s,17)?0.15:0)) * mods.lootX;
@@ -664,15 +724,16 @@ export function resolveWave(s, now, rand=Math.random){
       s.choiceQueue.push({type:'spoil', options: rollSpoilOffer(s, rand), reroll:1});
     }
     pushLog(s, label+' repelled!'+stanceNote+' Loot: +'+fmt(loot.food)+' food, +'+fmt(loot.wood)+' wood, +'+fmt(loot.stone)+' stone, +'+fmt(loot.iron)+' iron. +'+valor+' Valor.'
-      +(isWB?' A Writ of Peace was captured — and spoils are yours to choose.':'')+(lost?' Fallen: '+lost+'.':''), 'win');
-    showBanner(s, '⚔️ '+label+' repelled — +'+valor+' Valor'+(lost?', '+lost+' fallen':''), 'win', now);
+      +(isWB?' A Writ of Peace was captured — and spoils are yours to choose.':'')+(lost?' Fallen: '+lost+'.':'')+(hurtTotal?' Wounded: '+hurtTotal+'.':''), 'win');
+    showBanner(s, '⚔️ '+label+' repelled — +'+valor+' Valor'+(lost?', '+lost+' fallen':'')+(hurtTotal?', '+hurtTotal+' wounded':''), 'win', now);
   }else{
     s.streak++;
     s.winStreak = 0;
     s.wavesLost = (s.wavesLost||0)+1;
     s.nextWave = now + WAVE_MS*2; // a loss buys a longer breather
     const protect = Math.min(0.6, 0.04*(s.b.warehouse||0)); // the Warehouse hides part of your stores
-    for(const k of Object.keys(TROOPS)) s.t[k] = Math.floor(s.t[k]*(1 - Math.min(0.5, 0.2*SCREEN[k])));
+    for(const k of Object.keys(TROOPS))
+      takeCasualties(s, k, Math.round(s.t[k] * Math.min(0.5, 0.2*SCREEN[k])));
     for(const r of Object.keys(RES_META)) s.res[r] = Math.floor((s.res[r]||0)*(1 - 0.15*(1-protect)));
     gainValor(s, 2);
     gainMastery(s, 3, now);
@@ -726,6 +787,13 @@ export function tick(s, now, dt, rand=Math.random){
       gainMastery(s, 6, now);
       scoreDeed(s, 'built', 1, now);
     }
+  }
+  if(s.hq && now >= s.hq.end){
+    let back = 0;
+    for(const [k,n] of Object.entries(s.hq.troops)){ s.t[k] = (s.t[k]||0) + n; back += n; }
+    pushLog(s, '⛑️ '+back+' wounded return to the muster, whole.', 'gold');
+    s.hq = null;
+    gainMastery(s, 12, now);
   }
   if(s.rq && now >= s.rq.end){
     const k = s.rq.key;

@@ -4,6 +4,7 @@
 
 import { TROOPS, TIME_SCALE } from './defs.js';
 import { scoreDeed } from './events.js';
+import { takeCasualties } from './logic.js';
 import {
   tierPower, heroBonus, spoilBonus, perk, wavePower,
   gainRes, gainValor, gainShield, gainMastery, pushLog, showBanner, fmt, ftime,
@@ -55,7 +56,12 @@ export function genWorld(seed){
 }
 
 export function tileDist(t){ return Math.max(Math.abs(t.x-CX), Math.abs(t.y-CY)); }
-export function marchSlots(s){ return 1 + (s.b.townhall>=10 ? 1 : 0); }
+/* The Command Center is what lets you field more columns at once, and move them
+   faster — march capacity is its whole job. */
+export function marchSlots(s){
+  return 1 + Math.floor((s.b.command || 0) / 6) + (s.b.townhall >= 10 ? 1 : 0);
+}
+export function marchSpeed(s){ return Math.max(0.5, 1 - 0.02 * (s.b.command || 0)); }
 export function tileBusy(s, idx){ return (s.marches||[]).some(m => m.tile===idx); }
 
 export function marchPower(s, troops){
@@ -90,7 +96,7 @@ export function startMarch(s, idx, frac, now, longHaul){
   }
   if(total===0) return false;
   for(const [k,n] of Object.entries(troops)) s.t[k] -= n;
-  const travel = tileDist(tile)*TRAVEL_MS_PER_TILE;
+  const travel = tileDist(tile)*TRAVEL_MS_PER_TILE*marchSpeed(s);
   const work = kind==='gather' ? (long ? LONG_HAUL_WORK : GATHER_MS) : kind==='ruin' ? RUIN_MS : 0;
   s.marches.push({
     tile:idx, troops, long,
@@ -113,7 +119,14 @@ function resolveArrival(s, m, now, rand){
     if(mine >= enemy){
       const ratio = enemy/Math.max(mine,1);
       const lf = 0.25*ratio*ratio;
-      for(const k of Object.keys(m.troops)) m.troops[k] = Math.max(0, m.troops[k]-Math.round(m.troops[k]*lf));
+      // the fallen from a march are counted when the column gets home
+      m.hurt = 0;
+      for(const k of Object.keys(m.troops)){
+        const l = Math.round(m.troops[k]*lf);
+        m.troops[k] = Math.max(0, m.troops[k]-l);
+        m.woundedBack = m.woundedBack || {};
+        m.woundedBack[k] = (m.woundedBack[k]||0) + l;
+      }
       const L = Math.round(enemy*1.1);
       m.loot = {food:Math.round(L*0.4), wood:Math.round(L*0.4), stone:Math.round(L*0.15), iron:Math.round(L*0.08)};
       m.valor = 10+5*tile.lvl; m.mxp = 20+10*tile.lvl;
@@ -122,7 +135,12 @@ function resolveArrival(s, m, now, rand){
       scoreDeed(s, 'camp', 1, now);
       tile.respawnAt = now + RESPAWN_MS;
     }else{
-      for(const k of Object.keys(m.troops)) m.troops[k] = Math.floor(m.troops[k]*0.65);
+      m.woundedBack = {};
+      for(const k of Object.keys(m.troops)){
+        const l = m.troops[k] - Math.floor(m.troops[k]*0.65);
+        m.troops[k] = Math.floor(m.troops[k]*0.65);
+        m.woundedBack[k] = (m.woundedBack[k]||0) + l;
+      }
       m.loot = null; m.valor = 2; m.mxp = 8;
       m.report = '🔥 The camp held ('+mine+' vs '+Math.round(enemy)+') — the survivors fall back';
       m.homeAt = now + tileDist(tile)*TRAVEL_MS_PER_TILE;
@@ -148,7 +166,14 @@ function resolveArrival(s, m, now, rand){
 function resolveReturn(s, m, now){
   let home = 0;
   for(const [k,n] of Object.entries(m.troops)){ s.t[k] += n; home += n; }
-  let txt = m.report+'. '+home+' return';
+  // losses on the road are settled here, so the Infirmary can take its share
+  let dead = 0, hurt = 0;
+  for(const [k,n] of Object.entries(m.woundedBack || {})){
+    s.t[k] = (s.t[k]||0) + n;                    // put them back, then count them properly
+    const r = takeCasualties(s, k, n);
+    dead += r.dead; hurt += r.hurt;
+  }
+  let txt = m.report+'. '+home+' return'+(dead||hurt ? ' ('+dead+' fell'+(hurt?', '+hurt+' wounded':'')+')' : '');
   if(m.loot){
     for(const [r,v] of Object.entries(m.loot)) gainRes(s, r, v);
     txt += ' with '+Object.entries(m.loot).map(([r,v])=>'+'+fmt(v)+' '+r).join(', ');

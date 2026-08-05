@@ -149,7 +149,7 @@ function simulate(minutes, enemyLuck, skilled, label){
         // the Library is the spine of research — the bot keeps it climbing
         if(!pick && s.b.library < Math.min(10, s.b.townhall) && eligible('library')) pick='library';
         // the drilling yards are what let the army keep pace with the raid clock
-        if(!pick) for(const k of ['range','stable','siegeyard','embassy'])
+        if(!pick) for(const k of ['range','stable','siegeyard','embassy','command','hospital'])
           if(s.b[k] < Math.min(8, s.b.townhall) && eligible(k)){ pick=k; break; }
         if(!pick) for(const k of ['forge','runeworks','tavern','granary','hospital','warehouse'])
           if(eligible(k)){ pick=k; break; }
@@ -170,6 +170,9 @@ function simulate(minutes, enemyLuck, skilled, label){
       const c = L.finishCost(s.rq.end, ms);
       if(s.valor >= c && L.finishResearchNow(s, ms)) valorSpent += c;
     }
+
+    // tend the wounded whenever the stores allow — they are troops, not losses
+    if(!s.hq && L.woundedTotal(s) > 0 && L.canAfford(s, L.healCost(s))) L.startHealing(s, ms);
 
     // promote troop tiers when the Academy allows and stores permit
     for(const k of ['ballista','knight','archer','spearman']){

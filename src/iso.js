@@ -33,6 +33,7 @@ const PLOTS = {
   stable:     [7, 3],
   siegeyard:  [5, 7],
   embassy:    [3, 4],
+  command:    [5, 3],
   forge:      [1, 3],
   runeworks:  [7, 1],
 };
@@ -56,6 +57,7 @@ const LOOK = {
   stable:     { roof:'#6b5a3a', body:'#5f5342', w:1.2, h:18, kind:'hall'  },
   siegeyard:  { roof:'#5a5040', body:'#544c40', w:1.1, h:20, kind:'yard'  },
   embassy:    { roof:'#6b6250', body:'#5d5647', w:1.0, h:22, kind:'hall'  },
+  command:    { roof:'#6b4a3a', body:'#57503f', w:1.0, h:26, kind:'tower' },
   forge:      { roof:'#6b3a2c', body:'#4f4640', w:1.0, h:22, kind:'hall'  },
   runeworks:  { roof:'#3c4a6b', body:'#4a4658', w:1.0, h:26, kind:'tower' },
 };
