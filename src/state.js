@@ -29,6 +29,7 @@ export function freshState(now, seed){
     tier:{spearman:1,archer:1,knight:1,ballista:1},
     heroes:{}, spoils:{}, court:[], arenaTeam:[], marchBoost:false, formations:[],
     regalia:{}, gq:null,
+    cos:{owned:{}, hold:'default', sigil:'none', title:'none'},
     pets:{}, petOut:null, bond:0, beastsSlain:0,
     choice:null, choiceQueue:[], offersDone:0,
     stance:'balanced', captain:null, orderCd:{}, mods:null,
@@ -168,6 +169,9 @@ export function migrate(s, now){
     // v1.29: the Salt Isle
     if(!s.isle || !Array.isArray(s.isle.cells))
       s.isle = genIsle(Math.floor(Math.random()*2**31), seasonNo(now));
+    // v1.30: cosmetics
+    if(!s.cos) s.cos = {owned:{}, hold:'default', sigil:'none', title:'none'};
+    if(!s.cos.owned) s.cos.owned = {};
     // v1.15: one training queue became one per yard
     if(!s.tq || typeof s.tq !== 'object' || s.tq.key){
       const old = s.tq && s.tq.key ? s.tq : null;

@@ -244,5 +244,35 @@ console.log('\n── a pre-skills save is inert, not broken ──');
      L.skillTotal(s,['marshal'],'power') === 0 && SK.equipped(s,'marshal').length === 0);
 }
 
+
+
+/* ── the store's guardrail, asserted rather than trusted ──
+   Appended here because it is the same kind of check: a claim in a design doc is
+   worth nothing unless something fails when it stops being true. */
+{
+  console.log('\n── the store cannot carry a stat ──');
+  const SH = await import('../src/shop.js');
+  const forbidden = ['bonus','mods','power','troopPower','production','casualties','valor','fx','cls'];
+  const offenders = [];
+  for(const [kind, cat] of Object.entries(SH.CATALOGUE))
+    for(const [id, d] of Object.entries(cat))
+      for(const f of forbidden) if(d[f] !== undefined) offenders.push(kind+':'+id+'.'+f);
+  ok('no catalogue item has a field any rule reads', offenders.length === 0, offenders.join(', ') || 'clean');
+
+  const s = hold();
+  const before = JSON.stringify({ p:L.prodMult(s,'food'), a:L.armyPower(s), c:L.storageCap(s), u:L.upkeepPerSec(s) });
+  L.grantCos(s,'hold','frost'); L.grantCos(s,'sigil','pike'); L.grantCos(s,'title','marshal');
+  L.equipCos(s,'hold','frost',s.now); L.equipCos(s,'sigil','pike',s.now); L.equipCos(s,'title','marshal',s.now);
+  const after = JSON.stringify({ p:L.prodMult(s,'food'), a:L.armyPower(s), c:L.storageCap(s), u:L.upkeepPerSec(s) });
+  ok('wearing cosmetics changes no number', before === after);
+  ok('all three are actually worn',
+     s.cos.hold==='frost' && s.cos.sigil==='pike' && s.cos.title==='marshal');
+
+  const s2 = hold();
+  ok('cannot wear an unowned paid item', L.equipCos(s2,'hold','frost',s2.now) === false);
+  ok('can always wear the free default', L.equipCos(s2,'hold','default',s2.now) === true);
+  ok('an unknown id is refused', L.equipCos(s2,'hold','nope',s2.now) === false);
+}
+
 console.log('\n' + (fail ? '✗ ' + fail + ' FAILED, ' + pass + ' passed' : '✓ all ' + pass + ' passed') + '\n');
 process.exit(fail ? 1 : 0);

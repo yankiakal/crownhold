@@ -35,6 +35,7 @@ import { REGALIA, WARGEAR, GEAR_MAX, GEAR_PER_LEVEL, gearCost, gearTime,
          regaliaTier, wargearTier, wargearTotal, gearLevels, costLabel } from './gear.js';
 import { SKILLS, SKILL_SLOTS, SLOT_AT, slotsOpen, legalSkills } from './skills.js';
 import { ISLE_W, ISLE_H, ISLE_TH, ISLE_SITES, RATION_COST, cellAt, charted } from './isle.js';
+import { COS_KINDS, CATALOGUE, HOLD_SKINS, SUBSCRIPTIONS, EARN, itemsOf, itemDef, isOwned } from './shop.js';
 import {
   STANCE_BEATS, CLASS_ANSWER, stanceMult, composition, answerBonusForClass,
   committedTroops, forcePower,
@@ -48,7 +49,7 @@ import {
 } from './events.js';
 import { dailyProgress, dailyState, DAILY_BONUS } from './daily.js';
 import * as net from './net.js';
-import { mountScene, sceneResize, pickBuilding } from './iso.js';
+import { mountScene, sceneResize, pickBuilding, setSkinTint } from './iso.js';
 import { store, freshState, save } from './state.js';
 
 const app = document.getElementById('app');
@@ -557,6 +558,49 @@ function renderDaily(S){
   return h;
 }
 
+/* The store. Cosmetic only — the catalogue has no field for a stat, so there is
+   nothing here for a rule to read. Prices are real and shown in real money; there
+   is no gem layer to obscure them, which is the point. */
+function renderStore(S){
+  if(!storeOpen) return '';
+  const ch = charted(S.isle || {cells:[]}), ml = masteryLvl(S);
+  let h = '<div class="overlay" data-act-bg="storeClose"><div class="card codex">'
+    + '<h1 style="font-size:1.3rem">THE STORE</h1><div class="rule"></div>'
+    + '<p class="sub">Everything here is visible to other people and changes no number. '
+    + 'If deleting a purchase would alter any battle, it is not sold.</p>';
+
+  for(const [kind, meta] of Object.entries(COS_KINDS)){
+    h += '<h3>'+meta.name+'s</h3><p class="d-row" style="opacity:.75">'+meta.blurb+'</p>';
+    for(const [id, def] of itemsOf(kind)){
+      const owned = isOwned(S, kind, id, ch, ml);
+      const worn = (S.cos && S.cos[kind]) === id;
+      const earn = def.earn ? EARN[def.earn] : null;
+      h += '<div class="gearrow"><span class="tname">'
+        + (def.icon ? def.icon+' ' : '')+def.name+'</span>'
+        + '<span class="hmeta">'+(def.blurb || '')+'</span><span class="spacer"></span>'
+        + (earn ? '<span class="gtier">'+(owned ? 'earned' : esc(earn.need))+'</span>'
+                : def.price ? '<span class="gtier">$'+def.price.toFixed(2)+'</span>' : '')
+        + (owned
+            ? '<button data-act="equipCos" data-mode="'+kind+'" data-key="'+id+'" '+(worn?'disabled':'')+'>'
+              + (worn ? 'worn' : 'Wear')+'</button>'
+            : earn ? '' : '<button data-act="buyCos" data-mode="'+kind+'" data-key="'+id+'">Buy</button>')
+        + '</div>';
+    }
+  }
+
+  h += '<h3>Subscriptions</h3>';
+  for(const sub of SUBSCRIPTIONS){
+    h += '<div class="chron"><h3>'+sub.name+' — $'+sub.price.toFixed(2)+' / '+sub.per+'</h3>'
+      + '<ul>'+sub.lines.map(l => '<li>'+l+'</li>').join('')+'</ul></div>';
+  }
+  h += '<p class="d-warn" style="margin-top:.6rem">Checkout is not connected. Prices and items are final, '
+    + 'but taking money needs a payment provider (Stripe, or the app stores) wired to a real account — '
+    + 'so <b>Buy</b> explains what is missing rather than pretending to charge you.</p>'
+    + '<button class="primary" data-act="storeClose" style="margin-top:.6rem">Close</button>'
+    + '</div></div>';
+  return h;
+}
+
 /* The Salt Isle. A fogged grid you learn by landing on it — so the panel's job is
    to show how little you know, and make the one ship you have feel like a choice. */
 function renderIsle(S){
@@ -1059,12 +1103,13 @@ function renderFooter(){
     + '<button data-act="account">'+(who ? '☁ '+who : '☁ Play online')+'</button>'
     + '<button data-act="codex">📖 Codex — all the rules</button>'
     + '<button data-act="lore">📜 Annals — the story of the Reach</button>'
+    + '<button data-act="store">🛍 Store — cosmetics only</button>'
     + '<button data-act="about">About</button>'
     + '<button data-act="reset"'+(armed?' style="color:var(--bad);border-color:var(--bad)"':'')+'>'
     + (armed?'⚠ Tap again to raze EVERYTHING':'Raze &amp; restart')+'</button></footer>';
 }
 
-let codexOpen = false, loreOpen = false;
+let codexOpen = false, loreOpen = false, storeOpen = false;
 let resetArmedUntil = 0; // two-tap raze confirmation window
 let arenaStance = 'balanced', arenaFrac = 0.5;
 let listView = false, sceneMounted = false;
@@ -1825,8 +1870,9 @@ export function render(){
       + renderDaily(S) + renderIsle(S) + renderEvent(S) + renderRift(S) + renderRally(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
       + renderAchievements(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
-  fx.innerHTML = renderFx(S) + renderLore(S)
+  fx.innerHTML = renderFx(S) + renderLore(S) + renderStore(S)
     + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
+  setSkinTint((HOLD_SKINS[(S.cos && S.cos.hold) || 'default'] || {}).tint);
   drawMap(S);
   const slot = document.getElementById('scene-slot');
   if(slot){
@@ -1844,6 +1890,16 @@ const VIEW_ACTIONS = {
   about: () => { store.s.seenIntro = false; },
   codex: () => { codexOpen = !codexOpen; },
   lore: () => { loreOpen = !loreOpen; },
+  store: () => { storeOpen = true; },
+  storeClose: () => { storeOpen = false; },
+  // no fake payment sheet: say plainly what is missing
+  buyCos: b => {
+    const d = itemDef(b.dataset.mode, b.dataset.key);
+    acctMsg = (d ? d.name + ' — $' + d.price.toFixed(2) + '. ' : '')
+      + 'Checkout is not connected yet. It needs a payment provider tied to a real account; '
+      + 'nothing here will pretend to take your money.';
+    acctOpen = true; renderAccount();
+  },
   detail: b => { detail = {type:b.dataset.dtype, key:b.dataset.key}; },
   detailClose: () => { detail = null; skillSlotOpen = null; },
   // expanding a skill slot's menu is a view state, not a change to the hold

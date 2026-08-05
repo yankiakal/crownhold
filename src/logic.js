@@ -23,6 +23,8 @@ import { RESEARCH, techLvl, techBonus, techFlat, techCost, techTime, techAvailab
 import { REGALIA, WARGEAR, GEAR_MAX, gearCost, gearTime, regaliaBonus, regaliaTier,
          wargearTier, gearLevels } from './gear.js';
 import { SKILLS, SKILL_SLOTS, COND_FX, slotsOpen, skillLegal, equipped } from './skills.js';
+import { COS_KINDS, itemDef, isOwned } from './shop.js';
+import { charted } from './isle.js';
 import { scoreDeed, eventState, currentEvent, claimableMilestones } from './events.js';
 import { dailyState, dailyProgress, DAILY_BONUS } from './daily.js';
 
@@ -940,6 +942,32 @@ function completeGear(s, now){
   }
   s.gq = null;
   gainMastery(s, 12, now);
+}
+
+/* ── cosmetics ──
+   Equipping is the only shop-related thing the game rules touch, and all it does
+   is record a string. There is deliberately no path from here into any number:
+   `equipCos` cannot make you stronger because there is nothing in the catalogue
+   for it to read. Buying happens outside the game (see MONETIZATION.md); what the
+   game does is own, earn, and wear. */
+export function equipCos(s, kind, id, now){
+  if(!COS_KINDS[kind] || !itemDef(kind, id)) return false;
+  // you may only wear what you own or have earned — otherwise every paid skin is
+  // free to anyone who taps Wear, which is the whole store given away
+  if(!isOwned(s, kind, id, charted(s.isle || {cells:[]}), masteryLvl(s))) return false;
+  s.now = now;
+  s.cos = s.cos || { owned:{}, hold:'default', sigil:'none', title:'none' };
+  s.cos[kind] = id;
+  return true;
+}
+/* Granting is what a completed purchase calls. It lives here so that the browser,
+   the server and a future payment webhook all go through one door. */
+export function grantCos(s, kind, id){
+  if(!COS_KINDS[kind] || !itemDef(kind, id)) return false;
+  s.cos = s.cos || { owned:{}, hold:'default', sigil:'none', title:'none' };
+  s.cos.owned = s.cos.owned || {};
+  s.cos.owned[kind + ':' + id] = true;
+  return true;
 }
 
 /* ── formations ──

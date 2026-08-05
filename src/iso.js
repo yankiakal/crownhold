@@ -163,9 +163,32 @@ function smoke(ctx, sx, sy, h, t, seed){
   ctx.globalAlpha = 1;
 }
 
+/* Hold skins repaint the scene and nothing else. `skinTint` shifts every roof and
+   wall toward the skin's hue — no plot moves, no size changes, no rule reads it.
+   Colour is the entire product. */
+let skinTint = null;
+export function setSkinTint(t){ skinTint = t || null; }
+function tinted(hex){
+  if(!skinTint) return hex;
+  const n = parseInt(hex.slice(1), 16);
+  let r = (n>>16)&255, g = (n>>8)&255, b = n&255;
+  const { h, s: sat, l } = skinTint;
+  // pull toward the skin's hue, then lift or drop the whole thing a little
+  const hr = Math.cos((h) * Math.PI/180), hg = Math.cos((h-120) * Math.PI/180), hb = Math.cos((h-240) * Math.PI/180);
+  const avg = (r+g+b)/3;
+  r = r + (avg*(1+hr) - r)*sat + 255*l*hr*0.2;
+  g = g + (avg*(1+hg) - g)*sat + 255*l*hg*0.2;
+  b = b + (avg*(1+hb) - b)*sat + 255*l*hb*0.2;
+  // must come back as HEX: shade() parses these with parseInt on a hex slice, so
+  // returning rgb() here would break every wall it re-shades
+  const cl = v => Math.max(0, Math.min(255, Math.round(v)));
+  return '#' + [cl(r), cl(g), cl(b)].map(v => v.toString(16).padStart(2,'0')).join('');
+}
+
 function drawBuilding(ctx, key, lvl, t, opts){
-  const plot = PLOTS[key], look = LOOK[key];
-  if(!plot || !look) return;
+  const plot = PLOTS[key], base = LOOK[key];
+  if(!plot || !base) return;
+  const look = skinTint ? { ...base, roof: tinted(base.roof), body: tinted(base.body) } : base;
   const { sx, sy } = iso(plot[0], plot[1]);
   const built = lvl > 0;
 
