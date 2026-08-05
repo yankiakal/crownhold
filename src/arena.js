@@ -18,6 +18,7 @@ import { TROOPS } from './defs.js';
 import {
   armyBreakdown, tierPower, gainValor, gainMastery, pushLog, showBanner, fmt,
 } from './logic.js';
+import { scoreDeed } from './events.js';
 
 export const ARENA_CD = 90000, START_LAURELS = 1000, ELO_K = 24;
 // A hold fighting at home is dug in and ready; on top of that sits the wall it
@@ -144,6 +145,7 @@ export function resolveArena(att, def, opts, now, rand = Math.random){
   att.laurels = Math.max(0, attL + delta);
   def.laurels = Math.max(0, defL - Math.round(delta / 2));   // absent defenders risk less
 
+  if(won) scoreDeed(att, 'arenaWin', 1, now);
   if(won){ att.arenaWins = (att.arenaWins||0)+1; def.arenaLosses = (def.arenaLosses||0)+1; gainValor(att, 15); gainMastery(att, 25, now); }
   else   { att.arenaLosses = (att.arenaLosses||0)+1; def.arenaWins = (def.arenaWins||0)+1; gainValor(att, 3); gainMastery(att, 8, now); }
   att.arenaReady = now + ARENA_CD;

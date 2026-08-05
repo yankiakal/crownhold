@@ -28,6 +28,10 @@ import {
 import {
   RESEARCH, techLvl, techCost, techTime, researchProgress,
 } from './research.js';
+import {
+  EVENTS, currentEvent, eventEndsIn, eventState, eventCap,
+  nextMilestone, claimableMilestones,
+} from './events.js';
 import * as net from './net.js';
 import { mountScene, sceneResize, pickBuilding } from './iso.js';
 import { store, freshState, save } from './state.js';
@@ -325,6 +329,37 @@ function renderChronicle(S){
   for(const e of S.log.slice(0,16))
     h += '<p class="'+e.cls+'"><time>'+clock(e.t)+'</time>'+e.txt+'</p>';
   h += '</div></section>';
+  return h;
+}
+
+function renderEvent(S){
+  const now = Date.now();
+  const ev = currentEvent(now), st = eventState(S, now);
+  const cap = eventCap(S), next = nextMilestone(S, now);
+  const ready = claimableMilestones(S, now);
+  const idx = EVENTS.indexOf(ev);
+  const then = EVENTS[(idx+1) % EVENTS.length];
+  let h = '<section class="panel"><h2>'+ev.icon+' '+ev.name
+    + ' <span style="letter-spacing:.05em">ends in '+ftime(eventEndsIn(now))+'</span></h2>';
+  h += '<p style="font-size:.85rem;color:var(--ink-dim);font-style:italic">'+ev.blurb+'</p>';
+  h += '<div class="stat-note">Your score <b>'+fmt(st.score)+'</b> / '+fmt(cap)+' today'
+    + (st.capped ? ' — <span style="color:var(--gold)">day\'s limit reached; the board resets with the window</span>' : '')+'</div>';
+  const pct = Math.min(100, 100*st.score/cap);
+  h += '<div class="xpbar" style="margin:.2rem 0 .5rem"><i style="width:'+pct+'%;background:var(--gold)"></i></div>';
+  for(const m of ev.milestones){
+    const got = st.claimed.includes(m.at);
+    const can = st.score >= m.at && !got;
+    h += '<div class="trow'+(can?' mine':'')+'"><span class="tname">'+fmt(m.at)+' points</span>'
+      + '<span class="tmeta">'+m.txt+'</span><span class="spacer"></span>'
+      + (got ? '<span class="tmeta" style="color:var(--gold)">claimed</span>'
+             : can ? '<button class="primary" data-act="claimEvent">Claim</button>'
+                   : '<span class="tmeta">'+fmt(Math.max(0,m.at-st.score))+' to go</span>')
+      + '</div>';
+  }
+  h += '<p style="font-size:.68rem;font-family:var(--sans);color:var(--ink-dim);margin-top:.45rem">'
+    + 'Scored by deeds done inside the window — never by spending a stockpile, which is why there is a daily ceiling. '
+    + 'Milestones hold the rewards; the state board holds the glory. Next window: '+then.icon+' '+then.name+'.</p>';
+  h += '</section>';
   return h;
 }
 
@@ -878,7 +913,7 @@ export function render(){
   app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
     + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderSpoils(S)
-      + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
+      + renderEvent(S) + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
       + renderAchievements(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
   fx.innerHTML = renderFx(S) + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
@@ -1133,7 +1168,9 @@ export function renderAccount(){
         + '<button data-act="signOut">Sign out</button>'
         + '<button class="primary" data-act="accountClose">Back to the walls</button></div>'
       : '<p class="d-row">Sign in and your hold is kept by the server: the same walls on your phone and your desktop, and a place on the leaderboard. Play offline and nothing leaves this browser.</p>'
-        + '<label class="d-row">Server<br><input id="acct-server" value="'+(net.serverUrl()||'')+'" placeholder="http://localhost:8787"></label>'
+        + '<label class="d-row">Server<br><input id="acct-server" value="'+(net.serverUrl()||net.DEFAULT_SERVER)+'"></label>'
+        + (location.protocol === 'https:' && /localhost/.test(net.serverUrl()||net.DEFAULT_SERVER)
+          ? '<p class="d-warn">You are on a secure page trying to reach a server on your own machine — some browsers block that. If sign-in fails, open the server\'s own address instead: <b>'+(net.serverUrl()||net.DEFAULT_SERVER)+'</b></p>' : '')
         + '<label class="d-row">Hold name<br><input id="acct-name" maxlength="20" placeholder="Ravenmark"></label>'
         + '<label class="d-row">Password<br><input id="acct-pw" type="password" placeholder="at least 6 characters"></label>'
         + '<div style="display:flex;gap:.6rem;margin-top:.6rem;flex-wrap:wrap">'

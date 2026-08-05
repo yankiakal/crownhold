@@ -17,6 +17,7 @@ import {
 } from './defs.js';
 
 import { RESEARCH, techLvl, techBonus, techFlat, techCost, techTime, techAvailable } from './research.js';
+import { scoreDeed, eventState, currentEvent, claimableMilestones } from './events.js';
 
 export { masteryLvl };
 
@@ -99,6 +100,7 @@ export function promote(s, k, now){
   if(!canAfford(s,c)) return false;
   payCost(s,c);
   s.tier[k] = cur+1;
+  scoreDeed(s, 'promoted', 1, now);
   pushLog(s, TROOPS[k].icon+' Every '+TROOPS[k].name+' is reforged to Tier '+TIERS[cur]+' — new recruits will match.', 'gold');
   return true;
 }
@@ -364,6 +366,22 @@ export function startTraining(s, key, count, now){
   pushLog(s, 'The Barracks begins drilling '+count+' '+d.name+(count>1?'s':'')+'.');
   return true;
 }
+/* ── events ── */
+export function claimEvent(s, now){
+  s.now = now;
+  const ready = claimableMilestones(s, now);
+  if(!ready.length) return false;
+  const st = eventState(s, now);
+  for(const m of ready){
+    st.claimed.push(m.at);
+    gainReward(s, m.reward);
+    gainMastery(s, 20, now);
+    pushLog(s, '🏆 '+currentEvent(now).name+' — milestone '+fmt(m.at)+' claimed ('+m.txt+').', 'gold');
+  }
+  showBanner(s, '🏆 Event reward claimed', 'win', now);
+  return true;
+}
+
 /* ── research: its own queue, so there is always something progressing ── */
 export function startResearch(s, key, now){
   s.now = now;
@@ -592,6 +610,8 @@ export function resolveWave(s, now, rand=Math.random){
     for(const h of Object.values(s.heroes)) h.xp += (12+3*w)*(isWB?2:1);
     gainMastery(s, (8+2*w)*(isWB?2:1), now);
     s.wavesWon++; s.wave++; s.streak = 0;
+    scoreDeed(s, 'waveWon', 1, now);
+    if(isWB) scoreDeed(s, 'warbandWon', 1, now);
     s.winStreak = (s.winStreak||0) + 1;
     s.bestStreakWon = Math.max(s.bestStreakWon||0, s.winStreak);
     if(isWB){
@@ -659,6 +679,7 @@ export function tick(s, now, dt, rand=Math.random){
       pushLog(s, d.name+' complete — now level '+s.b[s[q].key]+'. +2 Valor.', 'gold');
       gainValor(s, 2); s[q] = null;
       gainMastery(s, 6, now);
+      scoreDeed(s, 'built', 1, now);
     }
   }
   if(s.rq && now >= s.rq.end){
@@ -669,6 +690,7 @@ export function tick(s, now, dt, rand=Math.random){
     showBanner(s, '📚 '+d.name+' '+s.research[k], 'win', now);
     s.rq = null;
     gainMastery(s, 10, now);
+    scoreDeed(s, 'research', 1, now);
   }
   if(s.tq && now >= s.tq.end){
     const n = s.tq.count;
@@ -678,6 +700,7 @@ export function tick(s, now, dt, rand=Math.random){
     pushLog(s, n+' '+TROOPS[s.tq.key].name+(n>1?'s':'')+' join the muster.');
     s.tq = null;
     gainMastery(s, n, now);
+    scoreDeed(s, 'trained', n, now);
   }
 
   if(now >= s.nextWave) resolveWave(s, now, rand);

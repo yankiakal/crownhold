@@ -3,6 +3,7 @@
 // tickWorld() is called from the main loop and the sim alongside logic.tick().
 
 import { TROOPS, TIME_SCALE } from './defs.js';
+import { scoreDeed } from './events.js';
 import {
   tierPower, heroBonus, spoilBonus, perk, wavePower,
   gainRes, gainValor, gainShield, gainMastery, pushLog, showBanner, fmt, ftime,
@@ -118,6 +119,7 @@ function resolveArrival(s, m, now, rand){
       m.valor = 10+5*tile.lvl; m.mxp = 20+10*tile.lvl;
       m.report = '⚔️ The camp is burned ('+mine+' vs '+Math.round(enemy)+')';
       s.campsBurned = (s.campsBurned||0) + 1;
+      scoreDeed(s, 'camp', 1, now);
       tile.respawnAt = now + RESPAWN_MS;
     }else{
       for(const k of Object.keys(m.troops)) m.troops[k] = Math.floor(m.troops[k]*0.65);
@@ -130,6 +132,7 @@ function resolveArrival(s, m, now, rand){
     m.loot = {[tt.res]: Math.round(gatherYield(s, tile) * mult)};
     m.valor = m.long ? 8 : 0; m.mxp = m.long ? 30 : 6;
     m.report = m.long ? '⛏ The '+tt.name+' is stripped to the bedrock' : '⛏ The '+tt.name+' is worked clean';
+    scoreDeed(s, m.long ? 'longHaul' : 'gathered', 1, now);
     tile.respawnAt = now + RESPAWN_MS;
   }else{ // ruin
     m.loot = {food: 10*tile.lvl*s.b.townhall};
@@ -137,6 +140,7 @@ function resolveArrival(s, m, now, rand){
     m.writ = rand() < 0.20;
     m.report = '🏛️ The ruin gives up its secrets';
     s.ruinsRaided = (s.ruinsRaided||0) + 1;
+    scoreDeed(s, 'ruin', 1, now);
     tile.respawnAt = now + RESPAWN_MS;
   }
 }

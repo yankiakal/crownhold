@@ -12,11 +12,14 @@ let board = null;
 try{ server = localStorage.getItem(SERVER_KEY) || ''; }catch(e){}
 try{ session = JSON.parse(localStorage.getItem(SESS_KEY) || 'null'); }catch(e){}
 
-// served by the server itself? then it is the obvious default
+// Served by the server itself? then it is the obvious default. Otherwise fall
+// back to a local server, which is where a solo developer's is going to be.
+export const DEFAULT_SERVER = 'http://localhost:8787';
 if(!server && typeof location !== 'undefined' && /^https?:$/.test(location.protocol)
    && !/(github\.io|claude\.ai)$/.test(location.hostname)){
   server = location.origin;
 }
+if(!server) server = DEFAULT_SERVER;
 
 export function isOnline(){ return online && !!session; }
 export function accountName(){ return session ? session.name : null; }
@@ -44,7 +47,8 @@ async function post(path, body){
 }
 
 export function setServer(url){
-  server = (url || '').trim().replace(/\/$/,'');
+  const v = (url || '').trim().replace(/\/$/,'');
+  server = v || DEFAULT_SERVER;      // an empty box means "the usual place"
   persist();
 }
 
