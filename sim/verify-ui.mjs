@@ -69,6 +69,7 @@ const from = f => import(pathToFileURL(join(dir, 'src', f)).href);
 
 try {
   const D  = await from('defs.js');
+  const L  = await from('logic.js');
   const ST = await from('state.js');
   const UI = await from('ui.js');
 
@@ -128,6 +129,51 @@ try {
   ok('nothing on screen says "spearmans"', !/spearmans/i.test(flat));
   ok('nothing on screen says "ballistas"', !/ballistas/i.test(flat));
   ok('the composer does say "ballistae"', /ballistae/i.test(flat));
+
+  /* ── the road to the next Town Hall ──
+     The pace gate is the only genuinely blocked goal in the game — closed for a third
+     to a half of the late game, and unlike every other "waiting" signal I chased, not
+     an artifact of the simulator's bot. So it has to read as a costed checklist rather
+     than a refusal, and the checklist has to be correct: a step that cannot actually
+     be started is worse than no step at all. */
+  console.log('\n── the road to the next Town Hall is a checklist ──');
+  {
+    const r = ST.freshState(now, 42);
+    r.seenIntro = true;
+    r.b.townhall = 12;
+    for(const k of ['farm','lumberyard','quarry','ironmine','barracks','wall']) r.b[k] = 11;
+    r.res = { food:9e5, wood:9e5, stone:9e5, iron:9e5, steel:9e5, runestone:9e5 };
+    ST.store.s = r;
+    const p = L.townhallPath(r);
+    ok('the gate is shut in this hold', !p.ok, p.have + ' of ' + p.need + ' at level ' + (p.toLvl-1));
+    ok('it names exactly the shortfall', p.path.length === p.want,
+       p.path.length + ' steps for a shortfall of ' + p.want);
+    ok('every step is a real building below the target level',
+       p.path.every(x => D.BUILDINGS[x.key] && (r.b[x.key]||0) < p.toLvl - 1),
+       p.path.map(x => x.key + ' ' + (r.b[x.key]||0)).join(', '));
+    ok('every step can reach the target level at all',
+       p.path.every(x => D.BUILDINGS[x.key].max >= p.toLvl - 1));
+    ok('steps are ordered cheapest first',
+       p.path.every((x, i) => i === 0 || p.path[i-1].weight <= x.weight),
+       p.path.map(x => x.weight).join(' ≤ '));
+    ok('no step is the Town Hall itself', !p.path.some(x => x.key === 'townhall'));
+    // and the whole road renders into the hold panel
+    UI.render();
+    const road = (nodes.app && nodes.app.innerHTML) || '';
+    ok('the road is drawn in the hold', /class="road"/.test(road));
+    ok('it names the Town Hall level it leads to', road.includes('Town Hall ' + p.toLvl));
+    ok('no "undefined" or "NaN" in it', !/undefined|NaN/.test(road));
+
+    /* And when the gate opens it must flip to the raise itself, not keep listing
+       chores. A checklist that stays up after it is satisfied is a lie. */
+    for(const k of ['farm','lumberyard','quarry','ironmine','barracks','wall']) r.b[k] = 12;
+    const p2 = L.townhallPath(r);
+    ok('with the pace met, the gate reads open', p2.ok && p2.path.length === 0,
+       p2.have + ' of ' + p2.need);
+    UI.render();
+    const ready = (nodes.app && nodes.app.innerHTML) || '';
+    ok('and the road offers the Town Hall itself', /class="road ready"/.test(ready));
+  }
 
   /* ── every building has somewhere to stand ──
      kitchen and crucible shipped in v1.28 with no entry in PLOTS and none in

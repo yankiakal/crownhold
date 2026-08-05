@@ -24,7 +24,7 @@ import {
   activeTrainings, trainQueue, woundedTotal, woundedCap, woundShare, healCost, healTime,
   prodPerSec, prodMult, upkeepPerSec, buildCost, buildTime, canAfford, armyPower,
   armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
-  valorQuota, valorToday, isRested, QUEUE_KEYS, buildSlots, activeQueues, freeSlot, townhallReq,
+  valorQuota, valorToday, isRested, QUEUE_KEYS, buildSlots, activeQueues, freeSlot, townhallReq, townhallPath,
   maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost,
   wavePower, streakMult, finishCost, xpNeed,
   courtSeats, courtSeated, heroAway, leadBonus, leadTotal, heroSeasonOpen, classLift,
@@ -174,6 +174,52 @@ function queueStrip(S, q, label, finishAct, slot){
     + '</div>';
 }
 
+/* ── the road to the next Town Hall ──
+   The one place in the game where the thing the player wants is genuinely blocked,
+   rather than merely slow: the pace gate is shut for a third to a half of the late
+   game. Everything else that looked like waiting turned out to be the simulator's bot
+   declining work the game was offering.
+
+   Before this, the gate was only visible if you happened to tap the Town Hall, and it
+   read as a refusal — "the hold must keep pace, 2 of 4". Now it is a costed checklist
+   at the top of the hold with the cheapest route already worked out and a button per
+   step, so a blocked goal reads as three taps rather than a wall. */
+function renderRoad(S){
+  const p = townhallPath(S);
+  const d = BUILDINGS.townhall;
+  if((S.b.townhall || 0) >= d.max) return '';
+  const underway = QUEUE_KEYS.some(q => S[q] && S[q].key === 'townhall');
+  if(underway) return '';
+
+  if(p.ok){
+    const cost = buildCost(S, 'townhall'), can = canAfford(S, cost) && freeSlot(S);
+    return '<div class="road ready"><div class="rhead">🏛️ Town Hall '+p.toLvl+' is ready'
+      + ' <span class="hmeta">'+p.have+' of '+p.need+' buildings at level '+(p.toLvl-1)+'</span></div>'
+      + '<div class="rrow"><span class="rcost">'+costHtml(S, cost)+' · ⏱ '+ftime(buildTime(S,'townhall'))+'</span>'
+      + '<button class="primary" data-act="upgrade" data-key="townhall" '+(can?'':'disabled')+'>Raise it</button></div></div>';
+  }
+  let h = '<div class="road"><div class="rhead">🏛️ The road to Town Hall '+p.toLvl
+    + ' <span class="hmeta">'+p.have+' of '+p.need+' buildings at level '+(p.toLvl-1)
+    + ' — cheapest '+p.want+' first</span></div>';
+  for(const step of p.path){
+    const bd = BUILDINGS[step.key];
+    const now = S.b[step.key] || 0;
+    const busy = QUEUE_KEYS.some(q => S[q] && S[q].key === step.key);
+    const capped = now >= S.b.townhall;
+    const cost = buildCost(S, step.key);
+    const can = !busy && !capped && freeSlot(S) && canAfford(S, cost);
+    h += '<div class="rrow"><span class="rname">'+bd.icon+' '+bd.name
+      + ' <b>'+now+'→'+(p.toLvl-1)+'</b></span>'
+      + '<span class="rcost">'+(step.levels > 1 ? step.levels+' levels · ' : '')+costHtml(S, cost)+'</span>'
+      + '<button data-act="upgrade" data-key="'+step.key+'" '+(can?'':'disabled')+'>'
+      + (busy ? 'building' : capped ? 'Town Hall caps it' : 'Raise') + '</button></div>';
+  }
+  if(!p.path.length)
+    h += '<div class="stat-note">Nothing left within reach raises it — the buildings that would '
+      + 'are capped by the Town Hall itself. Raise anything below its level.</div>';
+  return h + '</div>';
+}
+
 function renderHold(S){
   let h = '<section class="panel"><h2>The Hold'
     + '<button class="info-btn" data-act="holdView" style="letter-spacing:0">'
@@ -185,6 +231,7 @@ function renderHold(S){
   }
   if(buildSlots(S) > 1 && activeQueues(S).length < 2)
     h += '<div class="stat-note">🔨 '+(2-activeQueues(S).length)+' crew idle — two builds can run at once.</div>';
+  h += renderRoad(S);
   if(!listView){
     // the canvas itself is a persistent element re-parented after each render,
     // so the 60fps scene survives the 4Hz DOM rebuild

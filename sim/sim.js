@@ -34,6 +34,7 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
      With levels now running to 8, an unreachable top of the ladder would look
      identical, so the ladder gets counted rather than assumed. */
   const campsAt = {}, gathersAt = {};
+  const probe = { ticks:0, busy:0, couldBuild:0, onlyPoor:0, nothingLegal:0, capped:0, thPace:0, readySum:0, actSum:0, nothingToDo:0, noPick:0, startFailed:{} };
   const mm = t => String(Math.floor(t/60)).padStart(3,' ')+':'+String(t%60).padStart(2,'0');
   const note = (t,txt) => ev.push(mm(t)+'  '+txt);
 
@@ -71,6 +72,7 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
     const ml = L.masteryLvl(s);
     if(ml > prevML){ prevML = ml; note(t,'Mastery → '+ml); }
     if(Object.keys(RES_META).some(r => s.res[r] >= L.capFor(s,r)-1)) cappedTime++;
+
 
     /* ── bot decisions ── */
     // stance: the skilled bot answers the scouted shape; the lazy bot never touches it
@@ -201,6 +203,12 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
     while(L.freeSlot(s)){
       const eligible = k => {
         const d = BUILDINGS[k], lvl = s.b[k];
+        /* One crew per structure — startUpgrade enforces it and the bot did not model
+           it, so with two crews it picked its top-priority building twice and the
+           second was refused, every tick. The second crew has been very nearly
+           useless in this simulator since the day it was added, and the 8-hour run
+           reported a 47% idle queue that was entirely this. */
+        if(L.activeQueues(s).some(q => s[q].key === k)) return false;
         if(lvl >= d.max) return false;
         if(k!=='townhall' && lvl >= s.b.townhall) return false;
         if(d.th && s.b.townhall < d.th) return false;
@@ -238,9 +246,17 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
           if(s.b[k] < Math.min(8, s.b.townhall) && eligible(k)){ pick=k; break; }
         if(!pick) for(const k of ['forge','runeworks','tavern','granary','hospital','warehouse'])
           if(eligible(k)){ pick=k; break; }
+        /* Last resort: ANYTHING legal and affordable. Without this the bot's hardcoded
+           priority list was the real bottleneck, and every idleness figure it produced
+           measured the list rather than the game — 58% "build-idle" and a 49% idle
+           queue both turned out to be the bot declining work the game was offering.
+           A real player does not leave a crew standing because their favourite
+           building is capped. */
+        if(!pick) for(const k of Object.keys(BUILDINGS)) if(eligible(k)){ pick=k; break; }
       }
       // break on a failed start too, or the free slot spins forever
-      if(!pick || !L.startUpgrade(s, pick, ms)){ idleBuild++; break; }
+      if(!pick){ idleBuild++; probe.noPick++; break; }
+      if(!L.startUpgrade(s, pick, ms)){ idleBuild++; probe.startFailed[pick] = (probe.startFailed[pick]||0)+1; break; }
     }
 
     // research runs on its own queue — the bot always keeps the scholars busy
@@ -297,6 +313,57 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
       }
      }
     }
+
+    /* Sampled at the END of the tick, after every decision is made. Sampling before
+       the bot acted caught the build queue in the instant before it was filled and
+       reported a 48% idle queue that the bot then filled microseconds later — my own
+       probe manufacturing the exact artifact it was written to rule out.
+
+       Why the hold is not building — measured against the GAME's rules, not against
+       the bot's priority list. `build-idle` counts ticks where the bot found nothing
+       it wanted, and the bot's list is hardcoded and incomplete (it never builds the
+       Command Center at all), so that figure cannot distinguish "the game offers
+       nothing" from "the bot asked for nothing". Those need completely different
+       fixes, and the same conflation already fooled me once today over at-cap. */
+    if(t % 10 === 0){
+      probe.ticks++;
+      let ready = 0, poor = 0, capped = 0;
+      for(const k of Object.keys(BUILDINGS)){
+        const d = BUILDINGS[k], lvl = s.b[k] || 0;
+        if(L.activeQueues(s).some(q => s[q].key === k)) continue;   // already under way
+        if(lvl >= d.max) continue;
+        if(d.th && s.b.townhall < d.th) continue;              // not unlocked yet
+        if(k === 'townhall'){
+          if(!L.townhallReq(s).ok){ probe.thPace++; continue; }
+        } else if(lvl >= s.b.townhall){ capped++; continue; }  // the Town Hall must lead
+        if(L.canAfford(s, L.buildCost(s, k))) ready++; else poor++;
+      }
+      probe.capped += capped;
+      if(!L.freeSlot(s)) probe.busy++;
+      else if(ready > 0) probe.couldBuild++;
+      else if(poor > 0) probe.onlyPoor++;
+      else probe.nothingLegal++;
+      probe.readySum += ready;
+
+      /* The question the player actually asks is not "can I build" but "is there
+         anything to DO". Counted across every parallel track, because this genre is
+         made of timers and what stops it feeling like waiting is having somewhere
+         else to spend attention while one runs. */
+      let acts = 0;
+      if(L.freeSlot(s) && ready > 0) acts++;                       // an upgrade
+      if(L.activeTrainings(s).length < 1 &&
+         Object.keys(TROOPS).some(k => s.b[TROOPS[k].at] > 0 && L.canAfford(s, L.trainCost(s,k,1)))) acts++;
+      if(!s.rq) acts++;                                            // scholars idle
+      if(!s.forgeQ) acts++;                                        // the forge idle
+      if(s.marches.length < W.marchSlots(s) &&
+         s.world.tiles.some((t,i) => !t.respawnAt && !W.tileBusy(s,i) && !W.tileLocked(s,t))) acts++;
+      if((s.valor||0) >= 20) acts++;                               // Valor to spend on a timer
+      if(s.choice || (s.choiceQueue||[]).length) acts++;           // a draft waiting
+      if(Object.keys(TROOPS).some(k => L.tierOf(s,k) < L.maxTier(s) &&
+         L.canAfford(s, L.promoteCost(s,k)))) acts++;              // a promotion
+      probe.actSum += acts;
+      if(acts === 0) probe.nothingToDo++;
+    }
   }
 
   const famines = s.log.filter(e => e.txt.startsWith('Famine')).length;
@@ -334,6 +401,19 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
     +' | spoils: '+(Object.entries(s.spoils).map(([k,n])=>k+(n>1?'×'+n:'')).join(', ')||'none'));
   console.log('-- valor left '+Math.floor(s.valor)+' spent '+valorSpent+' | famine events (recent log) '+famines
     +' | build-idle '+Math.round(100*idleBuild/T)+'% | at-cap '+Math.round(100*cappedTime/T)+'%');
+  const pc = n => Math.round(100*n/Math.max(1,probe.ticks))+'%';
+  console.log('-- build queue: busy '+pc(probe.busy)
+    +' | free & something affordable '+pc(probe.couldBuild)
+    +' | free but too poor '+pc(probe.onlyPoor)
+    +' | free & NOTHING legal '+pc(probe.nothingLegal));
+  const sf = Object.entries(probe.startFailed).sort((a,b)=>b[1]-a[1]).slice(0,4);
+  console.log('-- crew idled: no eligible pick ×'+probe.noPick
+    + ' | startUpgrade refused ' + (sf.length ? sf.map(([k,n])=>k+'×'+n).join(' ') : 'never'));
+  console.log('-- things to do at any moment: '+(probe.actSum/Math.max(1,probe.ticks)).toFixed(1)
+    +' on average across every track | NOTHING to do '+pc(probe.nothingToDo)+' of the time');
+  console.log('-- when free: '+(probe.readySum/Math.max(1,probe.ticks)).toFixed(1)+' buildings affordable on average'
+    +' | blocked by "Town Hall must lead" '+(probe.capped/Math.max(1,probe.ticks)).toFixed(1)+' per check'
+    +' | Town Hall itself pace-blocked '+pc(probe.thPace));
   console.log('');
 }
 

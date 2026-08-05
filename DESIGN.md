@@ -481,6 +481,46 @@ Three lessons, in order of how much they cost:
    suspicious of. Reproduce first, theorise second. The check that settled it took
    one command: run it twice, unchanged.
 
+### "It feels like waiting" (v1.35) — four of five signals were my own instruments
+
+Asked to make the late game feel less like waiting, off the back of a number I had
+flagged myself: **build-idle 51–58%**. Before changing anything I measured *why* the
+queue was idle, against the game's rules rather than the bot's preferences. Nearly all
+of it was instrumentation.
+
+| signal | looked like | actually was |
+|---|---|---|
+| build-idle 51–58% | nothing to build | the bot's hardcoded priority list running out; it declined work the game was offering |
+| resources at cap 55% | economy over-supplying | the same bot not spending |
+| queue free with 13.8 affordable upgrades | queue throughput too low | my probe sampling *before* the bot acted each tick — catching the queue in the instant before it was filled |
+| queue idle 47% in the long run | still throughput | the bot picking its top-priority building for **both** crews; `startUpgrade` enforces one crew per structure and the bot's model did not know. The second build crew has been very nearly useless in this simulator since the day it shipped |
+| **Town Hall pace-blocked 35–55%** | — | **real, and the rule** |
+
+With the bot taught the rules and the probe moved to the end of the tick: build queue
+**busy 77–96%**, "free and something affordable" **0%**, "free and nothing legal" **0%**,
+and — the number that answers the question — **"nothing to do" 0% of the time** in every
+scenario, with 2.9–3.6 actionable tracks at any moment.
+
+So the game does not make an engaged player wait for lack of things to do, and adding
+content would have been the wrong fix. The one genuine blocked goal is the **Town Hall
+pace gate**: for a third to a half of the late game you cannot raise the building that
+unlocks everything else. That is by design — it stops you rushing the Town Hall and
+leaving a hollow hold — but it was only visible if you happened to tap the Town Hall,
+where it read as a refusal: *"the hold must keep pace, 2 of 4."*
+
+**Being blocked is fine. Being blocked without being shown the way through is what
+feels like waiting.** So `townhallPath()` costs the cheapest route to the next level —
+summed level by level, because `buildCost` is a power curve with refined-goods
+surcharges at thresholds, and cost × levels would badly understate a long climb — and
+the hold panel now opens with it: a checklist of the cheapest N buildings, each with its
+cost and a Raise button, flipping to *"Town Hall 13 is ready"* the moment the pace is
+met.
+
+The lesson, which is the third time today: **a measurement of a system that includes an
+agent measures the agent too.** Every one of those four false signals came from reading
+the bot's behaviour as the game's. The way out was to measure against the rules
+(`canAfford`, `townhallReq`, `startUpgrade`) rather than against what the bot chose to do.
+
 ### The frontier, deepened (v1.34) — and what Kingshot's map is actually for
 
 Researched Kingshot's map properly, and Whiteout Survival's, which is the same studio
