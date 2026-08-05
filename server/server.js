@@ -22,7 +22,7 @@ import { tick, armyPower, armyBreakdown, tierPower, gainRes, masteryLvl, upkeepP
          takeCasualties, capFor } from '../src/logic.js';
 import { SEASON_MS as DEFAULT_SEASON_MS, SEASON_EPOCH, SEASON_ARCS,
          seasonNo as defSeasonNo, seasonEndsIn as defSeasonEndsIn } from '../src/defs.js';
-import { tickWorld, fitColumn, marchPower, marchSpeed, bestLeaders } from '../src/world.js';
+import { tickWorld, fitColumn, marchPower, marchSpeed, columnPace, bestLeaders } from '../src/world.js';
 import { freshState, applyOffline, migrate } from '../src/state.js';
 import { applyAction, isGameAction } from '../src/actions.js';
 import { resolveRaid, inBracket, raidShielded, defenceOf, unlootable,
@@ -1357,7 +1357,8 @@ async function api(req, res, url){
     const bd = armyBreakdown(u.state);
     let base = 0;
     for(const [k, n] of Object.entries(fit.troops)) base += tierPower(u.state, k) * n;
-    const travel = Math.round(RAID_TRAVEL_MS * marchSpeed(u.state));
+    // the column's own pace counts on a raid too — cavalry reach further in an hour
+    const travel = Math.round(RAID_TRAVEL_MS * marchSpeed(u.state) * columnPace(fit.troops));
     db.raids = db.raids || [];
     db.raids.push({
       id: randomBytes(6).toString('hex'), from: u.name, to: target.name,

@@ -15,7 +15,7 @@ import {
   tileDist, marchSlots, tileBusy, marchPower, campPower, gatherYield, startMarch,
   heroCanLead, marchCapacity, fitColumn, bestLeaders, marchParty as partyOf,
   beastPower, beastBusy, marchSpeed,
-  isleReady, rationCost, voyageTime, voyageBlockedBy, refPower,
+  isleReady, rationCost, voyageTime, voyageBlockedBy, refPower, columnPace,
   tileReq, tileLocked, TILE_LVL_MAX,
   LONG_HAUL_WORK, LONG_HAUL_YIELD,
 } from './world.js';
@@ -28,7 +28,7 @@ import {
   maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost,
   wavePower, streakMult, finishCost, xpNeed,
   courtSeats, courtSeated, heroAway, leadBonus, leadTotal, heroSeasonOpen, classLift,
-  effLvl, heroStarCap, arenaTeam, setArenaTeam, gearBlockedBy, petBonus,
+  effLvl, heroStarCap, arenaTeam, setArenaTeam, gearBlockedBy, petBonus, screenCover,
 } from './logic.js';
 import { applyAction, isGameAction } from './actions.js';
 import { CHRONICLE, SEASON_LORE } from './lore.js';
@@ -1515,6 +1515,26 @@ function renderColumnComposer(S){
     + '<button data-act="fillCol" data-key="1">Fill to capacity</button>'
     + '<button data-act="fillCol" data-key="0">Clear</button>'
     + '</div>';
+  /* Pace and cover. Both are properties of what you brought rather than bonuses for a
+     shape, so the player has to be able to see them while building — the same lesson the
+     captain-coverage strip taught: an invisible mechanic is an unused one. */
+  if(total > 0){
+    const pace = columnPace(marchWant);
+    const cover = screenCover(marchWant);
+    const engines = (marchWant.ballista||0) + (marchWant.knight||0);
+    h += '<div class="paceline">'
+      + '<span class="'+(pace < 0.95 ? 'good' : pace > 1.2 ? 'bad' : '')+'">'
+      + (pace < 0.95 ? '🐎 ' : pace > 1.2 ? '⚙️ ' : '🚶 ')
+      + 'Marches at ×'+pace.toFixed(2)+' '
+      + (pace < 0.95 ? '— cavalry cover ground' : pace > 1.2 ? '— a siege train is slow' : '— an ordinary pace')
+      + '</span>';
+    if(engines > 0)
+      h += '<span class="'+(cover > 0.5 ? 'good' : cover < 0.2 ? 'bad' : '')+'">'
+        + (cover > 0.5 ? '🛡️ Engines screened' : cover < 0.2 ? '⚠️ Engines unscreened' : '🛡️ Thin screen')
+        + ' <span class="hmeta">— losses fall on the front line, and there is '
+        + (cover < 0.2 ? 'nobody in front' : 'a line in front') + '</span></span>';
+    h += '</div>';
+  }
   if(over) h += '<p class="d-warn">Over capacity — the extra troops will stay home. Bring stronger leaders.</p>';
   /* Stated as fact, not scolded. Riding uncovered is a legitimate call — you may
      want the bodies more than the bonus — so this reports the cost and stops. */

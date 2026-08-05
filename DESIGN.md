@@ -481,6 +481,66 @@ Three lessons, in order of how much they cost:
    suspicious of. Reproduce first, theorise second. The check that settled it took
    one command: run it twice, unchanged.
 
+### Composition: no shape may be free money (v1.40)
+
+Asked whether to copy Rise of Empires' rule that a full march of cavalry moves faster.
+The question contained its own answer — *"everybody was using knights"*. A reward for one
+shape does not add a choice, it deletes three.
+
+Checking whether we had the same disease found that **we did, worse, pointed at siege.**
+Columns are capacity-limited by **headcount**, so what matters is power per slot:
+
+| | power per slot | casualty weight |
+|---|---|---|
+| ballista | **59** | 0.5 |
+| knight | 33 | 0.75 |
+| archer | 15 | 1.2 |
+| spearman | 9 | 1.5 |
+
+A full column of ballistae hit for 13,284 where the same 225 slots mixed hit 6,218 — and
+it took **a third of the casualties**, because `SCREEN`'s per-type weights were applied as
+independent multipliers. The rule's own comment says *"the cheap line screens the expensive
+engines"*, but as written a pure-ballista column enjoyed the protection of a screen that
+was not there. Six and a half times the power and a third of the losses, with nothing
+penalising purity. Hidden for months behind the simulator bot's hardcoded 30/20/30/20
+training mix — the same blind spot that concealed four other things this session.
+
+Two fixes, both **continuous rather than categorical**, which is the lesson the raid cost
+curve taught twice:
+
+**The screen now redistributes a fixed casualty budget instead of scaling it.** The same
+battle costs the same number of casualties whatever you brought; the weights decide *who*
+takes them. A line in front converts ballista losses into spearman losses (45 against 15
+in a 50/50 column) — and cheap losses are the point, since a spearman costs 25 food and 10
+wood against a ballista's 80 wood and 40 iron. Engines with nobody in front take all of it.
+
+**Pace is a property of the column, not a bonus for a shape.** Share-weighted: cavalry ×0.8,
+foot ×1.05, siege ×1.6. One ballista among two hundred cavalry costs ×0.804 rather than the
+whole penalty — *"the slowest sets the pace"* would have been a gotcha and a cliff of exactly
+the kind the raid curve just had removed. This delivers the Rise of Empires *feel* — cavalry
+are how you cover ground — with no purity reward anywhere.
+
+#### Measured, and honestly: narrowed, not closed
+
+| | power | pace | power × trips/hr | power per troop-cost lost |
+|---|---|---|---|---|
+| all ballistae | 13,284 | ×1.60 | 272,959 | 122 |
+| all knights | 7,489 | ×0.80 | 229,255 | 110 |
+| ballista + screen | 7,697 | ×1.33 | 178,309 | **171** |
+| even four ways | 6,526 | ×1.11 | 167,692 | 143 |
+
+Siege's throughput advantage over cavalry fell from **1.8× to 1.19×**, and screened mixes
+became the most casualty-efficient columns in the game. But for a **single decisive fight** —
+a raid, a camp you must beat — raw power is all that counts, and all-ballistae still wins by
+1.8×. The root cause is untouched: **a ballista and a spearman consume the same capacity slot
+while differing 6.5× in power.**
+
+The fix that would close it is to make capacity a measure of *load* rather than headcount —
+`{spearman:1, archer:1, knight:2, ballista:4}` — which levels power-per-slot-unit at roughly
+15 for archer, knight and ballista and leaves the spearman as the cheap screen it is meant to
+be. That changes what "capacity" means to the player and every number that displays it, so it
+is a decision to take deliberately rather than to slip in behind a balance pass.
+
 ### Hold against hold (v1.37) — and the one line the whole thing rests on
 
 The attack side the Watch was built to defend against. This is the system Whiteout

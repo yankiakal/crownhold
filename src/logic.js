@@ -417,6 +417,52 @@ export function takeCasualties(s, k, n, pve){
   if(hurt) s.wounded[k] = (s.wounded[k] || 0) + hurt;
   return { dead: n - hurt, hurt };
 }
+/* ── the screen ──
+   SCREEN's per-type weights used to be applied as INDEPENDENT MULTIPLIERS, which meant
+   the total casualties a force took depended on its composition: a pure-ballista column
+   took a third of what a pure-spearman one did in the same battle, because it enjoyed
+   the 0.5 protection of a screen that was not there. Together with 6.5× the power per
+   column slot, that is why the optimal column was always ballistae — the Rise of Empires
+   problem, pointed at siege instead of cavalry, and hidden for months behind the
+   simulator bot's hardcoded 30/20/30/20 mix.
+
+   The weights now REDISTRIBUTE a fixed casualty budget rather than scaling it. The front
+   line still takes more than its share — but only because it is in front of something.
+   If the column is all engines, the engines are the front line and take all of it. */
+export function casualtySplit(troops, lossFrac, rand = () => 0.5){
+  const out = {};
+  let total = 0;
+  for(const k of Object.keys(TROOPS)) total += troops[k] || 0;
+  if(total <= 0 || lossFrac <= 0) return out;
+  const budget = total * lossFrac;
+  const w = {};
+  let wsum = 0;
+  for(const k of Object.keys(TROOPS)){
+    w[k] = (troops[k] || 0) * (SCREEN[k] || 1);
+    wsum += w[k];
+  }
+  if(wsum <= 0) return out;
+  for(const k of Object.keys(TROOPS)){
+    const n = troops[k] || 0;
+    if(n <= 0) continue;
+    const share = (budget * w[k] / wsum) * (0.75 + rand() * 0.5);
+    const hit = Math.min(n, Math.max(0, Math.round(share)));
+    if(hit) out[k] = hit;
+  }
+  return out;
+}
+/* How much of a column is cheap enough to stand in front. Reported so the march builder
+   can say whether the engines are covered. */
+export function screenCover(troops){
+  let total = 0, cover = 0;
+  for(const k of Object.keys(TROOPS)){
+    const n = troops[k] || 0;
+    total += n;
+    cover += n * Math.max(0, (SCREEN[k] || 1) - 1);   // only types that soak MORE than their share
+  }
+  return total > 0 ? Math.min(1, cover / total / 0.5) : 0;
+}
+
 /* Hold against hold: NOBODY DIES, and the size of your Infirmary does not get a vote.
    takeCasualties caps the wounded at the beds available and buries the overflow — a
    fine rule for the Unpaid, and the precise shape of Whiteout Survival's funnel when
@@ -620,10 +666,11 @@ export function watchCasualties(s, lossFrac, rand){
   let hurt = 0;
   for(const g of watchHere(s)){
     let lost = 0;
+    const split = casualtySplit(g.troops, lossFrac, rand);
     for(const k of Object.keys(TROOPS)){
       const n = g.troops[k] || 0;
       if(n <= 0) continue;
-      const l = Math.min(n, Math.round(n * Math.min(0.95, lossFrac * (SCREEN[k] || 1)) * (0.7 + rand()*0.6)));
+      const l = split[k] || 0;
       if(l <= 0) continue;
       g.troops[k] = n - l;
       lost += l;
@@ -1291,9 +1338,11 @@ export function resolveWave(s, now, rand=Math.random){
     if(cm > 1) lossFrac *= COUNTER_CASUALTY;
     if(mods.noCasual) lossFrac = 0;
     let lost = 0, hurtTotal = 0;
-    // the cheap line screens the expensive engines: casualties weighted by class
-    for(const k of Object.keys(TROOPS)){
-      const l = Math.round(s.t[k] * Math.min(0.95, lossFrac*SCREEN[k]) * (0.7+rand()*0.6));
+    /* One casualty budget for the whole line, then shared out by who was standing in
+       front. Weighting each type independently let an engine-heavy army take a fraction
+       of the losses a spearman line would, for the same fight. */
+    const split = casualtySplit(s.t, lossFrac, rand);
+    for(const [k, l] of Object.entries(split)){
       const r = takeCasualties(s, k, l, true);   // holding your own wall never kills
       lost += r.dead; hurtTotal += r.hurt;
     }
@@ -1326,8 +1375,8 @@ export function resolveWave(s, now, rand=Math.random){
     s.wavesLost = (s.wavesLost||0)+1;
     s.nextWave = now + WAVE_MS*2; // a loss buys a longer breather
     const protect = Math.min(0.6, 0.04*(s.b.warehouse||0)); // the Warehouse hides part of your stores
-    for(const k of Object.keys(TROOPS))
-      takeCasualties(s, k, Math.round(s.t[k] * Math.min(0.5, 0.2*SCREEN[k])), true);
+    for(const [k, l] of Object.entries(casualtySplit(s.t, 0.2, rand)))
+      takeCasualties(s, k, l, true);
     // and the Watch takes the same beating it would have if it were home
     const wHurt = watchCasualties(s, 0.2, rand);
     for(const r of Object.keys(RES_META)) s.res[r] = Math.floor((s.res[r]||0)*(1 - 0.15*(1-protect)));

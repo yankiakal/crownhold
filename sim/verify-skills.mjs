@@ -457,6 +457,57 @@ console.log('\n── a pre-skills save is inert, not broken ──');
      'fixed→' + draw(fixed) + '  vs  0.99→' + draw(() => 0.99));
 }
 
+/* ── composition: no shape may be free money ──
+   Rise of Empires gave a full march of cavalry extra speed, and the result was that
+   everybody used cavalry: a reward for one shape deletes the other three. We had the
+   same disease pointed at siege, and worse, because it stacked — 6.5× the power per
+   capacity slot AND a third of the casualties, since SCREEN's per-type weights were
+   applied as independent multipliers rather than as a redistribution. A pure-ballista
+   column enjoyed the protection of a screen that was not there. */
+{
+  console.log('\n── the screen has to actually be a screen ──');
+  const budget = 0.30;
+  const totalOf = t => Object.values(L.casualtySplit(t, budget, () => 0.5)).reduce((a,b)=>a+b,0);
+  const foot = { spearman: 200 }, siege = { ballista: 200 };
+  ok('the same battle costs the same number of casualties whatever you brought',
+     totalOf(foot) === totalOf(siege),
+     'foot ' + totalOf(foot) + ' vs siege ' + totalOf(siege) + ' of 200');
+  const mixed = { spearman: 100, ballista: 100 };
+  const split = L.casualtySplit(mixed, budget, () => 0.5);
+  ok('but a line in front takes them instead of the engines',
+     split.spearman > split.ballista * 2,
+     'spearmen ' + split.spearman + ', ballistae ' + split.ballista);
+  const bare = L.casualtySplit(siege, budget, () => 0.5);
+  ok('engines with nobody in front take the lot',
+     bare.ballista > split.ballista * 2,
+     'unscreened ' + bare.ballista + ' vs screened ' + split.ballista);
+  ok('screening is legible before you march',
+     L.screenCover(mixed) > L.screenCover(siege) && L.screenCover(siege) === 0,
+     'cover ' + L.screenCover(mixed).toFixed(2) + ' vs ' + L.screenCover(siege).toFixed(2));
+
+  console.log('\n── pace comes from what you brought, not from being pure ──');
+  ok('cavalry cover ground faster than foot',
+     W.columnPace({ knight: 100 }) < W.columnPace({ spearman: 100 }),
+     '×' + W.columnPace({ knight: 100 }).toFixed(2) + ' vs ×' + W.columnPace({ spearman: 100 }).toFixed(2));
+  ok('a siege train is the slowest thing on the road',
+     W.columnPace({ ballista: 100 }) > W.columnPace({ spearman: 100 }),
+     '×' + W.columnPace({ ballista: 100 }).toFixed(2));
+  /* The property that separates this from the mechanic it is modelled on: there is no
+     bonus for purity. A mixed column pays exactly its share, with no cliff — one ballista
+     among two hundred knights must not cost the whole siege penalty. */
+  const oneRotten = W.columnPace({ knight: 199, ballista: 1 });
+  ok('one engine among two hundred cavalry barely matters',
+     Math.abs(oneRotten - W.columnPace({ knight: 200 })) < 0.01,
+     '×' + oneRotten.toFixed(3) + ' vs ×' + W.columnPace({ knight: 200 }).toFixed(3));
+  ok('and a quarter siege costs about a quarter of the difference',
+     Math.abs(W.columnPace({ knight: 150, ballista: 50 }) - (0.75*0.8 + 0.25*1.6)) < 0.01,
+     '×' + W.columnPace({ knight: 150, ballista: 50 }).toFixed(2));
+  ok('no shape is rewarded merely for being one shape',
+     W.columnPace({ spearman: 100, archer: 100 }) < W.columnPace({ spearman: 200 }),
+     'mixed foot ×' + W.columnPace({ spearman:100, archer:100 }).toFixed(2)
+       + ' beats pure spearmen ×' + W.columnPace({ spearman:200 }).toFixed(2));
+}
+
 /* ── the four rules of hold-against-hold ──
    Asserted on the pure resolution, not only over HTTP, because these four are the
    whole difference between this and the game it is modelled on. Whiteout Survival does

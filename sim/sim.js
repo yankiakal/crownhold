@@ -34,6 +34,7 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
      With levels now running to 8, an unreachable top of the ladder would look
      identical, so the ladder gets counted rather than assumed. */
   const campsAt = {}, gathersAt = {};
+  const colChoice = {};   // which column shape the bot judged best, and how often
   const probe = { ticks:0, busy:0, couldBuild:0, onlyPoor:0, nothingLegal:0, capped:0, thPace:0, readySum:0, actSum:0, nothingToDo:0, noPick:0, startFailed:{} };
   const mm = t => String(Math.floor(t/60)).padStart(3,' ')+':'+String(t%60).padStart(2,'0');
   const note = (t,txt) => ev.push(mm(t)+'  '+txt);
@@ -109,9 +110,35 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
         let target = -1;
         // three leaders per column now, and they cap how many troops fit
         const party = skilled ? W.bestLeaders(s, 3) : [];
-        // PvE only wounds, so a real player commits a proper column, not a token quarter
-        const want = {}; for(const k of Object.keys(TROOPS)) want[k] = Math.floor(s.t[k]*0.6);
-        const q = W.fitColumn(s, want, party).troops;
+        /* The column the bot actually sends. It used to commit a flat 60% of every troop
+           type, which meant the simulator NEVER discovered what the best column was — and
+           that hardcoded ratio is what hid a genuine dominant strategy for months: a
+           full column of ballistae hit for 13,284 against a mixed one's 6,218, because
+           capacity is counted in bodies and a ballista is 6.5× a spearman per body.
+
+           So the bot now compares candidates and takes the strongest, which is what an
+           optimising player does. If a single type still wins outright, the numbers here
+           will say so instead of concealing it. */
+        const CANDIDATES = [
+          { name:'all-in', mix:{ spearman:1, archer:1, knight:1, ballista:1 } },
+          { name:'siege',  mix:{ ballista:1 } },
+          { name:'cavalry',mix:{ knight:1 } },
+          { name:'foot',   mix:{ spearman:1, archer:1 } },
+          { name:'screened siege', mix:{ spearman:1, ballista:1 } },
+          { name:'screened cavalry', mix:{ spearman:1, knight:1 } },
+        ];
+        let q = null, qName = 'none', best = -1;
+        for(const c of CANDIDATES){
+          const w = {};
+          for(const k of Object.keys(TROOPS)) w[k] = c.mix[k] ? Math.floor(s.t[k] * 0.6) : 0;
+          const fitted = W.fitColumn(s, w, party);
+          if(!fitted.total) continue;
+          const p = W.marchPower(s, fitted.troops, party, 'camp');
+          if(p > best){ best = p; q = fitted.troops; qName = c.name; }
+        }
+        if(!q){ q = {}; }
+        colChoice[qName] = (colChoice[qName] || 0) + 1;
+        const want = q;
         /* The RICHEST camp this column can take, not the first one in the array.
            Taking the first meant always taking the nearest and weakest, so the deep
            map went unvisited no matter how strong the hold got — and a level-8 camp
@@ -387,6 +414,8 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
      sprites earlier today. */
   let cap = 1;
   for(let l = 1; l <= LMAX; l++) if(W.tileReq(l) <= (s.b.townhall || 0)) cap = l;
+  const cc = Object.entries(colChoice).sort((a,b)=>b[1]-a[1]);
+  console.log('-- best column judged: ' + (cc.length ? cc.map(([k,n])=>k+'×'+n).join(' | ') : 'never marched'));
   console.log('-- frontier tiles: camps '+show(campsAt)+' | gathers '+show(gathersAt)
     + ' | deepest taken L'+(lvls(campsAt).pop()||0)
     + ' | TH'+(s.b.townhall||0)+' unlocks to L'+Math.min(cap, LMAX)

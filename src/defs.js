@@ -392,6 +392,15 @@ export const WAVE_TYPES = {
 };
 // cheap troops screen the expensive ones: casualty weight by class
 export const SCREEN = {spearman:1.5, archer:1.2, knight:0.75, ballista:0.5};
+/* How fast each kind travels, as a multiplier on a column's march time. Cavalry cover
+   ground; a siege train does not. This is where Rise of Empires' "a full march of
+   knights moves faster" lands — but as a PROPERTY OF WHAT YOU BROUGHT rather than a
+   bonus for purity. Their version paid you for a mono-composition, and the result was
+   that everybody used knights: a reward for sameness deletes the other three choices
+   instead of adding one.
+   Share-weighted, so bringing a quarter siege costs a quarter of the difference and
+   there is no cliff at "one ballista ruins it". */
+export const PACE = {spearman:1.05, archer:1.0, knight:0.8, ballista:1.6};
 export const STANCES = {
   balanced:  {name:'Balanced',    icon:'⚖️', hint:'No bonus, no penalty'},
   shieldwall:{name:'Shield Wall', icon:'🛡️', hint:'Counters Riders'},
