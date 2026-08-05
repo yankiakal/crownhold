@@ -3,7 +3,7 @@
 // table for authoritative online play. One list, no chance of the two forking.
 
 import {
-  startUpgrade, startTraining, finishBuildNow, finishTrainNow,
+  startUpgrade, startTraining, finishBuildNow, finishTrainNow, startResearch, finishResearchNow,
   expedition, setCaravan, setStance, setDefStance, setCaptain, useOrder, raiseShield,
   chooseOption, rerollChoice, promote,
 } from './logic.js';
@@ -13,6 +13,8 @@ export const GAME_ACTIONS = {
   upgrade:      (s,p,now)      => startUpgrade(s, p.key, now),
   train:        (s,p,now)      => startTraining(s, p.key, Number(p.n)||1, now),
   finishBuild:  (s,p,now)      => finishBuildNow(s, now, p.key),
+  research:     (s,p,now)      => startResearch(s, p.key, now),
+  finishResearch:(s,p,now)     => finishResearchNow(s, now),
   finishTrain:  (s,p,now)      => finishTrainNow(s, now),
   expedition:   (s,p,now,rand) => expedition(s, p.key, now, rand),
   caravan:      (s,p,now)      => setCaravan(s, p.key, now),

@@ -16,7 +16,13 @@ import {
   WAVE_MS, FIRST_WAVE_MS, masteryLvl,
 } from './defs.js';
 
+import { RESEARCH, techLvl, techBonus, techFlat, techCost, techTime, techAvailable } from './research.js';
+
 export { masteryLvl };
+
+/* Alliance research reaches its members through here: the server stamps
+   s.allyBonus before it advances a hold, so alliance techs feel like your own. */
+export function allyBonus(s, key){ return (s.allyBonus && s.allyBonus[key]) || 0; }
 
 /* ── formatting ── */
 export function fmt(n){ return n>=10000 ? (n/1000).toFixed(1)+'k' : String(Math.floor(n)); }
@@ -46,7 +52,7 @@ export function perk(s,n){ return masteryLvl(s)>=n; }
 export function shieldCap(s){ return 2 + (perk(s,7)?1:0) + (perk(s,14)?1:0) + spoilBonus(s,'shieldCap'); }
 export function storageCapFor(s, thLvl){
   return Math.round(800 * Math.pow(thLvl,1.7)
-    * (1 + 0.03*(s.b.granary||0))
+    * (1 + 0.03*(s.b.granary||0) + techBonus(s,'logistics'))
     * (perk(s,4)?1.15:1) * (perk(s,13)?1.10:1));
 }
 export function storageCap(s){ return storageCapFor(s, s.b.townhall); }
@@ -62,8 +68,10 @@ export function isUnlocked(s, res){
 }
 export function prodMult(s, res){
   const resKey = {food:'foodProd',wood:'woodProd',stone:'stoneProd',iron:'ironProd'}[res];
+  const soft = (res==='food'||res==='wood') ? techBonus(s,'husbandry') : techBonus(s,'masonry');
   return 1 + heroBonus(s,'production') + (perk(s,1)?0.06:0) + (perk(s,8)?0.08:0) + (perk(s,11)?0.08:0)
        + (res==='food' ? 0.02*(s.b.granary||0) : 0)
+       + soft + allyBonus(s,'production')
        + spoilBonus(s,resKey);
 }
 export function prodPerSec(s, res){
@@ -153,17 +161,18 @@ export function payCost(s,cost){ for(const [r,v] of Object.entries(cost)) s.res[
 export function trainMultFor(s, barracksLvl){
   const b = Math.max(0, barracksLvl-1);
   return Math.max(0.25,
-    (1 - 0.06*b - heroBonus(s,'trainTime') - spoilBonus(s,'trainTime'))
+    (1 - 0.06*b - heroBonus(s,'trainTime') - spoilBonus(s,'trainTime') - techBonus(s,'drillcraft'))
     * (perk(s,5)?0.88:1) * (perk(s,18)?0.9:1));
 }
 export function trainMult(s){ return trainMultFor(s, s.b.barracks); }
 export function armyBreakdown(s){
   let base = 0;
   for(const k of Object.keys(TROOPS)) base += tierPower(s,k) * s.t[k];
-  const mult = (1 + heroBonus(s,'troopPower') + spoilBonus(s,'troopPower'))
+  const mult = (1 + heroBonus(s,'troopPower') + spoilBonus(s,'troopPower')
+                  + techBonus(s,'warcraft') + allyBonus(s,'troopPower'))
              * (1 + (perk(s,2)?0.06:0) + (perk(s,8)?0.08:0) + (perk(s,10)?0.15:0)
                   + (perk(s,12)?0.08:0) + (perk(s,20)?0.20:0));
-  const wall = 18*s.b.wall + heroBonus(s,'wallPower');
+  const wall = (18 + techFlat(s,'fortification'))*s.b.wall + heroBonus(s,'wallPower');
   return { base, mult, wall, total: Math.round(base*mult + wall) };
 }
 export function armyPower(s){ return armyBreakdown(s).total; }
@@ -192,7 +201,7 @@ export function refineStep(s, dt){
   for(const [b, def] of Object.entries(REFINE)){
     const lvl = s.b[b] || 0;
     if(lvl <= 0) continue;
-    let want = def.rate * lvl * dt;
+    let want = def.rate * lvl * dt * (1 + techBonus(s,'smelting') + (perk(s,25)?0.20:0));
     const room = capFor(s, def.out) - (s.res[def.out] || 0);
     if(room <= 0) continue;
     want = Math.min(want, room);
@@ -218,7 +227,7 @@ export function dayIndex(now){ return Math.floor(now / 86400000); }
 export function valorToday(s){ return s.valorDay === dayIndex(s.now || 0) ? (s.valorToday || 0) : 0; }
 
 export function gainValor(s, v){
-  const raw = v * (1 + heroBonus(s,'valor') + (perk(s,19)?0.10:0));
+  const raw = v * (1 + heroBonus(s,'valor') + techBonus(s,'statecraft') + (perk(s,19)?0.10:0));
   const day = dayIndex(s.now || 0);
   if(s.valorDay !== day){ s.valorDay = day; s.valorToday = 0; }
   const quota = valorQuota(s);
@@ -355,6 +364,25 @@ export function startTraining(s, key, count, now){
   pushLog(s, 'The Barracks begins drilling '+count+' '+d.name+(count>1?'s':'')+'.');
   return true;
 }
+/* ── research: its own queue, so there is always something progressing ── */
+export function startResearch(s, key, now){
+  s.now = now;
+  if(s.rq || !RESEARCH[key] || !techAvailable(s, key)) return false;
+  const cost = techCost(s, key);
+  if(!canAfford(s, cost)) return false;
+  payCost(s, cost);
+  s.rq = { key, start: now, end: now + techTime(s, key) };
+  pushLog(s, '📚 The scholars take up '+RESEARCH[key].name+' '+(techLvl(s,key)+1)+'.');
+  return true;
+}
+export function finishResearchNow(s, now){
+  if(!s.rq) return false;
+  const c = finishCost(s.rq.end, now);
+  if(s.valor < c) return false;
+  s.valor -= c; s.rq.end = now;
+  return true;
+}
+
 export function finishBuildNow(s, now, slot){
   const q = slot && QUEUE_KEYS.includes(slot) ? slot : activeQueues(s)[0];
   if(!q || !s[q]) return false;
@@ -544,7 +572,8 @@ export function resolveWave(s, now, rand=Math.random){
     // casualties scale with how close it was; a right counter-read spills less blood
     const ratio = enemy/Math.max(mine,1);
     let lossFrac = 0.30 * ratio*ratio
-      * Math.max(0.15, 1 - heroBonus(s,'casualties') - 0.04*(s.b.hospital||0) - (perk(s,15)?0.10:0));
+      * Math.max(0.15, 1 - heroBonus(s,'casualties') - 0.04*(s.b.hospital||0)
+        - techBonus(s,'medicine') - (perk(s,15)?0.10:0));
     if(cm > 1) lossFrac *= COUNTER_CASUALTY;
     if(mods.noCasual) lossFrac = 0;
     let lost = 0;
@@ -553,7 +582,7 @@ export function resolveWave(s, now, rand=Math.random){
       const l = Math.round(s.t[k] * Math.min(0.95, lossFrac*SCREEN[k]) * (0.7+rand()*0.6));
       s.t[k] = Math.max(0, s.t[k]-l); lost += l;
     }
-    const lootMult = (isWB?2:1) * (1 + heroBonus(s,'loot') + spoilBonus(s,'loot') + (perk(s,17)?0.15:0)) * mods.lootX;
+    const lootMult = (isWB?2:1) * (1 + heroBonus(s,'loot') + spoilBonus(s,'loot') + techBonus(s,'siegecraft') + (perk(s,17)?0.15:0)) * mods.lootX;
     const base = 15*Math.pow(w,0.8);
     const loot = {food:Math.round(base*lootMult), wood:Math.round(base*lootMult),
                   stone:Math.round(0.4*base*lootMult), iron:Math.round(0.2*base*lootMult)};
@@ -631,6 +660,15 @@ export function tick(s, now, dt, rand=Math.random){
       gainValor(s, 2); s[q] = null;
       gainMastery(s, 6, now);
     }
+  }
+  if(s.rq && now >= s.rq.end){
+    const k = s.rq.key;
+    s.research[k] = (s.research[k] || 0) + 1;
+    const d = RESEARCH[k];
+    pushLog(s, '📚 '+d.name+' '+s.research[k]+' — now +'+(s.research[k]*d.per)+(d.unit||'')+' '+d.fx+'.', 'gold');
+    showBanner(s, '📚 '+d.name+' '+s.research[k], 'win', now);
+    s.rq = null;
+    gainMastery(s, 10, now);
   }
   if(s.tq && now >= s.tq.end){
     const n = s.tq.count;

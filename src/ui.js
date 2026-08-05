@@ -24,6 +24,9 @@ import {
   STANCE_BEATS, CLASS_ANSWER, stanceMult, composition, answerBonusForClass,
   committedTroops, forcePower,
 } from './arena.js';
+import {
+  RESEARCH, techLvl, techCost, techTime, researchProgress,
+} from './research.js';
 import * as net from './net.js';
 import { mountScene, sceneResize, pickBuilding } from './iso.js';
 import { store, freshState, save } from './state.js';
@@ -324,6 +327,31 @@ function renderChronicle(S){
   return h;
 }
 
+function renderResearch(S){
+  const p = researchProgress(S);
+  let h = '<section class="panel"><h2>Research <span style="letter-spacing:.05em">'+p.done+'/'+p.total+' · '+p.pct+'%</span></h2>';
+  if(S.rq){
+    const d = RESEARCH[S.rq.key];
+    h += queueStrip(S, S.rq, '📚 '+d.name+' → '+(techLvl(S,S.rq.key)+1), 'finishResearch');
+  }else{
+    h += '<div class="stat-note">The scholars are idle — research runs on its own queue, so it never competes with your builders.</div>';
+  }
+  for(const [k,d] of Object.entries(RESEARCH)){
+    const lvl = techLvl(S,k);
+    const locked = S.b.townhall < d.th;
+    const maxed = lvl >= d.max;
+    h += '<div class="trow"><span>'+d.icon+'</span><span class="tname">'+d.name+'</span>'
+      + '<span class="tmeta">'+(lvl?'+'+(lvl*d.per)+(d.unit||'')+' ':'')+d.fx+'</span>'
+      + '<span class="spacer"></span><span class="count">'+lvl+'/'+d.max+'</span>';
+    if(locked) h += '<span class="tmeta">Town Hall '+d.th+'</span>';
+    else if(maxed) h += '<span class="tmeta" style="color:var(--gold)">mastered</span>';
+    else h += '<button data-act="detail" data-dtype="tech" data-key="'+k+'">Study</button>';
+    h += '</div>';
+  }
+  h += '</section>';
+  return h;
+}
+
 function renderAlliance(S){
   if(!net.isOnline())
     return '<section class="panel"><h2>Alliance</h2>'
@@ -348,7 +376,21 @@ function renderAlliance(S){
       + '<button class="primary" data-act="allianceHelpAll" '+(pending?'':'disabled')+'>🤝 Help all'
       + (pending?' ('+pending+')':'')+'</button>'
       + '<span class="tmeta" style="font-family:var(--sans);font-size:.65rem;color:var(--ink-dim)">'
-      + 'each help cuts 1.5% (min 1m) off a build · 20 helps max per build</span></div>';
+      + 'each help cuts <b style="color:var(--gold)">'+(a.helpPct||1.5)+'%</b> off a build · up to '
+      + (a.helpCap||20)+' helps each — Fellowship research raises both</span></div>';
+    // alliance research: what makes the help worth having
+    if(a.tech){
+      h += '<div class="stat-note" style="margin-top:.5rem">Alliance research — everyone contributes, everyone benefits</div>';
+      for(const t of a.tech){
+        const pct = t.done ? 100 : Math.min(100, Math.round(100*t.points/t.need));
+        h += '<div class="trow"><span class="tname">'+t.name+'</span>'
+          + '<span class="tmeta">'+t.fx+'</span><span class="spacer"></span>'
+          + '<span class="count">'+t.lvl+'/'+t.max+'</span>';
+        if(!t.done) h += '<button data-act="allianceGive" data-key="'+t.key+'" title="Give 8% of your stores — repaid in Valor and Mastery">Fund ('+pct+'%)</button>';
+        else h += '<span class="tmeta" style="color:var(--gold)">complete</span>';
+        h += '</div>';
+      }
+    }
     for(const m of a.members){
       const mine = m.name === net.accountName();
       h += '<div class="trow'+(mine?' mine':'')+'"><span class="tname">'+(m.leader?'👑 ':'')+m.name+'</span>'
@@ -567,6 +609,24 @@ function renderDetail(S){
       + '<p class="d-row">Casualties fall only on what you send (≤6% winning, ≤14% losing) — and thin your walls for the next raid. '
       + 'Win or lose, no stores change hands.</p>'
       + '<button class="primary" data-act="arenaAttack" data-key="'+o.key+'" '+(sent?'':'disabled')+'>⚔ Attack '+o.name+'</button>';
+  }
+
+  else if(detail.type==='tech'){
+    const d = RESEARCH[k]; if(!d) return '';
+    const lvl = techLvl(S,k), maxed = lvl >= d.max;
+    title = d.icon+' '+d.name+' '+lvl+'/'+d.max;
+    body += '<p class="d-fx">Each level: +'+d.per+(d.unit||'')+' '+d.fx+'</p>'
+      + '<p class="d-row">Now: <b>+'+(lvl*d.per)+(d.unit||'')+'</b>'
+      + (maxed ? '' : ' → next level <b>+'+((lvl+1)*d.per)+(d.unit||'')+'</b>')
+      + ' · fully mastered: +'+(d.max*d.per)+(d.unit||'')+'</p>';
+    if(S.b.townhall < d.th) body += '<p class="d-warn">Requires Town Hall '+d.th+'.</p>';
+    else if(maxed) body += '<p class="d-delta" style="color:var(--gold)">Fully mastered.</p>';
+    else{
+      body += '<p class="d-row">Cost: '+costHtml(S, techCost(S,k))+' · ⏱ '+ftime(techTime(S,k))+'</p>'
+        + (S.rq ? '<p class="d-warn">Your scholars are already busy with '+RESEARCH[S.rq.key].name+'.</p>' : '')
+        + '<button class="primary" data-act="research" data-key="'+k+'" '
+        + ((S.rq || !canAfford(S, techCost(S,k)))?'disabled':'')+'>Begin study</button>';
+    }
   }
 
   else if(detail.type==='hero'){
@@ -803,7 +863,7 @@ export function render(){
   app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
     + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderSpoils(S)
-      + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
+      + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
       + renderAchievements(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
   fx.innerHTML = renderFx(S) + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
@@ -853,6 +913,11 @@ const VIEW_ACTIONS = {
   },
   allianceLeave: () => {
     net.allianceLeave().then(() => { allyOpen = false; renderAllySheet(); render(); }).catch(()=>{});
+  },
+  allianceGive:    b => {
+    net.allianceContribute(b.dataset.key)
+      .then(d => { if(d.levelled) allyMsg = ''; return net.pullState(); })
+      .then(s => { store.s = s; render(); }).catch(()=>{});
   },
   allianceHelp:    b => { net.allianceHelp(b.dataset.key).then(render).catch(()=>{}); },
   allianceHelpAll: () => { net.allianceHelp(null).then(render).catch(()=>{}); },

@@ -17,6 +17,7 @@ export function freshState(now, seed){
     res:{food:120,wood:120,stone:60,iron:0,steel:0,runestone:0},
     achieved:{}, campsBurned:0, ruinsRaided:0, winStreak:0, bestStreakWon:0,
     valorDay:0, valorToday:0, rest:0,
+    research:{}, rq:null, allyBonus:null,
     valor:0,
     b:{townhall:1,farm:1,lumberyard:1,quarry:0,ironmine:0,barracks:0,wall:0,watchtower:0,
        tavern:0,granary:0,academy:0,hospital:0,warehouse:0,forge:0,runeworks:0},
@@ -126,6 +127,10 @@ export function load(now){
     if(s.valorDay==null) s.valorDay = 0;
     if(s.valorToday==null) s.valorToday = 0;
     if(s.rest==null) s.rest = 0;
+    // v1.8 research
+    if(s.research==null) s.research = {};
+    if(s.rq===undefined) s.rq = null;
+    if(s.allyBonus===undefined) s.allyBonus = null;
     // v1.2 the Arena
     if(s.laurels==null) s.laurels = 1000;
     if(s.defStance==null) s.defStance = 'shieldwall';

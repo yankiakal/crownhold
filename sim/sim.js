@@ -145,6 +145,19 @@ function simulate(minutes, enemyLuck, skilled, label){
       if(!pick || !L.startUpgrade(s, pick, ms)){ idleBuild++; break; }
     }
 
+    // research runs on its own queue — the bot always keeps the scholars busy
+    if(!s.rq){
+      if(s.rq2Cd === undefined) s.rq2Cd = 0;
+      for(const k of ['husbandry','masonry','warcraft','logistics','drillcraft',
+                      'fortification','medicine','statecraft','siegecraft','smelting']){
+        if(L.startResearch(s, k, ms)) break;
+      }
+    }
+    if(s.rq && s.rq.end-ms > 15000){
+      const c = L.finishCost(s.rq.end, ms);
+      if(s.valor >= c && L.finishResearchNow(s, ms)) valorSpent += c;
+    }
+
     // promote troop tiers when the Academy allows and stores permit
     for(const k of ['ballista','knight','archer','spearman']){
       if(L.tierOf(s,k) < L.maxTier(s) && L.canAfford(s, L.promoteCost(s,k))){ L.promote(s, k, ms); break; }

@@ -132,6 +132,11 @@ export async function allianceLeave(){
   await refreshAlliance();
   return d;
 }
+export async function allianceContribute(tech){
+  const d = await post('/api/alliance/contribute', { token: session.token, tech });
+  await refreshAlliance();
+  return d;
+}
 export async function allianceHelp(target){
   const d = await post('/api/alliance/help', { token: session.token, target });
   ally = ally ? { ...ally, alliance: d.alliance } : ally;

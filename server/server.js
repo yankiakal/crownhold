@@ -18,7 +18,7 @@ import { join, dirname, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
-import { tick, armyPower, masteryLvl, upkeepPerSec } from '../src/logic.js';
+import { tick, armyPower, masteryLvl, upkeepPerSec, gainValor, gainMastery } from '../src/logic.js';
 import { tickWorld } from '../src/world.js';
 import { freshState, applyOffline } from '../src/state.js';
 import { applyAction, isGameAction } from '../src/actions.js';
@@ -76,6 +76,43 @@ const HELP_CAP = 20;                 // so a full alliance can cut ~30% off a bu
 const HELP_FRACTION = 0.015;
 const HELP_MIN_MS = 5000;
 
+/* ── alliance research ──
+   This is what makes Help feel like it matters. An unresearched alliance shaves
+   1.5% a help; a fully-researched one shaves 3% and allows half again as many —
+   so the same friends are worth twice as much, and funding the tree together is
+   visibly worth doing. Members pay resources, so it costs the group, not a card. */
+const ALLY_TECH = {
+  fellowship: { name:'Fellowship',   max:10, fx:'+10% help value per level',       base:200000 },
+  wideRoads:  { name:'Wide Roads',   max:5,  fx:'+2 helps allowed per build',      base:400000 },
+  commonCause:{ name:'Common Cause', max:10, fx:'+1.5% production for every hold', base:300000 },
+  warBanners: { name:'War Banners',  max:10, fx:'+1.5% troop power for every hold',base:350000 },
+};
+const CONTRIB = { food:1, wood:1, stone:2, iron:4, steel:30, runestone:120 };  // effort per unit
+// Each gift takes a slice of your stores, so contributing is self-limiting —
+// no cooldown needed, the cost is the cooldown.
+const CONTRIB_SHARE = 0.08;
+
+function allyTechLvl(a, k){ return (a.tech && a.tech[k]) || 0; }
+function allyTechNeed(a, k){
+  return Math.round(ALLY_TECH[k].base * Math.pow(allyTechLvl(a,k) + 1, 1.8));
+}
+function allyHelpFraction(a){ return HELP_FRACTION * (1 + 0.10 * allyTechLvl(a,'fellowship')); }
+function allyHelpCap(a){ return HELP_CAP + 2 * allyTechLvl(a,'wideRoads'); }
+function allyMemberBonus(a){
+  if(!a) return null;
+  return {
+    production: 0.015 * allyTechLvl(a,'commonCause'),
+    troopPower: 0.015 * allyTechLvl(a,'warBanners'),
+  };
+}
+function allyTechView(a){
+  return Object.entries(ALLY_TECH).map(([k,d]) => ({
+    key:k, name:d.name, fx:d.fx, lvl:allyTechLvl(a,k), max:d.max,
+    points:(a.points && a.points[k]) || 0, need:allyTechNeed(a,k),
+    done: allyTechLvl(a,k) >= d.max,
+  }));
+}
+
 function allianceView(tag, now){
   const a = db.alliances[tag];
   if(!a) return null;
@@ -84,7 +121,7 @@ function allianceView(tag, now){
     if(!m) return null;
     const builds = ['bq','bq2'].map(q => m.state[q]).filter(b => b && b.end > now).map(b => ({
       key: b.key, endsIn: b.end - now,
-      helps: b.helps || 0, cap: HELP_CAP,
+      helps: b.helps || 0, cap: allyHelpCap(a),
       helped: (b.helpers || []).length,
     }));
     return {
@@ -101,6 +138,9 @@ function allianceView(tag, now){
     members,
     power: members.reduce((t,m) => t + m.power, 0),
     helpAvailable: members.reduce((t,m) => t + m.builds.length, 0),
+    tech: allyTechView(a),
+    helpPct: +(allyHelpFraction(a) * 100).toFixed(2),
+    helpCap: allyHelpCap(a),
   };
 }
 
@@ -108,6 +148,8 @@ function allianceView(tag, now){
 
 function advance(u, now){
   const s = u.state;
+  // alliance techs reach the member through the state itself
+  s.allyBonus = allyMemberBonus(db.alliances[u.alliance]);
   const away = Math.min(Math.max(now - (s.lastSeen || now), 0), 7200000);
   if(away > 60000){
     applyOffline(s, away);
@@ -341,6 +383,37 @@ async function api(req, res, url){
     });
   }
 
+  if(path === '/api/alliance/contribute'){
+    const a = db.alliances[u.alliance];
+    if(!a) return send(res, 400, { error:'You are in no alliance.' });
+    const k = String(body.tech || '');
+    if(!ALLY_TECH[k]) return send(res, 400, { error:'No such research.' });
+    if(allyTechLvl(a,k) >= ALLY_TECH[k].max) return send(res, 400, { error:'Already fully researched.' });
+    advance(u, now);
+    // a contribution is a slice of whatever the member can spare, as effort
+    let effort = 0;
+    for(const [r, per] of Object.entries(CONTRIB)){
+      const give = Math.floor((u.state.res[r] || 0) * CONTRIB_SHARE);
+      if(give <= 0) continue;
+      u.state.res[r] -= give;
+      effort += give * per;
+    }
+    if(effort <= 0) return send(res, 400, { error:'Your stores are empty — nothing to give.' });
+    a.points = a.points || {}; a.tech = a.tech || {};
+    a.points[k] = (a.points[k] || 0) + effort;
+    let levelled = 0;
+    while(allyTechLvl(a,k) < ALLY_TECH[k].max && a.points[k] >= allyTechNeed(a,k)){
+      a.points[k] -= allyTechNeed(a,k);
+      a.tech[k] = allyTechLvl(a,k) + 1;
+      levelled++;
+    }
+    // the giver is repaid in the currencies that cannot be bought
+    gainValor(u.state, Math.min(40, Math.round(effort / 200)));
+    gainMastery(u.state, Math.min(120, Math.round(effort / 80)), now);
+    markDirty(); flush();
+    return send(res, 200, { effort, levelled, alliance: allianceView(u.alliance, now) });
+  }
+
   if(path === '/api/alliance/help'){
     const a = db.alliances[u.alliance];
     if(!a) return send(res, 400, { error:'You are in no alliance.' });
@@ -355,10 +428,10 @@ async function api(req, res, url){
         const b = m.state[q];
         if(!b || b.end <= now) continue;
         b.helps = b.helps || 0;
-        if(b.helps >= HELP_CAP) continue;
+        if(b.helps >= allyHelpCap(a)) continue;
         if((b.helpers||[]).includes(u.name)) continue;   // one help per hold per build
         const total = Math.max(1, b.end - b.start);
-        b.end = Math.max(now, b.end - Math.max(HELP_MIN_MS, total * HELP_FRACTION));
+        b.end = Math.max(now, b.end - Math.max(HELP_MIN_MS, total * allyHelpFraction(a)));
         b.helps++;
         b.helpers = (b.helpers || []).concat(u.name);
         helped++;
