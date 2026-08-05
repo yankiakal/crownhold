@@ -59,7 +59,7 @@ export function tileDist(t){ return Math.max(Math.abs(t.x-CX), Math.abs(t.y-CY))
 /* The Command Center is what lets you field more columns at once, and move them
    faster — march capacity is its whole job. */
 export function marchSlots(s){
-  return 1 + Math.floor((s.b.command || 0) / 6) + (s.b.townhall >= 10 ? 1 : 0);
+  return 1 + Math.floor((s.b.command || 0) / 5) + (s.b.townhall >= 10 ? 1 : 0);
 }
 export function marchSpeed(s){ return Math.max(0.5, 1 - 0.02 * (s.b.command || 0)); }
 export function tileBusy(s, idx){ return (s.marches||[]).some(m => m.tile===idx); }
@@ -170,7 +170,7 @@ function resolveReturn(s, m, now){
   let dead = 0, hurt = 0;
   for(const [k,n] of Object.entries(m.woundedBack || {})){
     s.t[k] = (s.t[k]||0) + n;                    // put them back, then count them properly
-    const r = takeCasualties(s, k, n);
+    const r = takeCasualties(s, k, n, true);   // the frontier wounds, it does not kill
     dead += r.dead; hurt += r.hurt;
   }
   let txt = m.report+'. '+home+' return'+(dead||hurt ? ' ('+dead+' fell'+(hurt?', '+hurt+' wounded':'')+')' : '');

@@ -111,22 +111,32 @@ export function promote(s, k, now){
    the fallen are carried back alive, holds them up to its capacity, and healing
    them costs resources and time — so a bad defeat is a bill, not an erasure.
    (Kingshot sells healing speedups. We sell nothing, so the bill is the cost.) */
+/* Where troops actually die.
+   Defending your wall, burning camps, hunting beasts — the things the game asks
+   you to do every day — only ever WOUND. Nobody should have to weigh "is this
+   raid worth losing veterans over" about content they are meant to repeat.
+   Permanent death is reserved for the one act that is genuinely yours to choose:
+   marching on another player. That is where stakes belong, and it is consensual.
+   The one hard limit is beds: wounded past your Infirmary's capacity die of
+   their wounds, which is what makes the building matter and healing urgent. */
 export function woundShare(s){ return Math.min(0.75, 0.30 + 0.045 * (s.b.hospital || 0)); }
 export function woundedCap(s){
   const l = s.b.hospital || 0;
-  return Math.round(40 * l * (1 + 0.08 * l));
+  return Math.round(30 + 40 * l * (1 + 0.08 * l));   // a few beds even with no Infirmary
 }
 export function woundedTotal(s){
   return Object.values(s.wounded || {}).reduce((a,b) => a + (b||0), 0);
 }
-/* Every casualty in the game goes through here — raids, arena, marches, beasts. */
-export function takeCasualties(s, k, n){
+/* Every casualty in the game goes through here — raids, arena, marches, beasts.
+   `pve` means nobody dies except for want of a bed. */
+export function takeCasualties(s, k, n, pve){
   n = Math.max(0, Math.round(n));
   if(!n) return { dead:0, hurt:0 };
   s.t[k] = Math.max(0, (s.t[k] || 0) - n);
   s.wounded = s.wounded || {};
   const room = Math.max(0, woundedCap(s) - woundedTotal(s));
-  const hurt = Math.max(0, Math.min(n, Math.round(n * woundShare(s)), room));
+  const share = pve ? 1 : woundShare(s);
+  const hurt = Math.max(0, Math.min(n, Math.round(n * share), room));
   if(hurt) s.wounded[k] = (s.wounded[k] || 0) + hurt;
   return { dead: n - hurt, hurt };
 }
@@ -701,7 +711,7 @@ export function resolveWave(s, now, rand=Math.random){
     // the cheap line screens the expensive engines: casualties weighted by class
     for(const k of Object.keys(TROOPS)){
       const l = Math.round(s.t[k] * Math.min(0.95, lossFrac*SCREEN[k]) * (0.7+rand()*0.6));
-      const r = takeCasualties(s, k, l);
+      const r = takeCasualties(s, k, l, true);   // holding your own wall never kills
       lost += r.dead; hurtTotal += r.hurt;
     }
     const lootMult = (isWB?2:1) * (1 + heroBonus(s,'loot') + spoilBonus(s,'loot') + techBonus(s,'siegecraft')
@@ -733,7 +743,7 @@ export function resolveWave(s, now, rand=Math.random){
     s.nextWave = now + WAVE_MS*2; // a loss buys a longer breather
     const protect = Math.min(0.6, 0.04*(s.b.warehouse||0)); // the Warehouse hides part of your stores
     for(const k of Object.keys(TROOPS))
-      takeCasualties(s, k, Math.round(s.t[k] * Math.min(0.5, 0.2*SCREEN[k])));
+      takeCasualties(s, k, Math.round(s.t[k] * Math.min(0.5, 0.2*SCREEN[k])), true);
     for(const r of Object.keys(RES_META)) s.res[r] = Math.floor((s.res[r]||0)*(1 - 0.15*(1-protect)));
     gainValor(s, 2);
     gainMastery(s, 3, now);
