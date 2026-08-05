@@ -1,0 +1,33 @@
+<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#1a1512;color:#d9a441;font:13px ui-monospace,monospace}
+canvas{outline:1px solid #444;margin:6px;background:#241d18;width:540px;image-rendering:pixelated}div{padding:6px}</style></head><body>
+<div><span id="lab"></span></div><div id="row"></div>
+<script type="module">
+import * as D from '/src/defs.js';
+import { paintBuilding } from '/src/iso.js';
+import { artTier, tierLevel } from '/src/sprites.js';
+const key = new URLSearchParams(location.search).get('k') || 'forge';
+// Z MUST equal the authoring scale in emit-sprites.html. It was 3 here against art
+// authored at 2×, so the first comparison was procedural-at-3× versus a 2× sprite
+// upscaled — a difference I nearly went and "fixed" in the pipeline.
+const Z = 2, OX = 90, OY = 110, W = 180, H = 170;
+const man = await (await fetch('/public/art/manifest.json')).json();
+const e = man[key], max = D.BUILDINGS[key].max, lvl = tierLevel(2, max);
+document.getElementById('lab').textContent = key + ' — level ' + lvl + '  |  left: procedural   middle: emitted sprite   right: difference';
+const mk = () => { const c = document.createElement('canvas'); c.width = W*Z; c.height = H*Z;
+  document.getElementById('row').appendChild(c); return c; };
+const A = mk(), B = mk(), Dz = mk();
+const ac = A.getContext('2d'); ac.setTransform(Z,0,0,Z,0,0); paintBuilding(ac, key, lvl, OX, OY);
+const img = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = '/public/art/' + e.src; });
+const bc = B.getContext('2d'); bc.setTransform(Z,0,0,Z,0,0);
+bc.imageSmoothingEnabled = false;
+const t = artTier(lvl, max) - 1;
+bc.drawImage(img, t*e.cell[0]*e.scale, 0, e.cell[0]*e.scale, e.cell[1]*e.scale,
+             OX - e.anchor[0], OY - e.anchor[1], e.cell[0], e.cell[1]);
+const pa = ac.getImageData(0,0,A.width,A.height).data, pb = bc.getImageData(0,0,B.width,B.height).data;
+const dc = Dz.getContext('2d'); const out = dc.createImageData(A.width, A.height);
+for(let i=0;i<pa.length;i+=4){
+  const d = Math.max(Math.abs(pa[i]-pb[i]),Math.abs(pa[i+1]-pb[i+1]),Math.abs(pa[i+2]-pb[i+2]),Math.abs(pa[i+3]-pb[i+3]));
+  if(d > 12){ out.data[i]=255; out.data[i+3]=255; } else { out.data[i]=out.data[i+1]=out.data[i+2]=26; out.data[i+3]=255; }
+}
+dc.putImageData(out,0,0);
+</script></body></html>

@@ -1,0 +1,25 @@
+<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#111;color:#d9a441;font:13px ui-monospace,monospace}pre{padding:8px}canvas{outline:1px solid #333;margin:4px}</style></head><body>
+<pre id="out">…</pre><canvas id="d"></canvas>
+<script>
+const q = new URLSearchParams(location.search);
+const load = u => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = u; });
+Promise.all([load(q.get('a')), load(q.get('b'))]).then(([A,B]) => {
+  const w = Math.min(A.width,B.width), h = Math.min(A.height,B.height);
+  const g = (im) => { const c = document.createElement('canvas'); c.width=w; c.height=h;
+    const x = c.getContext('2d'); x.drawImage(im,0,0); return x.getImageData(0,0,w,h).data; };
+  const a = g(A), b = g(B);
+  const dc = document.getElementById('d'); dc.width=w; dc.height=h;
+  const dx = dc.getContext('2d'); const out = dx.createImageData(w,h);
+  let diff = 0, maxd = 0;
+  for(let i=0;i<a.length;i+=4){
+    const d = Math.max(Math.abs(a[i]-b[i]), Math.abs(a[i+1]-b[i+1]), Math.abs(a[i+2]-b[i+2]));
+    if(d > 12){ diff++; out.data[i]=255; out.data[i+1]=40; out.data[i+2]=40; out.data[i+3]=255; }
+    else { out.data[i]=out.data[i+1]=out.data[i+2]=16; out.data[i+3]=255; }
+    if(d > maxd) maxd = d;
+  }
+  dx.putImageData(out,0,0);
+  document.getElementById('out').textContent =
+    '@@DIFF@@' + JSON.stringify({ w, h, pixels: w*h, differing: diff,
+      pct: +(100*diff/(w*h)).toFixed(3), maxChannelDelta: maxd }) + '@@END@@';
+});
+</script></body></html>

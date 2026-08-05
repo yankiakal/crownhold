@@ -26,6 +26,7 @@
 
 import { BUILDINGS } from './defs.js';
 import { buildCost, canAfford, freeSlot, QUEUE_KEYS } from './logic.js';
+import { spriteFor, loadArt, artLoaded } from './sprites.js';
 
 const TW = 64, TH = 32;            // tile width/height (2:1 isometric)
 const GRID = 9;
@@ -297,14 +298,21 @@ function roofRows(ctx, tri, colour, rmat, seed){
     ctx.globalAlpha = 1;
   } else {
     const step = rmat === 'slate' ? 3 : 4;
+    /* Row index, not absolute y. `y/step % 2` keyed the tile stagger off the
+       building's position on screen, so the same roof drawn at two places got two
+       different patterns — which is how the emitted sprites came to disagree with
+       the live procedural draw. Grain should be phased to the geometry. */
+    let rowN = -1;
     for(let y = b.y; y < b.y + b.h + step; y += step){
+      rowN++;
       ctx.strokeStyle = shade(colour, 0.86);
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(b.x - 2, y); ctx.lineTo(b.x + b.w + 2, y); ctx.stroke();
       if(rmat === 'tile')
         for(let x = b.x; x < b.x + b.w; x += 5){
           ctx.strokeStyle = shade(colour, 1.06);
-          ctx.beginPath(); ctx.moveTo(x + (y/step % 2 ? 2.5 : 0), y); ctx.lineTo(x + (y/step % 2 ? 2.5 : 0), y + step); ctx.stroke();
+          const off = rowN % 2 ? 2.5 : 0;
+          ctx.beginPath(); ctx.moveTo(x + off, y); ctx.lineTo(x + off, y + step); ctx.stroke();
         }
     }
     if(rmat === 'lead'){                       // dull sheet metal: long seams, no tiles
@@ -524,9 +532,23 @@ function groundShadow(ctx, sx, sy, w, d, h){
 
 function drawBuilding(ctx, key, lvl, opts){
   const plot = PLOTS[key], base = LOOK[key];
-  if(!plot || !base) return;
+  if(!base || (!plot && !opts.at)) return;
   const look = skinTint ? { ...base, roof: tinted(base.roof), body: tinted(base.body) } : base;
-  const { sx, sy } = iso(plot[0], plot[1]);
+  const { sx, sy } = opts.at || iso(plot[0], plot[1]);
+
+  /* Real art, if this building has any. Checked per BUILDING, so sprites can
+     arrive one file at a time and everything else keeps drawing itself. Skipped
+     while a skin is worn — a skin repaints procedural colour, and repainting
+     someone's painting is not the same operation. */
+  if(!opts.raw && !skinTint && lvl > 0){
+    const d = BUILDINGS[key];
+    const spr = spriteFor(key, lvl, d ? d.max : 30);
+    if(spr){
+      ctx.drawImage(spr.img, spr.sx, spr.sy, spr.sw, spr.sh,
+                    sx - spr.ax, sy - spr.ay, spr.dw, spr.dh);
+      return;
+    }
+  }
   const seed = hash(key);
   const warm = '#f0c073';
 
@@ -849,10 +871,15 @@ let cv = null, ctx = null, store = null, raf = 0, last = 0, tick = 0;
 let originX = 0, originY = 0, scale = 1, dprNow = 1;
 let sCv = null, sCtx = null, staticKey = null;
 
-export function mountScene(canvas, gameStore){
+/* opts.artBase overrides where sprites are looked for. The default is right for
+   the deployed game (index.html and art/ side by side); the test bench serves the
+   repo root, where they are not. */
+export function mountScene(canvas, gameStore, opts){
   cv = canvas; store = gameStore;
   ctx = cv.getContext('2d');
   lastCssW = 0; staticKey = null;
+  const base = (opts && opts.artBase) || './art/';
+  if(base !== 'none' && !artLoaded()) loadArt(base, () => { staticKey = null; });
   resize();
   cancelAnimationFrame(raf);
   last = performance.now();
@@ -884,7 +911,7 @@ export function sceneResize(){ resize(); }
    bitmap is still correct and nothing needs redrawing — which is what buys the
    detail budget. Cheap to build: 23 levels and two flags. */
 function keyOf(S, threat){
-  let k = (S.b.wall||0) + '|' + (threat?1:0) + '|' + (skinTint ? skinTint.h+','+skinTint.s+','+skinTint.l : '-');
+  let k = (artLoaded()?'a':'p') + '|' + (S.b.wall||0) + '|' + (threat?1:0) + '|' + (skinTint ? skinTint.h+','+skinTint.s+','+skinTint.l : '-');
   for(const b of Object.keys(PLOTS)) k += '|' + (S.b[b] || 0);
   for(const q of QUEUE_KEYS) k += '|' + (S[q] ? S[q].key : '');
   return k + '|' + cv.width + 'x' + cv.height;
@@ -1103,3 +1130,13 @@ export function unmountScene(){ cancelAnimationFrame(raf); raf = 0; }
    kitchen and crucible shipped in v1.28 with no plot and no look, so they were
    invisible in the hold for three versions. A test is cheaper than noticing. */
 export { PLOTS, LOOK };
+
+/* Paint a single building into any context at any position, ignoring its plot.
+   Used by tools/emit-sprites.html to generate the placeholder strips FROM this
+   renderer — which is what lets the sprite pipeline ship, and be tested in
+   production, before any real art exists. `raw` forces the procedural path so the
+   emitter can never accidentally re-photograph its own output. */
+export function paintBuilding(ctx, key, lvl, sx, sy){
+  drawBuilding(ctx, key, lvl, { at:{ sx, sy }, raw:true });
+}
+export { TW, TH };

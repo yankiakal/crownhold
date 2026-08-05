@@ -1,0 +1,112 @@
+<!-- Sprite emitter. `npm run sprites` loads this in headless Chrome and reads the
+     JSON back out of the DOM.
+
+     It draws every building at every tier with the PROCEDURAL renderer and exports
+     the result as the sprite strips the game then loads. The output is
+     pixel-identical to what the game already draws, which is exactly the point:
+     the sprite pipeline can be built, tested and shipped with no art in existence,
+     and the game looks the same before and after. Every real sprite that lands
+     later is a strict improvement against a path already proven in production,
+     instead of a big-bang swap where a problem could be the art or the loader.
+
+     It also produces the SPEC for real art, per building: cell size, anchor and
+     tier count, measured rather than guessed. -->
+<!doctype html>
+<html><head><meta charset="utf-8"><title>emit sprites</title>
+<style>body{margin:0;background:#171310;color:#d9a441;font:12px ui-monospace,monospace}
+pre{white-space:pre-wrap;word-break:break-all;padding:8px}#preview{padding:8px;background:#0d0b09}
+img{image-rendering:pixelated;vertical-align:top;outline:1px solid #3a2f25;margin:2px}</style>
+</head><body>
+<div id="preview"></div>
+<pre id="status">working…</pre>
+<pre id="out"></pre>
+<script type="module">
+import * as D from '/src/defs.js';
+import { paintBuilding, LOOK, PLOTS } from '/src/iso.js';
+import { ART_TIERS, artTier, tierLevel } from '/src/sprites.js';
+
+const SS = 2;              // author at 2× so the art is sharp on a retina phone
+const PAD = 240;           // scratch room; the real cell is measured, not assumed
+
+/* Draw one building into a big transparent canvas, then measure the bounding box of
+   what is actually opaque. Measuring beats computing: the geometry is spread over a
+   dozen branches with props hanging off the sides, and a formula would be wrong for
+   whichever building I forgot. */
+function renderOne(key, lvl){
+  const cv = document.createElement('canvas');
+  cv.width = PAD*2*SS; cv.height = PAD*2*SS;
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(SS, 0, 0, SS, 0, 0);
+  const ox = PAD, oy = PAD;                  // where (sx,sy) sits in the scratch
+  paintBuilding(ctx, key, lvl, ox, oy);
+
+  const px = ctx.getImageData(0, 0, cv.width, cv.height).data;
+  let x0 = cv.width, y0 = cv.height, x1 = -1, y1 = -1;
+  for(let y=0; y<cv.height; y++){
+    for(let x=0; x<cv.width; x++){
+      if(px[(y*cv.width + x)*4 + 3] > 8){
+        if(x < x0) x0 = x; if(x > x1) x1 = x;
+        if(y < y0) y0 = y; if(y > y1) y1 = y;
+      }
+    }
+  }
+  if(x1 < 0) return null;                    // drew nothing at all
+  return { cv, x0, y0, x1, y1, ox: ox*SS, oy: oy*SS };
+}
+
+const manifest = {}, files = {}, spec = [];
+const keys = Object.keys(D.BUILDINGS).filter(k => PLOTS[k] && LOOK[k]);
+
+for(const key of keys){
+  const max = D.BUILDINGS[key].max;
+  const shots = [];
+  for(let t=1; t<=ART_TIERS; t++){
+    const lvl = tierLevel(t, max);
+    const r = renderOne(key, lvl);
+    if(r) shots.push({ t, lvl, r });
+  }
+  if(!shots.length) continue;
+
+  /* One cell size and one anchor for the whole strip: the union of every tier's
+     extents. A per-tier cell would make the building jump as it upgrades. */
+  let ax = 0, ay = 0, right = 0, below = 0;
+  for(const { r } of shots){
+    ax = Math.max(ax, r.ox - r.x0);   right = Math.max(right, r.x1 - r.ox);
+    ay = Math.max(ay, r.oy - r.y0);   below = Math.max(below, r.y1 - r.oy);
+  }
+  const cw = Math.ceil((ax + right + 2) / SS) * SS;
+  const ch = Math.ceil((ay + below + 2) / SS) * SS;
+
+  const strip = document.createElement('canvas');
+  strip.width = cw * ART_TIERS; strip.height = ch;
+  const sctx = strip.getContext('2d');
+  for(const { t, r } of shots)
+    sctx.drawImage(r.cv, r.x0, r.y0, r.x1-r.x0+1, r.y1-r.y0+1,
+                   (t-1)*cw + (ax - (r.ox - r.x0)), (ay - (r.oy - r.y0)),
+                   r.x1-r.x0+1, r.y1-r.y0+1);
+
+  manifest[key] = {
+    cell:  [cw/SS, ch/SS],
+    anchor:[ax/SS, ay/SS],
+    tiers: ART_TIERS,
+    scale: SS,
+    src:   key + '.png',
+  };
+  files[key] = strip.toDataURL('image/png');
+  spec.push(key.padEnd(11) + 'cell ' + (cw/SS) + '×' + (ch/SS) +
+            '  anchor ' + (ax/SS) + ',' + (ay/SS) +
+            '  levels ' + shots.map(s => s.lvl).join('/'));
+
+  const im = new Image(); im.src = files[key]; im.title = key;
+  im.style.width = (strip.width/SS) + 'px';
+  document.getElementById('preview').appendChild(im);
+}
+
+document.getElementById('status').textContent =
+  keys.length + ' buildings, ' + ART_TIERS + ' tiers each\n\n' + spec.join('\n');
+/* Handed back through the DOM: headless Chrome's --dump-dom is the one channel out
+   that needs no dependency and no local server plumbing. */
+document.getElementById('out').textContent =
+  '@@SPRITES@@' + JSON.stringify({ manifest, files }) + '@@END@@';
+window.__done = true;
+</script></body></html>

@@ -79,6 +79,81 @@ that budget.
   a plot whose building the Town Hall cannot yet raise — the same rule the build
   menu follows, so the map shows progress instead of reporting it.
 
+## The sprite pipeline (v1.33) — built before the art, and deliberately not shipped with any
+
+`src/sprites.js` + `tools/emit-sprites.html` + `npm run sprites`.
+
+**The format has no packer.** One PNG per building, tiers left to right in a strip,
+plus a manifest of cell size and anchor:
+
+```
+art/manifest.json   { "forge": { "cell":[62,75], "anchor":[31,49], "tiers":4, "scale":2 }, … }
+art/forge.png       4 cells, authored at 2×
+```
+
+An artist exports that directly from Blender or Aseprite. A wrong cell size is
+visible the moment you look at it, rather than buried in a generated atlas index.
+
+**Missing art is the normal path.** `spriteFor()` returns null and iso.js draws the
+building procedurally — per BUILDING, so one finished sprite improves one building
+and changes nothing else. This is also a correctness requirement, not a nicety: the
+repo-root `index.html` is the artifact fragment, served by a host with no `art/`
+directory at all, so a pipeline that needs its assets is a pipeline that breaks one
+of the two places this game ships.
+
+**Four tiers, not thirty levels.** 23 × 4 = 92 sprites; one per level is 690, which
+is the difference between a finite job and a project nobody finishes.
+
+### The placeholder art, and why it does NOT ship
+
+`npm run sprites` renders every building at every tier *with the procedural
+renderer* and writes the strips the game then loads. That let the whole pipeline be
+built and measured before any art existed. Measured, at 2× against the procedural
+draw at matched level and position:
+
+| | result |
+|---|---|
+| per building, sprite vs procedural | **20 of 22 pixel-exact**; 2 differ by 1–2 px (the crop's alpha threshold) |
+| whole scene, every building at a tier top | **0.012%** of pixels differ (132 of 1,059,520) |
+| whole scene, buildings mid-band | 3.4% differ — *tier quantisation, by design* |
+
+That last row is the finding that decided it. With four tiers a level-12 building
+displays its band's art, which was drawn at level 15. Procedurally it is drawn as
+exactly level 12. **So shipping the placeholder art would make the game slightly
+wrong for no visual gain whatsoever** — identical pixels at tier tops, and the wrong
+level's building everywhere else.
+
+So `public/art/` is gitignored and the deployed game runs procedurally, exactly as
+before. The pipeline is what shipped. `npm run sprites` regenerates the placeholders
+any time the path needs exercising.
+
+This is also the honest cost of sprites for real art, and it is inherent rather than
+a flaw in this implementation: buildings will change appearance in four steps instead
+of thirty. Kingshot works the same way.
+
+### What the pixel comparison caught
+
+**The tier↔level round trip was broken for 7 of 22 buildings.** `tierLevel(tier)`
+computed `round(tier × max/4)`; for a building with max 25 that gave level 13, and
+`artTier(13, 25)` is tier **3**. The emitter drew frames the game would never ask
+for, and the game asked for frames that were never drawn. Real art would have
+inherited it exactly. `tierLevel` is now derived by searching `artTier`, so the round
+trip is true by construction rather than by two formulas agreeing, and a test asserts
+it for all 23 buildings.
+
+**`spriteFor` destructured a manifest entry it had not validated**, relying on the
+loader to have filtered bad ones. Production was safe only by coincidence — an
+invalid entry gets no image loaded, so the missing image caught it. That put the
+safety of a destructure in a different function; it validates directly now.
+
+**And it caught three wrong explanations of mine**, which is the part worth
+remembering. I attributed the scene difference to resampling (wrong — it got worse at
+2×), then to position-phased texture grain (wrong — measured 0.00% across six
+buildings drawn at two positions), then narrowed with an offset search that I had
+clipped to ±3 device pixels, so it reported "no offset helps" when the real answer
+was a wrong frame. Each explanation was specific and plausible. The one that was
+right came from a measurement designed to distinguish them, not from thinking harder.
+
 ### Three bugs a test could not have caught
 
 `npm run shoot` (`tools/scene.html` + headless Chrome) writes six states to

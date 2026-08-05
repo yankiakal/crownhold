@@ -33,6 +33,10 @@ s.now = now;
 store.s = s;
 document.getElementById('cap').textContent =
   (q.get('empty') ? 'a new hold' : 'every building at level ' + lvl) + (q.get('threat') ? ' · raiders at the gate' : '');
-mountScene(document.getElementById('c'), store);
+// ?art=1 loads the generated strips from public/art (the bench serves the repo
+// root, so the deployed './art/' default would not resolve here); ?art=0 forces
+// the procedural path, which is how the two are compared.
+mountScene(document.getElementById('c'), store,
+  { artBase: q.get('art') === '1' ? '/public/art/' : 'none' });
 window.__ready = true;
 </script></body></html>

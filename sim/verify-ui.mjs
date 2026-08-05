@@ -161,6 +161,61 @@ try {
   const noMat = Object.entries(ISO.LOOK).filter(([, l]) => !l.mat).map(([k]) => k);
   ok('every look names a wall material', noMat.length === 0, noMat.join(', ') || 'all textured');
 
+  /* ── the sprite pipeline, without any sprites ──
+     The shipped game has no art directory: placeholder art is generated on demand
+     by `npm run sprites`, never committed. So "no art" is the normal path and has
+     to be the tested one. */
+  console.log('\n── the sprite layer degrades to procedural ──');
+  const SP = await from('sprites.js');
+  SP._resetArt();
+  ok('no art means no sprite', SP.spriteFor('townhall', 12, 30) === null);
+  ok('artLoaded() is false', SP.artLoaded() === false);
+  const bare = UI._composer(s);            // the UI must not care either way
+  ok('the app still renders with no art', bare.length > 500);
+
+  /* The tier↔level round trip. tierLevel(t) picked round(t*max/4), which for a
+     building with max 25 returned level 13 while artTier(13,25) is tier 3 — so the
+     emitter drew frames the game never asks for and the game asked for frames that
+     were never drawn. Seven of 22 buildings were mis-tiered, invisible until sprite
+     and procedural were compared pixel for pixel. Real art would have inherited it. */
+  console.log('\n── every tier maps back to itself ──');
+  const broken = [];
+  for(const [k, d] of Object.entries(D.BUILDINGS))
+    for(let t = 1; t <= SP.ART_TIERS; t++){
+      const lvl = SP.tierLevel(t, d.max);
+      if(SP.artTier(lvl, d.max) !== t)
+        broken.push(k + '(max ' + d.max + ') tier ' + t + '→lvl ' + lvl + '→tier ' + SP.artTier(lvl, d.max));
+    }
+  ok('tierLevel round-trips through artTier for all ' + Object.keys(D.BUILDINGS).length + ' buildings',
+     broken.length === 0, broken.slice(0,3).join('; ') || 'exact');
+  // and every level in range must land in exactly one tier, none skipped
+  const unbanded = [];
+  for(const [k, d] of Object.entries(D.BUILDINGS))
+    for(let l = 1; l <= d.max; l++){
+      const t = SP.artTier(l, d.max);
+      if(!(t >= 1 && t <= SP.ART_TIERS)) unbanded.push(k + ' lvl ' + l + ' → ' + t);
+    }
+  ok('every level 1..max falls in a tier', unbanded.length === 0, unbanded.slice(0,3).join('; ') || 'total');
+  ok('level 0 has no art', SP.artTier(0, 30) === 0);
+
+  /* A malformed manifest must be ignored rather than trusted: a wrong cell size
+     would blit whatever sits next to the frame. */
+  console.log('\n── a bad manifest is refused, not trusted ──');
+  const fakeImg = { width: 4000, height: 400 };
+  SP._installArt({ good: { cell:[100,100], anchor:[50,90], tiers:4, scale:2 } }, { good: fakeImg });
+  ok('a well-formed entry is used', !!SP.spriteFor('good', 10, 30));
+  for(const [name, entry] of [
+    ['no cell',        { anchor:[1,1], tiers:4 }],
+    ['zero cell',      { cell:[0,10], anchor:[1,1], tiers:4 }],
+    ['cell not a pair',{ cell:[10], anchor:[1,1], tiers:4 }],
+    ['no anchor',      { cell:[10,10], tiers:4 }],
+    ['too many tiers', { cell:[10,10], anchor:[1,1], tiers:99 }],
+  ]){
+    SP._installArt({ bad: entry }, { bad: fakeImg });
+    ok('refused: ' + name, SP.spriteFor('bad', 10, 30) === null);
+  }
+  SP._resetArt();
+
   /* With nobody picked the strip must still render, and claim nothing. */
   console.log('\n── with no leaders picked it claims nothing ──');
   UI._pick([], {});
