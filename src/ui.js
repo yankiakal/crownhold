@@ -4,7 +4,7 @@ import {
   BUILDINGS, TROOPS, MASTERY, QUESTS, ACHIEVEMENTS, RES_META, REFINE,
   HERO_POOL, HERO_SLOTS, SPOILS, RARITY,
   WAVE_TYPES, STANCES, EXPEDITIONS,
-  WAVE_MS, FIRST_WAVE_MS, SHIELD_MS,
+  WAVE_MS, FIRST_WAVE_MS, SHIELD_MS, SECOND_QUEUE_TH,
 } from './defs.js';
 import { TIERS } from './defs.js';
 import {
@@ -15,7 +15,7 @@ import {
   fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor, capFor, isUnlocked,
   prodPerSec, prodMult, upkeepPerSec, buildCost, buildTime, canAfford, armyPower,
   armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
-  valorQuota, valorToday, isRested,
+  valorQuota, valorToday, isRested, QUEUE_KEYS, buildSlots, activeQueues, freeSlot,
   maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost,
   wavePower, streakMult, finishCost, xpNeed,
 } from './logic.js';
@@ -114,14 +114,15 @@ function renderThreat(S){
   return h;
 }
 
-function queueStrip(S, q, label, finishAct){
+function queueStrip(S, q, label, finishAct, slot){
   const now = Date.now();
   const pct = Math.min(100, 100*(now-q.start)/Math.max(1,(q.end-q.start)));
   const c = finishCost(q.end, now);
   return '<div class="queue-strip"><span>'+label+'</span>'
     + '<div class="bar"><i style="width:'+pct+'%"></i></div>'
     + '<span>'+ftime(q.end-now)+'</span>'
-    + '<button class="valor-btn" data-act="'+finishAct+'" title="1 Valor per 4s remaining" '+(S.valor<c?'disabled':'')+'>Finish · '+c+' ⚜ Valor</button>'
+    + '<button class="valor-btn" data-act="'+finishAct+'"'+(slot?' data-key="'+slot+'"':'')
+    + ' title="Valor buys time at a fixed rate" '+(S.valor<c?'disabled':'')+'>Finish · '+c+' ⚜ Valor</button>'
     + '</div>';
 }
 
@@ -129,10 +130,13 @@ function renderHold(S){
   let h = '<section class="panel"><h2>The Hold'
     + '<button class="info-btn" data-act="holdView" style="letter-spacing:0">'
     + (listView ? '🏰 scene' : '▤ list') + '</button></h2>';
-  if(S.bq){
-    const d = BUILDINGS[S.bq.key];
-    h += queueStrip(S, S.bq, d.icon+' '+d.name+' → '+(S.b[S.bq.key]+1), 'finishBuild');
+  for(const q of QUEUE_KEYS){
+    if(!S[q]) continue;
+    const d = BUILDINGS[S[q].key];
+    h += queueStrip(S, S[q], d.icon+' '+d.name+' → '+(S.b[S[q].key]+1), 'finishBuild', q);
   }
+  if(buildSlots(S) > 1 && activeQueues(S).length < 2)
+    h += '<div class="stat-note">🔨 '+(2-activeQueues(S).length)+' crew idle — two builds can run at once.</div>';
   if(!listView){
     // the canvas itself is a persistent element re-parented after each render,
     // so the 60fps scene survives the 4Hz DOM rebuild
@@ -161,7 +165,7 @@ function renderHold(S){
     }else{
       const cost = buildCost(S, k);
       const capped = k!=='townhall' && lvl >= S.b.townhall;
-      const dis = S.bq || !canAfford(S, cost) || capped;
+      const dis = !freeSlot(S) || !canAfford(S, cost) || capped;
       h += '<div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">'
         + '<button data-act="upgrade" data-key="'+k+'" '+(dis?'disabled':'')+'>'
         + (lvl===0?'Build':'Upgrade to '+(lvl+1))+' · '+ftime(buildTime(S,k))+'</button>'
@@ -426,7 +430,7 @@ function renderDetail(S){
       const capped = k!=='townhall' && lvl >= S.b.townhall;
       if(capped) body += '<p class="d-warn">Town Hall must lead — raise it first.</p>';
       body += '<button class="primary" data-act="upgrade" data-key="'+k+'" '
-        + ((S.bq||!canAfford(S,buildCost(S,k))||capped||(d.th&&S.b.townhall<d.th))?'disabled':'')+'>'
+        + ((!freeSlot(S)||!canAfford(S,buildCost(S,k))||capped||(d.th&&S.b.townhall<d.th))?'disabled':'')+'>'
         + (lvl===0?'Build':'Upgrade to '+(lvl+1))+'</button>';
     } else body += '<p class="d-delta" style="color:var(--gold)">Fully raised.</p>';
   }
@@ -562,7 +566,8 @@ function renderCodex(S){
     + '<ul>'
     + '<li>Storage cap: 800 × Town&nbsp;Hall<sup>1.7</sup>, +3% per Granary level — currently <b>'+fmt(storageCap(S))+'</b>. Production beyond it is wasted.</li>'
     + '<li>Offline: the hold produces (and the muster eats) for up to 2 hours while you are away. No raids strike while you are gone.</li>'
-    + '<li>Build costs scale with level² — early levels are quick, the late road is long. One build queue, one training queue.</li>'
+    + '<li>Build costs scale with level², and build <i>times</i> stretch with level too — a level-3 hut is minutes, a late keep is most of a day. The queue is the wall, and it keeps working while you are away.</li>'
+    + '<li><b>A second crew</b> joins at Town Hall '+SECOND_QUEUE_TH+', so two upgrades can run at once (never two on the same building). Training runs on its own queue and is deliberately fast — raids arrive every 75s and the muster has to answer.</li>'
     + '<li><b>Refined goods</b>: the Forge (Town Hall 12) smelts iron and wood into <b>Steel</b> without pause; the Runeworks (Town Hall 22) binds stone and steel into <b>Runestone</b>. Their vaults are small — 10% and 3.5% of your raw storage.</li>'
     + '<li>From level '+15+' every upgrade also costs Steel; from level '+24+', Runestone too. That is what makes the last third of the game long — and why food, wood, stone and iron never stop mattering: they are the fuel.</li>'
     + '</ul>'

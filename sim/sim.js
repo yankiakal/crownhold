@@ -102,16 +102,18 @@ function simulate(minutes, enemyLuck, skilled, label){
       L.setCaravan(s, 'kingsroad', ms);
     }
 
-    if(s.bq && s.bq.end-ms > 15000){
-      const c = L.finishCost(s.bq.end, ms);
-      if(s.valor >= c && L.finishBuildNow(s, ms)) valorSpent += c;
+    for(const q of L.QUEUE_KEYS){
+      if(s[q] && s[q].end-ms > 15000){
+        const c = L.finishCost(s[q].end, ms);
+        if(s.valor >= c && L.finishBuildNow(s, ms, q)) valorSpent += c;
+      }
     }
     if(s.tq && s.tq.end-ms > 15000){
       const c = L.finishCost(s.tq.end, ms);
       if(s.valor >= c && L.finishTrainNow(s, ms)) valorSpent += c;
     }
 
-    if(!s.bq){
+    while(L.freeSlot(s)){
       const eligible = k => {
         const d = BUILDINGS[k], lvl = s.b[k];
         if(lvl >= d.max) return false;
@@ -135,8 +137,8 @@ function simulate(minutes, enemyLuck, skilled, label){
         if(!pick) for(const k of ['forge','runeworks','tavern','granary','hospital','warehouse'])
           if(eligible(k)){ pick=k; break; }
       }
-      if(pick) L.startUpgrade(s, pick, ms);
-      else idleBuild++;
+      // break on a failed start too, or the free slot spins forever
+      if(!pick || !L.startUpgrade(s, pick, ms)){ idleBuild++; break; }
     }
 
     // promote troop tiers when the Academy allows and stores permit

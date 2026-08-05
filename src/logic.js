@@ -10,7 +10,8 @@ import {
   EXPEDITIONS, EXPEDITION_CD,
   COST_EXP, TIME_EXP, TIERS, TIER_POWER, TIER_UPKEEP, TIER_COST,
   REFINE, STEEL_FROM, RUNE_FROM,
-  buildTimeCap, VALOR_QUOTA_BASE, VALOR_QUOTA_PER_TH, VALOR_OVERFLOW,
+  buildTimeCap, TIME_SCALE, SECOND_QUEUE_TH,
+  VALOR_QUOTA_BASE, VALOR_QUOTA_PER_TH, VALOR_OVERFLOW,
   REST_CAP_MS, REST_PROD_BONUS, REST_QUOTA_BONUS,
   WAVE_MS, FIRST_WAVE_MS, masteryLvl,
 } from './defs.js';
@@ -115,7 +116,19 @@ export function buildCost(s,k){
 export function buildTime(s,k){
   const spoilMult = Math.max(0.5, 1 - spoilBonus(s,'buildTime'));
   return Math.min(buildTimeCap(s.b[k]), BUILDINGS[k].time * Math.max(1, Math.pow(s.b[k], TIME_EXP))
-    * (perk(s,5)?0.88:1) * (perk(s,18)?0.9:1) * spoilMult) * 1000;
+    * (perk(s,5)?0.88:1) * (perk(s,18)?0.9:1) * spoilMult) * 1000 * TIME_SCALE;
+}
+
+/* ── the build crews ── */
+export const QUEUE_KEYS = ['bq', 'bq2'];
+export function buildSlots(s){ return s.b.townhall >= SECOND_QUEUE_TH ? 2 : 1; }
+export function freeSlot(s){
+  const slots = buildSlots(s);
+  for(let i = 0; i < slots; i++) if(!s[QUEUE_KEYS[i]]) return QUEUE_KEYS[i];
+  return null;
+}
+export function activeQueues(s){
+  return QUEUE_KEYS.slice(0, buildSlots(s)).filter(k => s[k]);
 }
 export function canAfford(s,cost){ return Object.entries(cost).every(([r,v]) => s.res[r] >= v); }
 export function payCost(s,cost){ for(const [r,v] of Object.entries(cost)) s.res[r] -= v; }
@@ -141,7 +154,9 @@ export function wavePower(w){ return Math.round(10*Math.pow(w,1.3) + 5*w); }
 export function streakMult(s){ return Math.pow(0.85, Math.min(s.streak||0, 3)); }
 export function bluntFor(s, towerLvl){ return Math.min(0.4, 0.04*towerLvl + heroBonus(s,'blunt')); }
 export function bluntMult(s){ return bluntFor(s, s.b.watchtower); }
-export function finishCost(endTs, now){ return Math.max(1, Math.ceil((endTs-now)/4000)); }
+// 1 Valor buys 4 seconds of the prototype's clock — so it keeps exactly the same
+// relative worth however TIME_SCALE is dialled
+export function finishCost(endTs, now){ return Math.max(1, Math.ceil((endTs-now)/(4000*TIME_SCALE))); }
 export function xpNeed(lvl){ return Math.round(50*Math.pow(lvl,1.4)); }
 export function unlockedSlots(s){ return HERO_SLOTS.filter(sl=>sl.check(s)).length; }
 
@@ -283,7 +298,10 @@ export function rerollChoice(s, now, rand=Math.random){
 /* ── player actions ── */
 export function startUpgrade(s, key, now){
   s.now = now;
-  if(s.bq) return false;
+  const slot = freeSlot(s);
+  if(!slot) return false;
+  // one crew per building: no stacking two upgrades on the same structure
+  if(activeQueues(s).some(q => s[q].key === key)) return false;
   const d = BUILDINGS[key], lvl = s.b[key];
   if(lvl >= d.max) return false;
   if(key!=='townhall' && lvl >= s.b.townhall) return false;
@@ -291,7 +309,7 @@ export function startUpgrade(s, key, now){
   const cost = buildCost(s, key);
   if(!canAfford(s, cost)) return false;
   payCost(s, cost);
-  s.bq = {key, start:now, end:now+buildTime(s,key)};
+  s[slot] = {key, start:now, end:now+buildTime(s,key)};
   pushLog(s, (lvl===0?'Construction of the ':'Work begins on the ')+d.name+(lvl===0?' begins.':' (level '+(lvl+1)+').'));
   return true;
 }
@@ -309,17 +327,21 @@ export function startTraining(s, key, count, now){
   const cost = trainCost(s, key, count);
   if(!canAfford(s, cost)) return false;
   payCost(s, cost);
+  // deliberately NOT scaled by TIME_SCALE: raids keep arriving every 75s, so the
+  // muster has to answer on that cadence. Construction is the long game; the
+  // army is the fast one.
   let dur = d.time*1000*count*trainMult(s);
   if(s.trainFastNext){ dur *= 0.25; s.trainFastNext = false; }
   s.tq = {key, count, start:now, end:now+dur};
   pushLog(s, 'The Barracks begins drilling '+count+' '+d.name+(count>1?'s':'')+'.');
   return true;
 }
-export function finishBuildNow(s, now){
-  if(!s.bq) return false;
-  const c = finishCost(s.bq.end, now);
+export function finishBuildNow(s, now, slot){
+  const q = slot && QUEUE_KEYS.includes(slot) ? slot : activeQueues(s)[0];
+  if(!q || !s[q]) return false;
+  const c = finishCost(s[q].end, now);
   if(s.valor < c) return false;
-  s.valor -= c; s.bq.end = now;
+  s.valor -= c; s[q].end = now;
   return true;
 }
 export function finishTrainNow(s, now){
@@ -582,12 +604,14 @@ export function tick(s, now, dt, rand=Math.random){
     }
   } else s.famineAcc = 0;
 
-  if(s.bq && now >= s.bq.end){
-    s.b[s.bq.key]++;
-    const d = BUILDINGS[s.bq.key];
-    pushLog(s, d.name+' complete — now level '+s.b[s.bq.key]+'. +2 Valor.', 'gold');
-    gainValor(s, 2); s.bq = null;
-    gainMastery(s, 6, now);
+  for(const q of QUEUE_KEYS){
+    if(s[q] && now >= s[q].end){
+      s.b[s[q].key]++;
+      const d = BUILDINGS[s[q].key];
+      pushLog(s, d.name+' complete — now level '+s.b[s[q].key]+'. +2 Valor.', 'gold');
+      gainValor(s, 2); s[q] = null;
+      gainMastery(s, 6, now);
+    }
   }
   if(s.tq && now >= s.tq.end){
     const n = s.tq.count;

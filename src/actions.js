@@ -12,7 +12,7 @@ import { startMarch } from './world.js';
 export const GAME_ACTIONS = {
   upgrade:      (s,p,now)      => startUpgrade(s, p.key, now),
   train:        (s,p,now)      => startTraining(s, p.key, Number(p.n)||1, now),
-  finishBuild:  (s,p,now)      => finishBuildNow(s, now),
+  finishBuild:  (s,p,now)      => finishBuildNow(s, now, p.key),
   finishTrain:  (s,p,now)      => finishTrainNow(s, now),
   expedition:   (s,p,now,rand) => expedition(s, p.key, now, rand),
   caravan:      (s,p,now)      => setCaravan(s, p.key, now),

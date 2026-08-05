@@ -135,11 +135,34 @@ to sell the exit:
 
 | Schedule | Town Hall | Mastery | Army | Waves held |
 |---|---|---|---|---|
-| 1 h/day | 29 | 30 | 29,679 | 880 |
-| 3 h/day | 30 | 30 | 39,578 | 1,095 |
-| 10 h/day | 30 | 30 | 26,548 | 1,095 |
+| 1 h/day | 23 | 30 | 27,568 | 798 |
+| 3 h/day | 23 | 30 | 27,794 | 830 |
+| 10 h/day | 30 | 30 | 25,908 | 1,035 |
 
-Progression converges — which is the point, and is precisely Kingshot-minus-
+### The launch curve (v1.6)
+
+`TIME_SCALE = 10` stretches **construction only**. Training, raids, expeditions
+and the arena keep their fast cadence — those are the loop you play, and with
+raids every 75 s the muster has to answer on that clock. (Scaling training too
+was tried and broke the defence loop outright: the sim lost 111 raids in eight
+hours.) Valor's finish cost scales with the dial, so its relative worth is
+unchanged however the curve is retuned.
+
+A **second build crew** arrives at Town Hall 10 — two upgrades at once, never
+two on the same building. It is the lever that rewards presence without breaking
+the calendar: an attentive player keeps both crews fed, and that is worth about
+seven Town Hall levels a month over a casual schedule. A one-hour-a-day player
+is on a three-to-four month pace to the cap; raise `TIME_SCALE` to push that
+toward the twelve-month end.
+
+*Watch in playtesting:* the sim's raid loss rate rose to ~33% once building
+slowed, since wave difficulty tracks the clock while power now tracks the queue.
+The rubber-band stops it spiralling and wins still outnumber losses 2:1, but if
+losing one raid in three feels bad in the hand, slow the raid cadence before
+touching difficulty.
+
+Progression no longer converges completely — which is what heavy play should buy.
+The shape is still Kingshot-minus-
 speedups. What heavy play still buys is everything the calendar does not gate:
 a bigger army, arena rating, achievements, waves survived, and keeping the build
 queue full (worth roughly a Town Hall level a month over a one-hour player).

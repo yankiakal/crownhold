@@ -271,11 +271,16 @@ export const WAVE_MS = 75000, FIRST_WAVE_MS = 120000, PATROL_MS = 25000, SHIELD_
    of it — but they should not finish the game in a week. So progression is
    gated by real time (long late-game builds), Valor earning has a daily quota
    past which it trickles, and anyone who has been away comes back Rested. */
+/* The launch curve. TIME_SCALE stretches CONSTRUCTION only. Training, raids,
+   expeditions and the arena stay on their fast cadence — those are the loop you
+   actually play, and the muster has to answer raids that arrive every 75s.
+   It is the building queue that paces the game. Dial this one number to retune. */
+export const TIME_SCALE = 10;
 // Build times cap per level, not globally: a level-3 hut is minutes, a level-28
-// keep is hours. This is what makes the queue — not your stamina — the wall.
-// The live game multiplies this by ~10, putting late builds in Kingshot's
-// day-long territory, which is why nobody can play through the late game.
-export const buildTimeCap = lvl => 600 + 400 * lvl;   // seconds
+// keep is a day. This makes the queue — not your stamina — the wall.
+export const buildTimeCap = lvl => 600 + 400 * lvl;   // seconds, before TIME_SCALE
+// a second crew, earned by growing the hold
+export const SECOND_QUEUE_TH = 10;
 export const VALOR_QUOTA_BASE = 100, VALOR_QUOTA_PER_TH = 25;
 export const VALOR_OVERFLOW = 0.25;              // earning rate once the quota is spent
 export const REST_PER_MS_AWAY = 0.5;             // an hour away banks half an hour of Rest

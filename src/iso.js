@@ -8,7 +8,7 @@
 // swap drawBuilding() for sprite blits when real art exists (see GRAPHICS.md).
 
 import { BUILDINGS } from './defs.js';
-import { buildCost, canAfford, storageCap } from './logic.js';
+import { buildCost, canAfford, storageCap, freeSlot, QUEUE_KEYS } from './logic.js';
 
 const TW = 64, TH = 32;            // tile width/height (2:1 isometric)
 const GRID = 9;
@@ -457,7 +457,8 @@ function frame(now){
     .filter(k => PLOTS[k])
     .sort((a,b) => (PLOTS[a][0]+PLOTS[a][1]) - (PLOTS[b][0]+PLOTS[b][1]));
   for(const key of order){
-    drawBuilding(ctx, key, S.b[key] || 0, tick, { building: S.bq && S.bq.key === key });
+    const underway = QUEUE_KEYS.some(q => S[q] && S[q].key === key);
+    drawBuilding(ctx, key, S.b[key] || 0, tick, { building: underway });
   }
 
   drawFolk(ctx, dt, 4 + Math.min(6, S.b.townhall));
@@ -467,11 +468,11 @@ function frame(now){
   for(const key of order){
     const d = BUILDINGS[key];
     const lvl = S.b[key] || 0;
-    if(S.bq && S.bq.key === key) continue;
+    if(QUEUE_KEYS.some(q => S[q] && S[q].key === key)) continue;
     if(lvl >= d.max) continue;
     if(d.th && S.b.townhall < d.th) continue;
     if(key !== 'townhall' && lvl >= S.b.townhall) continue;
-    if(!S.bq && canAfford(S, buildCost(S, key))) drawBadge(ctx, key, 'ready', tick);
+    if(freeSlot(S) && canAfford(S, buildCost(S, key))) drawBadge(ctx, key, 'ready', tick);
   }
 
   ctx.restore();
