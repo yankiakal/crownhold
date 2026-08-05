@@ -16,7 +16,7 @@ export function freshState(now, seed){
   return {
     world: genWorld(seed != null ? seed : Math.floor(Math.random()*2**31)),
     isle: genIsle(seed != null ? seed : Math.floor(Math.random()*2**31), seasonNo(now)),
-    marches: [],
+    marches: [], watch: [], watching: [],
     res:{food:120,wood:120,stone:60,iron:0,steel:0,runestone:0,rations:0,trueore:0,truegold:0},
     achieved:{}, campsBurned:0, ruinsRaided:0, winStreak:0, bestStreakWon:0,
     valorDay:0, valorToday:0, rest:0,
@@ -93,6 +93,9 @@ export function applyOffline(s, awayMs){
    undefined on the server while working perfectly in local play. */
 export function migrate(s, now){
     s.now = now;
+    // the Watch: troops others have stationed here, and troops of ours standing elsewhere
+    if(!Array.isArray(s.watch)) s.watch = [];
+    if(!Array.isArray(s.watching)) s.watching = [];
     if(s.mxp==null) s.mxp = 0;
     if(s.shields==null) s.shields = 0;
     if(s.shieldUntil==null) s.shieldUntil = 0;

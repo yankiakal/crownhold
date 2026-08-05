@@ -481,6 +481,78 @@ Three lessons, in order of how much they cost:
    suspicious of. Reproduce first, theorise second. The check that settled it took
    one command: run it twice, unchanged.
 
+### The Muster Roll and the Watch (v1.36) — copying Whiteout Survival, minus the funnel
+
+Two systems taken from Whiteout Survival, chosen after checking what we already had —
+which was most of it. Alliance tech funded by donations, alliance help on build
+timers, landmark garrisons and banners, an alliance boss, rallies, realms and the
+Rift were all in. The genuine holes were a *standing* shared goal and a way to spend
+troops on someone else.
+
+**The Muster Roll** (Alliance Mobilization). A fortnightly board on the season clock:
+one task at a time, drawn from eight kinds of work, at Light / Fair / Hard weights
+that pay 10 / 30 / 75 points. Both counters WoS keeps — personal points pay you,
+alliance points lift everyone's share — because your neighbour's work being worth
+something to you is the entire reason a shared board beats a private quest list.
+
+Three of their choices we refused, and each refusal is a line of code:
+
+- **Their tasks include "spend gems."** A cooperative board whose rungs are purchases
+  is a spend funnel wearing a friendship badge. Every task here reads a counter the
+  hold already keeps, and a test asserts no task carries a `price`, `gems` or `cost`.
+- **Their rewards go to the top five earners per alliance.** That pays the already
+  strong and tells everyone else not to bother. Here everyone who scores is paid, in
+  proportion to what they did.
+- **Their rerolls are an officer privilege.** Here you redraw your own work, free, on a
+  20-minute cooldown — "this task doesn't suit how I play" is not something a rank
+  should adjudicate. The reroll also refuses to hand back the task you already had,
+  because a button that can do nothing is a button that lies.
+
+Progress is measured from a **snapshot of an existing counter**, so there is no new
+tracking anywhere. That was deliberate: threading increments through `resolveWave`,
+`resolveReturn` and a dozen other call sites is exactly where this project put a
+`rand` in the wrong function and shipped a crash for three versions.
+
+**The Watch** (garrison). A column stationed at an ally's wall for four hours. The
+rule worth having is theirs: **everything at a wall fights under the best captain
+present**, so a strong hold standing over a weak one lifts *that hold's own soldiers*
+to its numbers rather than merely adding to them. Measured over HTTP: a host at ×1.000
+became ×3.010 with one column posted. In WoS that is a reason to *buy* power — you pay
+to be the umbrella. Here it can only be given.
+
+It bleeds, or it would be free power and stationing troops would strictly beat keeping
+them home. Wounds, never deaths; the hurt lands in the **owner's** infirmary when the
+Watch comes home, so the cost of standing over a neighbour falls on whoever chose to.
+Return is driven from the sender's side, because the host may not log in for a week and
+a column must not be stranded by someone else's absence — the bug rallies had before
+v1.25.
+
+**On PvP.** The garrison was built for hold-vs-hold combat, which is the stated
+direction. The guardrail that keeps that non-P2W is worth stating plainly, because it
+is the whole game: **WoS monetizes fear of loss** — shields, teleports, instant healing
+and resource protection, all sold, all bought in a panic after someone hit you. So
+attacks must wound rather than kill, stores must stay partly protected, and Writs must
+stay earned-only. Those three lines are what separate "Whiteout Survival without P2W"
+from "Whiteout Survival".
+
+### `verify-server.mjs` — the third place nothing was tested (v1.36)
+
+Both systems live almost entirely in server code, and this project had **no server test
+at all**. That is the same gap the renderer had before v1.32 and the more dangerous
+one: `node --check` proves a file parses, not that sending a column moves the right
+troops or that a recalled Watch comes home rather than evaporating.
+
+The suite boots the real server on a spare port against a throwaway `DATA_DIR` and
+talks to it over HTTP, because the thing worth testing is the wire behaviour — two
+accounts, one alliance, state that has to stay consistent across both. 39 assertions.
+Test-only endpoints exist for moving a counter and kitting a hold, gated behind
+`ALLOW_DEBUG=1` so a deployed server never exposes them.
+
+It immediately paid for itself on the small things: the register endpoint takes
+`password`, not `pass`, and my first cleanup raced the dying server and threw
+`ENOTEMPTY` *after* a green run — which would have turned a passing suite into a
+non-zero exit.
+
 ### "It feels like waiting" (v1.35) — four of five signals were my own instruments
 
 Asked to make the late game feel less like waiting, off the back of a number I had

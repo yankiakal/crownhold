@@ -8,12 +8,13 @@
     "build": "vite build && node scripts/release.js",
     "sim": "node sim/sim.js",
     "verify": "node sim/verify-skills.mjs",
-    "check": "npm run build && npm run verify && npm run verify:ui && npm run sim && echo '== check complete: build + verify + verify:ui + sim =='",
+    "check": "npm run build && npm run verify && npm run verify:ui && npm run verify:server && npm run sim && echo '== check complete: build + verify + verify:ui + verify:server + sim =='",
     "server": "node server/server.js",
     "deploy": "sh scripts/deploy.sh",
     "verify:ui": "node sim/verify-ui.mjs",
     "shoot": "sh scripts/shoot.sh",
-    "sprites": "node scripts/emit-sprites.js"
+    "sprites": "node scripts/emit-sprites.js",
+    "verify:server": "node sim/verify-server.mjs"
   },
   "devDependencies": {
     "vite": "^6.0.0",

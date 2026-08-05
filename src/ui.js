@@ -1009,6 +1009,121 @@ function renderResearch(S){
   return h;
 }
 
+/* ── the Watch ──
+   Troops standing at an ally's wall. The rule worth having is the one Whiteout
+   Survival uses: everything at a wall fights under the BEST captain present, so a
+   strong hold standing over a weak one lifts that hold's own soldiers too. That is
+   stated in the panel, because a mechanic nobody can see is a mechanic nobody uses —
+   which is the lesson the march-coverage work taught. */
+function renderWatch(S){
+  if(!net.isOnline()) return '';
+  const w = net.watchData();
+  if(!w) return '';
+  if(!w.allies.length && !w.here.length && !w.watching.length)
+    return '<section class="panel"><h2>The Watch</h2>'
+      + '<div class="stat-note">Send troops to stand at an ally&#39;s wall and they defend it as if '
+      + 'they were yours. Everything at a wall fights under the best captain there — so standing over '
+      + 'a smaller hold lifts <i>their</i> soldiers to your numbers, not just adds yours. '
+      + 'You need an alliance with someone else in it.</div></section>';
+
+  let h = '<section class="panel"><h2>The Watch'
+    + (w.hosting ? ' <span style="letter-spacing:.05em">'+w.hosting+'/'+w.cap+' at your wall</span>' : '')
+    + '</h2>';
+
+  if(w.here.length){
+    if(w.lifted)
+      h += '<div class="stat-note" style="color:var(--good)">Your wall fights under a better captain than your own — '
+        + 'every soldier here, yours included, is at ×'+w.mult.toFixed(2)+' instead of ×'+w.ownMult.toFixed(2)+'.</div>';
+    for(const g of w.here)
+      h += '<div class="trow"><span class="tname">🕯️ '+esc(g.from)+'</span>'
+        + '<span class="tmeta">'+fmt(g.count)+' troops · ×'+(g.mult||1).toFixed(2)+'</span>'
+        + '<span class="spacer"></span><span class="count">'+ftime(g.endsIn)+'</span></div>';
+  }
+  for(const m of w.watching)
+    h += '<div class="trow mine"><span class="tname">Your Watch at '+esc(m.to)+'</span>'
+      + '<span class="tmeta">'+fmt(m.count)+' troops</span><span class="spacer"></span>'
+      + '<span class="count">'+ftime(m.endsIn)+'</span>'
+      + '<button data-act="watchRecall" data-key="'+esc(m.to)+'">Recall</button></div>';
+
+  if(w.allies.length){
+    h += '<p class="d-row" style="margin-top:.5rem">Stand over an ally'
+      + ' <span class="hmeta">— weakest first, since that is where a Watch is worth most</span></p>';
+    for(const a of w.allies)
+      h += '<div class="trow"><span class="tname">'+esc(a.name)+'</span>'
+        + '<span class="tmeta">TH'+a.townhall+' · '+fmt(a.power)+(a.weaker?' · weaker than you':'')+'</span>'
+        + '<span class="spacer"></span>'
+        + '<button data-act="watchPick" data-key="'+esc(a.name)+'" '
+        + (a.hosting >= a.cap ? 'disabled' : '')+'>'+(a.hosting >= a.cap ? 'wall full' : 'Send')+'</button></div>';
+    if(watchTarget){
+      const fit = fitColumn(S, marchWant, marchParty);
+      h += '<div class="stat-note">Standing watch over <b>'+esc(watchTarget)+'</b> for '
+        + ftime(w.windowMs)+'. They cannot defend your own wall while away, and they come home '
+        + 'wounded rather than dead.</div>'
+        + renderColumnComposer(S)
+        + '<button class="primary" data-act="watchSend" data-key="'+esc(watchTarget)+'" '
+        + columnAttrs()+(fit.total?'':' disabled')+'>'
+        + (fit.total ? '🕯️ Send '+fit.total+' to stand watch' : 'Choose troops')+'</button>';
+    }
+  }
+  return h + '</section>';
+}
+
+/* ── the Muster Roll ──
+   Every other alliance feature in this game is reactive: help a build someone
+   started, strike the boss someone called, join a rally someone blew the horn for.
+   The Roll is the one thing that gives an alliance a standing goal on a quiet day.
+
+   Deliberately unlike Whiteout Survival's version in three ways, all visible here:
+   everyone who scores is paid rather than the top five; no task is a purchase; and
+   rerolling your own work is free, on a cooldown, rather than an officer privilege. */
+function renderMusterRoll(S){
+  if(!net.isOnline()) return '';
+  const m = net.musterData();
+  if(!m) return '';
+  if(!m.open)
+    return '<section class="panel"><h2>The Muster Roll</h2>'
+      + '<div class="stat-note">The Roll needs at least '+m.needMembers+' holds in the alliance. '
+      + 'Shared work wants someone to share it with.</div></section>';
+
+  const t = m.task, pctDone = Math.round(100 * t.have / Math.max(1, t.need));
+  let h = '<section class="panel"><h2>The Muster Roll'
+    + ' <span style="letter-spacing:.05em">'+m.division.icon+' '+m.division.name+' · '+ftime(m.endsIn)+' left</span></h2>';
+
+  h += '<div class="mroll'+(t.done ? ' done' : '')+'">'
+    + '<div class="mhead"><span class="micon">'+(t.icon||'📜')+'</span>'
+    + '<span class="mname">'+esc(t.name||'Work')+'</span>'
+    + '<span class="mweight w-'+t.weight+'">'+t.weightName+' · '+t.points+' pts</span></div>'
+    + '<div class="mbar'+(t.done?' full':'')+'"><i style="width:'+pctDone+'%"></i></div>'
+    + '<div class="mrow"><span class="hmeta">'+t.have+' / '+t.need+' '+esc(t.unit||'')+'</span>'
+    + '<span class="spacer"></span>'
+    + '<button data-act="musterReroll" '+(m.canReroll?'':'disabled')+'>'
+    + (m.canReroll ? 'Different work' : 'Redrawing ' + ftime(m.rerollIn)) + '</button>'
+    + '<button class="primary" data-act="musterClaim" '+(t.done?'':'disabled')+'>'
+    + (t.done ? 'Report it done' : 'Not yet') + '</button></div></div>';
+
+  h += '<div class="d-row" style="margin-top:.5rem">Your effort <b>'+m.mine.points+'</b>'
+    + ' <span class="hmeta">from '+m.mine.done+' task'+(m.mine.done===1?'':'s')
+    + ' · the alliance has <b>'+fmt(m.total)+'</b></span></div>';
+  if(m.projected)
+    h += '<div class="stat-note">If the Roll closed now you would be paid <b>'
+      + m.projected.valor+'</b> Valor, <b>'+m.projected.mastery+'</b> Mastery and <b>'
+      + m.projected.steel+'</b> steel — a ×'+m.projected.together.toFixed(2)
+      + ' share because of what the others did. Everyone who scores is paid; there is no top-five cut.</div>';
+
+  if((m.board||[]).length){
+    h += '<p class="d-row" style="margin-top:.5rem">The roll</p>';
+    const me = net.accountName();
+    for(const r of m.board.slice(0, 12))
+      h += '<div class="trow'+(r.name===me?' mine':'')+'"><span class="tname">'+esc(r.name)+'</span>'
+        + '<span class="tmeta">'+r.done+' done</span><span class="spacer"></span>'
+        + '<span class="count">'+fmt(r.points)+'</span></div>';
+  }
+  if(m.last)
+    h += '<div class="stat-note">Last Roll: '+fmt(m.last.total)+' points, '+esc(m.last.division)
+      + ', '+m.last.paid+' hold'+(m.last.paid===1?'':'s')+' paid.</div>';
+  return h + '</section>';
+}
+
 function renderAlliance(S){
   if(!net.isOnline())
     return '<section class="panel"><h2>Alliance</h2>'
@@ -1166,6 +1281,7 @@ sceneCanvas.id = 'holdscene';
 let detail = null; // {type:'building'|'troop'|'hero', key} — the tap-to-inspect sheet
 // the column being assembled: up to three leaders and a count per troop type
 let marchParty = [];
+let watchTarget = null;   // which ally the Watch composer is aimed at
 let marchWant = {};
 function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]); }
 
@@ -1997,7 +2113,7 @@ export function render(){
   app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
     + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderPets(S) + renderRegalia(S) + renderSpoils(S)
-      + renderDaily(S) + renderIsle(S) + renderEvent(S) + renderRift(S) + renderRally(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
+      + renderDaily(S) + renderIsle(S) + renderEvent(S) + renderRift(S) + renderRally(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderMusterRoll(S) + renderWatch(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
       + renderAchievements(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
   fx.innerHTML = renderFx(S) + renderLore(S) + renderStore(S)
@@ -2134,6 +2250,27 @@ const VIEW_ACTIONS = {
   rallyLaunch: () => {
     net.rallyLaunch()
       .then(d => { if(d.state) store.s = d.state; render(); })
+      .catch(e => { acctMsg = e.message; acctOpen = true; renderAccount(); });
+  },
+  watchPick: b => { watchTarget = (watchTarget === b.dataset.key) ? null : b.dataset.key; render(); },
+  watchSend: b => {
+    net.watchSend(b.dataset.key, fitColumn(store.s, marchWant, marchParty).troops, marchParty)
+      .then(d => { if(d.state) store.s = d.state; watchTarget = null; marchParty = []; marchWant = {}; render(); })
+      .catch(e => { acctMsg = e.message; acctOpen = true; renderAccount(); });
+  },
+  watchRecall: b => {
+    net.watchRecall(b.dataset.key)
+      .then(d => { if(d.state) store.s = d.state; render(); })
+      .catch(e => { acctMsg = e.message; acctOpen = true; renderAccount(); });
+  },
+  musterReroll: () => {
+    net.musterReroll().then(render)
+      .catch(e => { acctMsg = e.message; acctOpen = true; renderAccount(); });
+  },
+  musterClaim: () => {
+    // claiming pays points and draws the next task, and the reward lands on the hold
+    net.musterClaim().then(() => net.pullState())
+      .then(st => { if(st) store.s = st; render(); })
       .catch(e => { acctMsg = e.message; acctOpen = true; renderAccount(); });
   },
   allianceGive:    b => {

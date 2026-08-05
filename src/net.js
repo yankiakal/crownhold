@@ -114,6 +114,53 @@ export function arenaData(){ return arena; }
 let ally = null;
 export function allianceData(){ return ally; }
 
+/* ── the Watch ── */
+let watch = null;
+export function watchData(){ return watch; }
+export async function refreshWatch(){
+  if(!isOnline()) return null;
+  try{
+    const d = await post('/api/watch', { token: session.token });
+    watch = d && d.watch ? d.watch : null;
+    return watch;
+  }catch(e){ watch = null; return null; }
+}
+export async function watchSend(to, troops, heroes){
+  const d = await post('/api/watch/send', { token: session.token, to, troops, heroes });
+  if(d && d.watch) watch = d.watch;
+  return d;
+}
+export async function watchRecall(to){
+  const d = await post('/api/watch/recall', { token: session.token, to });
+  if(d && d.watch) watch = d.watch;
+  return d;
+}
+
+/* ── the Muster Roll ──
+   Kept beside the alliance because it IS alliance state, but fetched separately: the
+   Roll settles lazily on the server the first time anyone looks after a fortnight
+   ends, so asking for it is also what closes the previous one. */
+let muster = null;
+export function musterData(){ return muster; }
+export async function refreshMuster(){
+  if(!isOnline()) return null;
+  try{
+    const d = await post('/api/muster', { token: session.token });
+    muster = d && d.muster ? d.muster : null;
+    return muster;
+  }catch(e){ muster = null; return null; }
+}
+export async function musterReroll(){
+  const d = await post('/api/muster/reroll', { token: session.token });
+  if(d && d.muster) muster = d.muster;
+  return d;
+}
+export async function musterClaim(){
+  const d = await post('/api/muster/claim', { token: session.token });
+  if(d && d.muster) muster = d.muster;
+  return d;
+}
+
 export async function refreshAlliance(){
   if(!isOnline()) return null;
   try{

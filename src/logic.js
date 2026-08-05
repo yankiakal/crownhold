@@ -567,15 +567,76 @@ export function trainQueue(s, k){ return (s.tq && s.tq[k]) || null; }
 export function activeTrainings(s){
   return Object.keys(TROOPS).filter(k => trainQueue(s, k));
 }
+/* ── the Watch ──
+   Troops another hold has stationed here. Taken from Whiteout Survival's garrison,
+   including the rule that makes it worth having: everything at the wall fights under
+   the BEST captain present, so a strong ally standing over a weak hold lifts that
+   hold's own soldiers to their numbers too. In WoS that is a spend driver — you buy
+   power in order to be the umbrella. Here it is only ever a gift.
+
+   Each entry carries the base power its owner's tiers produce and the multiplier
+   their heroes, tech and perks produce, both computed by the SENDER at the moment
+   they set out. Computing it here would be wrong twice over: this hold does not know
+   the sender's tier levels, and a garrison should not weaken because the ally who
+   sent it later took their heroes out on a march. */
+export function watchHere(s){
+  return (s.watch || []).filter(g => g && g.troops && (g.base || 0) > 0);
+}
+export function watchBase(s){ return watchHere(s).reduce((a, g) => a + (g.base || 0), 0); }
+export function watchTroops(s){
+  const t = {};
+  for(const g of watchHere(s)) for(const [k, n] of Object.entries(g.troops || {})) t[k] = (t[k] || 0) + n;
+  return t;
+}
+export function watchCount(s){ return Object.values(watchTroops(s)).reduce((a, b) => a + b, 0); }
+
+/* The Watch bleeds with the wall it is standing on. Without this a garrison is free
+   power, which would make stationing troops strictly better than keeping them home
+   and turn a social mechanic into an exploit.
+
+   Wounds, never deaths — as everywhere the Unpaid are the enemy. The hurt is recorded
+   on the entry and goes into its OWNER's infirmary when the Watch comes home, so the
+   cost of standing over a neighbour lands on the person who chose to. */
+export function watchCasualties(s, lossFrac, rand){
+  let hurt = 0;
+  for(const g of watchHere(s)){
+    let lost = 0;
+    for(const k of Object.keys(TROOPS)){
+      const n = g.troops[k] || 0;
+      if(n <= 0) continue;
+      const l = Math.min(n, Math.round(n * Math.min(0.95, lossFrac * (SCREEN[k] || 1)) * (0.7 + rand()*0.6)));
+      if(l <= 0) continue;
+      g.troops[k] = n - l;
+      lost += l;
+    }
+    if(lost){
+      g.hurt = (g.hurt || 0) + lost;
+      // the entry's contribution falls with its numbers
+      const left = Object.values(g.troops).reduce((a,b)=>a+b, 0);
+      const was = (g.count || left + lost) || 1;
+      g.base = Math.max(0, Math.round((g.base || 0) * (left / was)));
+      g.count = left;
+      hurt += lost;
+    }
+  }
+  return hurt;
+}
+
 export function armyBreakdown(s){
   let base = 0;
   for(const k of Object.keys(TROOPS)) base += tierPower(s,k) * s.t[k];
-  const mult = (1 + heroBonus(s,'troopPower') + spoilBonus(s,'troopPower')
+  const mine = (1 + heroBonus(s,'troopPower') + spoilBonus(s,'troopPower')
                   + techBonus(s,'warcraft') + allyBonus(s,'troopPower'))
              * (1 + (perk(s,2)?0.06:0) + (perk(s,8)?0.08:0) + (perk(s,10)?0.15:0)
                   + (perk(s,12)?0.08:0) + (perk(s,20)?0.20:0));
+  /* The best captain at the wall commands everyone at it — the host included. */
+  const guests = watchHere(s);
+  const mult = guests.reduce((m, g) => Math.max(m, g.mult || 0), mine);
+  const gbase = guests.reduce((a, g) => a + (g.base || 0), 0);
   const wall = (18 + techFlat(s,'fortification'))*s.b.wall + heroBonus(s,'wallPower');
-  return { base, mult, wall, total: Math.round(base*mult + wall) };
+  return { base, mult, ownMult: mine, watch: gbase, watchers: guests.length,
+           lifted: mult > mine + 1e-9, wall,
+           total: Math.round((base + gbase)*mult + wall) };
 }
 export function armyPower(s){ return armyBreakdown(s).total; }
 export function wavePower(w){ return Math.round(10*Math.pow(w,1.3) + 5*w); }
@@ -1195,7 +1256,8 @@ export function resolveWave(s, now, rand=Math.random){
   const enemy = raw * (1-bluntMult(s)) * mods.enemyX;
   const bd = armyBreakdown(s);
   const cb = compBonus(s);
-  const mine = Math.round(bd.base*bd.mult*cm*(1+cb)*mods.powerX + bd.wall*mods.wallX);
+  // the Watch fights the wave too, under whichever captain at the wall is best
+  const mine = Math.round((bd.base + bd.watch)*bd.mult*cm*(1+cb)*mods.powerX + bd.wall*mods.wallX);
   let stanceNote = cm > 1 ? ' Your '+STANCES[s.stance].name+' broke their '+wt.name+' (+20%).'
                  : cm < 1 ? ' Your '+STANCES[s.stance].name+' was the wrong answer to '+wt.name+' (−8%).' : '';
   if(cb >= 0.08 && wt.counter) stanceNote += ' Your '+TROOPS[wt.counter].name+' line countered them (+'+Math.round(cb*100)+'%).';
@@ -1216,6 +1278,7 @@ export function resolveWave(s, now, rand=Math.random){
       const r = takeCasualties(s, k, l, true);   // holding your own wall never kills
       lost += r.dead; hurtTotal += r.hurt;
     }
+    hurtTotal += watchCasualties(s, lossFrac, rand);   // the Watch bleeds with the wall
     const lootMult = (isWB?2:1) * (1 + heroBonus(s,'loot') + spoilBonus(s,'loot') + techBonus(s,'siegecraft')
       + allyBonus(s,'loot') + (perk(s,17)?0.15:0)) * mods.lootX;
     const base = 15*Math.pow(w,0.8);
@@ -1246,11 +1309,15 @@ export function resolveWave(s, now, rand=Math.random){
     const protect = Math.min(0.6, 0.04*(s.b.warehouse||0)); // the Warehouse hides part of your stores
     for(const k of Object.keys(TROOPS))
       takeCasualties(s, k, Math.round(s.t[k] * Math.min(0.5, 0.2*SCREEN[k])), true);
+    // and the Watch takes the same beating it would have if it were home
+    const wHurt = watchCasualties(s, 0.2, rand);
     for(const r of Object.keys(RES_META)) s.res[r] = Math.floor((s.res[r]||0)*(1 - 0.15*(1-protect)));
     gainValor(s, 2);
     gainMastery(s, 3, now);
     gainShield(s, 1);
-    pushLog(s, label+' breaks through the gate and carries off part of your stores.'+stanceNote+' Your defenders bloodied them — the next assault will come weaker. +2 Valor, and a Writ of Peace is granted.', 'loss');
+    pushLog(s, label+' breaks through the gate and carries off part of your stores.'+stanceNote
+      +' Your defenders bloodied them — the next assault will come weaker. +2 Valor, and a Writ of Peace is granted.'
+      +(wHurt ? ' The Watch lost '+wHurt+' to wounds holding with you.' : ''), 'loss');
     showBanner(s, '🔥 '+label+' broke through — they return weaker next time', 'loss', now);
   }
 

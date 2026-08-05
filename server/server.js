@@ -18,13 +18,16 @@ import { join, dirname, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
-import { tick, armyPower, masteryLvl, upkeepPerSec, gainValor, gainMastery, pushLog,
+import { tick, armyPower, armyBreakdown, tierPower, masteryLvl, upkeepPerSec, gainValor, gainMastery, pushLog,
          takeCasualties, capFor } from '../src/logic.js';
 import { SEASON_MS as DEFAULT_SEASON_MS, SEASON_EPOCH, SEASON_ARCS,
          seasonNo as defSeasonNo, seasonEndsIn as defSeasonEndsIn } from '../src/defs.js';
 import { tickWorld, fitColumn, marchPower, bestLeaders } from '../src/world.js';
 import { freshState, applyOffline, migrate } from '../src/state.js';
 import { applyAction, isGameAction } from '../src/actions.js';
+import { TASKS as MUSTER_TASKS, WEIGHTS as MUSTER_WEIGHTS, weightOf, taskNeed, rollTask,
+         taskProgress, musterPeriod, musterEndsIn, musterReward, divisionOf,
+         MUSTER_MIN_MEMBERS, REROLL_MS } from '../src/muster.js';
 import {
   resolveArena, pickOpponents, defensePower, dominantClass,
   ARENA_CD, START_LAURELS,
@@ -33,9 +36,13 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
 const DIST = join(ROOT, 'dist');
-const DATA_DIR = join(HERE, 'data');
+/* Overridable so a test can run against a throwaway directory instead of trampling
+   real accounts — and so a deployment can put the file on a mounted volume. */
+const DATA_DIR = process.env.DATA_DIR || join(HERE, 'data');
 const DATA_FILE = join(DATA_DIR, 'accounts.json');
 const PORT = Number(process.env.PORT) || 8787;
+/* Test-only endpoints. Never on by default; the verification suite sets it. */
+const ALLOW_DEBUG = process.env.ALLOW_DEBUG === '1';
 const MAX_BODY = 64 * 1024;
 
 /* ── storage ── */
@@ -119,6 +126,77 @@ function allyTechView(a){
     points:(a.points && a.points[k]) || 0, need:allyTechNeed(a,k),
     done: allyTechLvl(a,k) >= d.max,
   }));
+}
+
+/* ── the Muster Roll ──
+   Lives on the alliance, not on the member, because the whole point is a shared
+   board. Period is DERIVED from the clock every time it is read and never stored:
+   a stored period goes stale the moment the schedule changes, which is precisely
+   the bug the Rift's `open` flag had.
+
+   Turnover is lazy, like everything else here — there is no game loop, so the Roll
+   settles the moment anyone looks at it after the fortnight ends. */
+function musterOf(a, now){
+  const period = musterPeriod(now);
+  a.muster = a.muster || { period, total: 0, board: {}, last: null };
+  if(a.muster.period !== period) closeMuster(a, now, period);
+  return a.muster;
+}
+
+function closeMuster(a, now, period){
+  const m = a.muster;
+  const scored = Object.entries(m.board).filter(([, v]) => (v.points || 0) > 0);
+  const paid = [];
+  for(const [name, v] of scored){
+    const u = db.users[name.toLowerCase()];
+    const r = musterReward(v.points, m.total, Math.max(1, a.members.length));
+    if(!u || !r) continue;
+    advance(u, now);
+    gainValor(u.state, r.valor);
+    gainMastery(u.state, r.mastery, now);
+    u.state.res.steel = (u.state.res.steel || 0) + r.steel;
+    pushLog(u.state, '📜 The Muster Roll closed — ' + v.points + ' points earned you '
+      + r.valor + ' Valor, ' + r.mastery + ' Mastery and ' + r.steel + ' steel.', 'gold');
+    paid.push({ name, points: v.points, ...r });
+  }
+  m.last = { period: m.period, total: m.total, division: divisionOf(m.total).name, paid: paid.length };
+  a.muster = { period, total: 0, board: {}, last: m.last };
+  if(paid.length) markDirty();
+}
+
+/* One offer at a time. Drawn on demand rather than pushed, so a member who has not
+   logged in for a week is not sitting on a stale task from a Roll that has closed. */
+function musterSeat(a, u, now){
+  const m = musterOf(a, now);
+  m.board[u.name] = m.board[u.name] || { points: 0, done: 0, task: null, rerollAt: 0 };
+  const seat = m.board[u.name];
+  if(!seat.task) seat.task = rollTask(u.state, Math.random, null);
+  return seat;
+}
+
+function musterView(a, u, now){
+  const m = musterOf(a, now);
+  const seat = musterSeat(a, u, now);
+  const p = taskProgress(u.state, seat.task);
+  const d = MUSTER_TASKS[seat.task.kind] || {};
+  const w = weightOf(seat.task.weight);
+  const rows = Object.entries(m.board)
+    .map(([name, v]) => ({ name, points: v.points || 0, done: v.done || 0 }))
+    .sort((x, y) => y.points - x.points);
+  return {
+    open: a.members.length >= MUSTER_MIN_MEMBERS,
+    needMembers: MUSTER_MIN_MEMBERS,
+    period: m.period, endsIn: musterEndsIn(now),
+    total: m.total, division: divisionOf(m.total),
+    task: { ...seat.task, name: d.name, icon: d.icon, unit: d.unit,
+            weightName: w.name, points: w.points, ...p },
+    canReroll: now >= (seat.rerollAt || 0),
+    rerollIn: Math.max(0, (seat.rerollAt || 0) - now),
+    mine: { points: seat.points || 0, done: seat.done || 0 },
+    board: rows,
+    projected: musterReward(seat.points || 0, m.total, Math.max(1, a.members.length)),
+    last: m.last || null,
+  };
 }
 
 function allianceView(tag, now){
@@ -709,6 +787,85 @@ function roomFor(u, channel, target){
 
 /* ── the fast-forward: bring a hold from its last save to now ── */
 
+/* ── the Watch ──
+   A column stationed at an ally's wall. Whiteout Survival's garrison, with the rule
+   that makes it worth doing: everything at the wall fights under the best captain
+   present, so a strong hold standing over a weak one lifts that hold's own soldiers
+   too. In WoS that is a reason to BUY power — you pay to be the umbrella. Here it can
+   only ever be given.
+
+   It returns lazily, like everything else on this server: no game loop, so the troops
+   come home the first time either side is advanced after the watch ends. */
+const WATCH_MS = 4 * 3600 * 1000;
+const WATCH_MAX = 3;                    // how many columns one hold may host
+
+/* Bring home anything of this hold's that is standing elsewhere and whose time is up.
+   Driven from the SENDER's side because the sender is who the troops belong to — the
+   host may not log in for a week, and a column should not be stranded by someone
+   else's absence. That is the same mistake the rallies had before v1.25, where an
+   alliance logging off mid-muster stranded everyone's troops. */
+function watchReturn(u, now){
+  const s = u.state;
+  if(!Array.isArray(s.watching) || !s.watching.length) return 0;
+  let back = 0;
+  s.watching = s.watching.filter(w => {
+    if(now < (w.until || 0)) return true;
+    const host = db.users[String(w.to || '').toLowerCase()];
+    let troops = w.troops || {}, hurt = 0;
+    if(host && Array.isArray(host.state.watch)){
+      const at = host.state.watch.findIndex(g => g && g.id === w.id);
+      if(at >= 0){
+        const g = host.state.watch[at];
+        troops = g.troops || troops;
+        hurt = g.hurt || 0;
+        host.state.watch.splice(at, 1);
+      }
+    }
+    for(const [k, n] of Object.entries(troops)) if(n > 0) s.t[k] = (s.t[k] || 0) + n;
+    if(hurt){
+      s.wounded = s.wounded || {};
+      // wounds land in the OWNER's infirmary: the cost of standing over a neighbour
+      // falls on whoever chose to stand there
+      const share = Object.keys(troops).filter(k => troops[k] > 0);
+      const per = share.length ? Math.floor(hurt / share.length) : 0;
+      for(const k of share) s.wounded[k] = (s.wounded[k] || 0) + per;
+    }
+    pushLog(s, '🕯️ The Watch is home from ' + (w.to || 'an ally') + '.'
+      + (hurt ? ' ' + hurt + ' came back wounded.' : ''), 'gold');
+    back++;
+    return false;
+  });
+  if(back) markDirty();
+  return back;
+}
+
+function watchView(u, now){
+  const s = u.state;
+  const a = db.alliances[u.alliance];
+  const here = (s.watch || []).map(g => ({
+    from: g.from, troops: g.troops, count: Object.values(g.troops||{}).reduce((x,y)=>x+y,0),
+    base: g.base, mult: g.mult, endsIn: Math.max(0, (g.until||0) - now),
+  }));
+  const bd = armyBreakdown(s);
+  return {
+    here, hosting: here.length, cap: WATCH_MAX,
+    lifted: bd.lifted, mult: bd.mult, ownMult: bd.ownMult,
+    watching: (s.watching || []).map(w => ({
+      to: w.to, count: Object.values(w.troops||{}).reduce((x,y)=>x+y,0),
+      endsIn: Math.max(0, (w.until||0) - now),
+    })),
+    windowMs: WATCH_MS,
+    allies: a ? a.members.filter(n => n !== u.name).map(n => {
+      const m = db.users[String(n).toLowerCase()];
+      if(!m) return null;
+      const mb = armyBreakdown(m.state);
+      return { name: m.name, townhall: m.state.b.townhall, power: mb.total,
+               hosting: (m.state.watch||[]).length, cap: WATCH_MAX,
+               lifted: mb.lifted, weaker: mb.ownMult < bd.ownMult };
+    }).filter(Boolean).sort((x,y) => x.power - y.power) : [],
+  };
+}
+
 function advance(u, now){
   // stored holds predate every field added since they were created — run the
   // same migration the browser runs before touching anything
@@ -719,6 +876,7 @@ function advance(u, now){
   s.allyBonus = {};
   for(const k of new Set([...Object.keys(techB), ...Object.keys(realmB)]))
     s.allyBonus[k] = (techB[k] || 0) + (realmB[k] || 0);
+  watchReturn(u, now);
   const away = Math.min(Math.max(now - (s.lastSeen || now), 0), 7200000);
   if(away > 60000){
     applyOffline(s, away);
@@ -1042,6 +1200,157 @@ async function api(req, res, url){
     }
     if(helped) markDirty();
     return send(res, 200, { helped, alliance: allianceView(u.alliance, now) });
+  }
+
+  /* ── test hooks ──
+     OFF unless ALLOW_DEBUG=1 is set in the environment, so a deployed server never
+     exposes them. The verification suite needs to move a counter and kit a hold;
+     doing either through normal play would take hours of simulated time, and a
+     multiplayer feature that is only tested by hand is a multiplayer feature that is
+     not tested. */
+  if(ALLOW_DEBUG && path === '/api/debug/bump'){
+    const field = String(body.field || '');
+    if(!Object.prototype.hasOwnProperty.call(u.state, field))
+      return send(res, 400, { error:'No such field: ' + field });
+    if(typeof u.state[field] !== 'number')
+      return send(res, 400, { error:'Not a counter: ' + field });
+    advance(u, now);
+    u.state[field] += Number(body.by) || 0;
+    markDirty();
+    return send(res, 200, { field, value: u.state[field] });
+  }
+  if(ALLOW_DEBUG && path === '/api/debug/kit'){
+    advance(u, now);
+    const st = u.state;
+    st.b.townhall = body.strong ? 20 : 8;
+    st.b.barracks = body.strong ? 12 : 5;
+    st.b.wall = body.strong ? 12 : 4;
+    st.b.academy = body.strong ? 9 : 2;
+    st.t = { spearman: body.strong ? 400 : 60, archer: 0, knight: 0, ballista: 0 };
+    st.tier = body.strong ? { spearman:5, archer:1, knight:1, ballista:1 }
+                          : { spearman:1, archer:1, knight:1, ballista:1 };
+    st.res = { food:9e5, wood:9e5, stone:9e5, iron:9e5, steel:9e5, runestone:9e5,
+               rations:0, trueore:0, truegold:0 };
+    // a hero or two, so the strong hold really does carry a better multiplier
+    if(body.strong){
+      st.heroes.marshal = { lvl:20, xp:0, stars:3, deeds:0, gear:{}, skills:[null,null,null] };
+      st.heroes.exile   = { lvl:20, xp:0, stars:3, deeds:0, gear:{}, skills:[null,null,null] };
+      st.court = ['marshal','exile'];
+    }
+    st.b.command = body.strong ? 20 : 5;
+    markDirty();
+    return send(res, 200, { ok:true, power: armyPower(st) });
+  }
+
+  /* ── the Watch ── */
+
+  if(path === '/api/watch'){
+    advance(u, now);
+    return send(res, 200, { watch: watchView(u, now) });
+  }
+
+  if(path === '/api/watch/send'){
+    const a = db.alliances[u.alliance];
+    if(!a) return send(res, 400, { error:'The Watch is alliance work — join one first.' });
+    const to = String(body.to || '');
+    const host = db.users[to.toLowerCase()];
+    if(!host || host === u) return send(res, 400, { error:'No such ally.' });
+    if(host.alliance !== u.alliance) return send(res, 400, { error:'They are not in your alliance.' });
+    advance(u, now); advance(host, now);
+    host.state.watch = host.state.watch || [];
+    if(host.state.watch.length >= WATCH_MAX)
+      return send(res, 400, { error:'Their wall already holds '+WATCH_MAX+' columns.' });
+    if(host.state.watch.some(g => g && g.from === u.name))
+      return send(res, 400, { error:'Your Watch already stands there.' });
+
+    /* Fitted through the same column rules a march uses, so the Watch cannot be a way
+       to move more troops than your captains can command. */
+    const party = Array.isArray(body.heroes) ? body.heroes.filter(Boolean).slice(0, 3) : [];
+    const fit = fitColumn(u.state, body.troops || {}, party);
+    if(!fit.total) return send(res, 400, { error:'Choose troops to send.' });
+    for(const [k, n] of Object.entries(fit.troops)) u.state.t[k] -= n;
+
+    /* Base and multiplier are computed by the SENDER, now. The host does not know our
+       tier levels, and a garrison must not weaken later because we took our heroes out
+       on a march after posting it. */
+    const bd = armyBreakdown(u.state);
+    let base = 0;
+    for(const [k, n] of Object.entries(fit.troops)) base += tierPower(u.state, k) * n;
+    const id = randomBytes(6).toString('hex');
+    const entry = { id, from: u.name, troops: { ...fit.troops }, count: fit.total,
+                    base: Math.round(base), mult: bd.ownMult, hurt: 0, until: now + WATCH_MS };
+    host.state.watch.push(entry);
+    u.state.watching = u.state.watching || [];
+    u.state.watching.push({ id, to: host.name, troops: { ...fit.troops }, until: now + WATCH_MS });
+    pushLog(u.state, '🕯️ ' + fit.total + ' march to stand watch over ' + host.name + '.', 'gold');
+    pushLog(host.state, '🕯️ ' + u.name + ' has sent ' + fit.total + ' to stand your watch.', 'gold');
+    markDirty(); flush();
+    return send(res, 200, { watch: watchView(u, now), ...publicState(u) });
+  }
+
+  if(path === '/api/watch/recall'){
+    advance(u, now);
+    const which = String(body.to || '');
+    const w = (u.state.watching || []).find(x => !which || x.to === which);
+    if(!w) return send(res, 400, { error:'You have no Watch standing there.' });
+    w.until = 0;                       // watchReturn does the rest, once, in one place
+    watchReturn(u, now);
+    markDirty(); flush();
+    return send(res, 200, { watch: watchView(u, now), ...publicState(u) });
+  }
+
+  /* ── the Muster Roll ── */
+
+  if(path === '/api/muster'){
+    const a = db.alliances[u.alliance];
+    if(!a) return send(res, 400, { error:'The Roll is alliance work — join one first.' });
+    advance(u, now);
+    const view = musterView(a, u, now);
+    markDirty();
+    return send(res, 200, { muster: view });
+  }
+
+  if(path === '/api/muster/reroll'){
+    const a = db.alliances[u.alliance];
+    if(!a) return send(res, 400, { error:'You are in no alliance.' });
+    advance(u, now);
+    const seat = musterSeat(a, u, now);
+    if(now < (seat.rerollAt || 0))
+      return send(res, 400, { error:'The clerks are still redrawing — wait a little.' });
+    /* Rerolling never offers the same work back: a button that can do nothing is a
+       button that lies, and this one costs a 20-minute cooldown to press. */
+    seat.task = rollTask(u.state, Math.random, seat.task && seat.task.kind);
+    seat.rerollAt = now + REROLL_MS;
+    markDirty(); flush();
+    return send(res, 200, { muster: musterView(a, u, now) });
+  }
+
+  if(path === '/api/muster/claim'){
+    const a = db.alliances[u.alliance];
+    if(!a) return send(res, 400, { error:'You are in no alliance.' });
+    if(a.members.length < MUSTER_MIN_MEMBERS)
+      return send(res, 400, { error:'The Roll needs at least '+MUSTER_MIN_MEMBERS+' in the alliance.' });
+    advance(u, now);
+    const m = musterOf(a, now);
+    const seat = musterSeat(a, u, now);
+    const p = taskProgress(u.state, seat.task);
+    if(!p.done) return send(res, 400, { error:'That work is not finished — '+p.have+' of '+p.need+'.' });
+    const w = weightOf(seat.task.weight);
+    seat.points = (seat.points || 0) + w.points;
+    seat.done = (seat.done || 0) + 1;
+    m.total = (m.total || 0) + w.points;
+    /* Both counters, as in WoS: the personal one is what pays you, the alliance one
+       is what lifts everybody's share. Your neighbour's work being worth something to
+       you is the entire reason a shared board beats a private quest list. */
+    const d = MUSTER_TASKS[seat.task.kind] || {};
+    pushLog(u.state, '📜 Muster Roll — '+(d.name||'work')+' done, +'+w.points+' points.', 'gold');
+    for(const nameRaw of a.members){
+      const mem = db.users[String(nameRaw).toLowerCase()];
+      if(mem && mem !== u) pushLog(mem.state, '📜 '+u.name+' answered the Roll (+'+w.points+').');
+    }
+    seat.task = rollTask(u.state, Math.random, seat.task.kind);
+    markDirty(); flush();
+    return send(res, 200, { muster: musterView(a, u, now), earned: w.points });
   }
 
   /* ── chat ── */
