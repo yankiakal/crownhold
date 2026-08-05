@@ -10,6 +10,7 @@ import { TIERS } from './defs.js';
 import {
   TILE_TYPES, MAP_W, MAP_H, CX, CY, TRAVEL_MS_PER_TILE, GATHER_MS,
   tileDist, marchSlots, tileBusy, marchPower, campPower, gatherYield, startMarch,
+  LONG_HAUL_WORK, LONG_HAUL_YIELD,
 } from './world.js';
 import {
   fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor, capFor, isUnlocked,
@@ -566,11 +567,21 @@ function renderDetail(S){
       else{
         const home = armyPower(S);
         body += '<p class="d-row">Your home power is <b>'+home+'</b> — troops you send stop defending until they return.</p>'
-          + '<div style="display:flex;gap:.5rem;margin-top:.5rem">'
+          + '<div style="display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap">'
           + '<button data-act="march" data-idx="'+k+'" data-frac="0.25">March ¼</button>'
           + '<button data-act="march" data-idx="'+k+'" data-frac="0.5">March ½</button>'
           + '<button class="primary" data-act="march" data-idx="'+k+'" data-frac="1">March all</button>'
           + '</div>';
+        if(tt.kind === 'gather'){
+          body += '<p class="d-delta" style="margin-top:.7rem">🌙 <b>Long haul</b>: work the node for '
+            + ftime(LONG_HAUL_WORK)+' instead of '+ftime(GATHER_MS)+' and bring back <b>'
+            + fmt(gatherYield(S,tile)*LONG_HAUL_YIELD)+' '+tt.res+'</b> — the thing to set going before you close the game. '
+            + 'Those troops defend nothing until dawn.</p>'
+            + '<div style="display:flex;gap:.5rem">'
+            + '<button data-act="march" data-idx="'+k+'" data-frac="0.5" data-long="1">Long haul ½</button>'
+            + '<button class="primary" data-act="march" data-idx="'+k+'" data-frac="1" data-long="1">Long haul, all</button>'
+            + '</div>';
+        }
       }
     }
   }
@@ -717,10 +728,14 @@ function renderCodex(S){
     + '<li>That is the whole anti-P2W thesis in one mechanic — Kingshot sells speedups, here your alliance <i>is</i> the speedup, and it costs nothing but showing up for each other.</li>'
     + '</ul>'
 
+    + '<h3>Chat</h3>'
+    + '<ul><li>Four rooms: the whole state, your alliance, direct messages, and private groups anyone can make. The 💬 button sits bottom-right whenever you are signed in.</li></ul>'
+
     + '<h3>The Frontier</h3>'
     + '<ul>'
     + '<li>Tap a map tile to inspect and <b>march</b> on it: resource nodes (worked for a large haul), Bandit Camps (burned for loot, Valor and Mastery), Ancient Ruins (Valor, Mastery, 20% Writ).</li>'
     + '<li>Travel costs 12s per tile each way; gathering takes 60s. Marching troops carry their own rations and <b>do not defend the wall</b> until they return.</li>'
+    + '<li><b>Long haul</b>: work a resource node for '+ftime(LONG_HAUL_WORK)+' instead of a minute and bring back '+LONG_HAUL_YIELD+'× the haul — the thing to set going before you close the game, at the price of an undefended wall until they are home.</li>'
     + '<li>Camp battles use your march&#39;s power (heroes and Mastery apply; no wall, no stance). Defeat costs a third of the marchers.</li>'
     + '<li>One march slot; Town Hall 10 grants a second. Worked tiles regrow in ~4 minutes, sometimes richer.</li>'
     + '</ul>'
@@ -895,6 +910,30 @@ const VIEW_ACTIONS = {
       .then(d => { store.s = d.state; net.refreshArena().then(render); net.refreshLeaderboard().then(render); render(); })
       .catch(err => { acctMsg = err.message; acctOpen = true; renderAccount(); });
   },
+  chatToggle: () => { chatOpen = !chatOpen; chatHint = ''; renderChat(true); },
+  chatRoom:   b => {
+    chatRoom = { channel: b.dataset.key, target: b.dataset.mode || null };
+    renderChat(true);
+  },
+  chatSend: () => {
+    const el = document.getElementById('chat-input');
+    const text = el && el.value.trim();
+    if(!text) return;
+    el.value = '';
+    net.chatSend(chatRoom.channel, chatRoom.target, text).then(() => renderChat(true)).catch(()=>{});
+  },
+  chatNewGroup: () => {
+    const name = prompt2('Name your group');
+    if(name) net.chatGroup(name).then(d => { chatRoom = {channel:'group', target:d.id}; renderChat(true); }).catch(()=>{});
+  },
+  chatNewDm: () => {
+    const who = prompt2('Which hold do you want to message?');
+    if(who) net.chatSend('dm', who, 'Hail.').then(() => { chatRoom = {channel:'dm', target:who}; renderChat(true); }).catch(()=>{});
+  },
+  chatInvite: () => {
+    const who = prompt2('Invite which hold?');
+    if(who) net.chatInvite(chatRoom.target, who).then(() => renderChat(true)).catch(()=>{});
+  },
   allianceOpen:  () => { allyOpen = true; allyMsg = ''; renderAllySheet(); },
   allianceClose: () => { allyOpen = false; renderAllySheet(); },
   allianceMake:  () => {
@@ -940,7 +979,7 @@ const VIEW_ACTIONS = {
 
 function paramsOf(btn){
   const d = btn.dataset;
-  return { key:d.key, n:d.n, i:d.i, idx:d.idx, frac:d.frac };
+  return { key:d.key, n:d.n, i:d.i, idx:d.idx, frac:d.frac, long:d.long, mode:d.mode };
 }
 
 function runAction(btn){
@@ -966,6 +1005,78 @@ function runAction(btn){
 const acctBox = document.createElement('div');
 document.body.appendChild(acctBox);
 let acctOpen = false, acctMsg = '';
+
+/* ── chat ──
+   Also outside the tick loop: an input that gets rebuilt four times a second
+   cannot be typed into. Redrawn only when messages arrive or the room changes. */
+const chatBox = document.createElement('div');
+chatBox.id = 'chatdock';
+document.body.appendChild(chatBox);
+
+// native prompt() is blocked in sandboxed frames, same as confirm() was
+function prompt2(question){
+  const el = document.getElementById('chat-input');
+  const v = el && el.value.trim();
+  if(v){ el.value = ''; return v; }
+  chatHint = question + ' — type it in the box below, then tap again.';
+  return null;
+}
+let chatHint = '';
+let chatOpen = false, chatRoom = {channel:'state', target:null}, chatSig = '';
+
+export function renderChat(force){
+  if(!net.isOnline()){ chatBox.innerHTML = ''; return; }
+  const d = net.chatData();
+  const msgs = !d ? []
+    : chatRoom.channel === 'state' ? d.state
+    : chatRoom.channel === 'alliance' ? d.alliance
+    : chatRoom.channel === 'dm' ? (d.dms[chatRoom.target] || [])
+    : ((d.groups.find(g => g.id === chatRoom.target) || {}).msgs || []);
+  // only redraw when something actually changed, or typing gets interrupted
+  const sig = chatOpen + '|' + chatRoom.channel + '|' + chatRoom.target + '|'
+    + msgs.length + '|' + (msgs.length ? msgs[msgs.length-1].id : 0)
+    + '|' + (d ? d.groups.length + Object.keys(d.dms).length : 0);
+  if(!force && sig === chatSig) return;
+  chatSig = sig;
+
+  if(!chatOpen){
+    chatBox.innerHTML = '<button class="chat-fab" data-act="chatToggle">💬 Chat</button>';
+    return;
+  }
+  const tabs = [['state','🌍 State'], ['alliance','🛡 Alliance']];
+  let tabHtml = tabs.map(([c,l]) =>
+    '<button class="chat-tab'+(chatRoom.channel===c?' active':'')+'" data-act="chatRoom" data-key="'+c+'">'+l+'</button>').join('');
+  if(d){
+    for(const name of Object.keys(d.dms))
+      tabHtml += '<button class="chat-tab'+(chatRoom.channel==='dm'&&chatRoom.target===name?' active':'')
+        + '" data-act="chatRoom" data-key="dm" data-mode="'+name+'">@'+name+'</button>';
+    for(const g of d.groups)
+      tabHtml += '<button class="chat-tab'+(chatRoom.channel==='group'&&chatRoom.target===g.id?' active':'')
+        + '" data-act="chatRoom" data-key="group" data-mode="'+g.id+'">◇ '+g.name+'</button>';
+  }
+  const me = net.accountName();
+  const body = msgs.map(m =>
+    '<p class="chat-msg'+(m.from===me?' mine':'')+'"><b>'+m.from+'</b> '+m.text+'</p>').join('')
+    || '<p class="chat-msg" style="opacity:.6">Nothing said here yet.</p>';
+
+  chatBox.innerHTML = '<div class="chat-panel">'
+    + '<div class="chat-head"><span>Chat</span>'
+    + '<button class="info-btn" data-act="chatNewGroup" title="Start a private group">＋ group</button>'
+    + '<button class="info-btn" data-act="chatNewDm" title="Message a hold directly">＋ dm</button>'
+    + '<button class="info-btn" data-act="chatToggle">✕</button></div>'
+    + '<div class="chat-tabs">'+tabHtml+'</div>'
+    + '<div class="chat-log" id="chatlog">'+body+'</div>'
+    + (chatRoom.channel==='group'
+      ? '<div class="chat-tabs"><button class="chat-tab" data-act="chatInvite">＋ invite a hold</button></div>' : '')
+    + (chatHint ? '<p class="chat-msg" style="color:var(--gold)">'+chatHint+'</p>' : '')
+    + '<div class="chat-row"><input id="chat-input" maxlength="300" placeholder="Say something…">'
+    + '<button class="primary" data-act="chatSend">Send</button></div>'
+    + '</div>';
+  const log = document.getElementById('chatlog');
+  if(log) log.scrollTop = log.scrollHeight;
+  const input = document.getElementById('chat-input');
+  if(input) input.onkeydown = e => { if(e.key === 'Enter') VIEW_ACTIONS.chatSend(); };
+}
 
 /* the alliance sheet lives outside the tick loop too, for the same reason */
 const allyBox = document.createElement('div');

@@ -2,7 +2,7 @@ import './styles.css';
 import { store, load, save } from './state.js';
 import { tick } from './logic.js';
 import { tickWorld } from './world.js';
-import { render, renderAccount, wire } from './ui.js';
+import { render, renderAccount, renderChat, wire } from './ui.js';
 import * as net from './net.js';
 
 // PWA: register the service worker on real hosting (no-op inside the artifact sandbox)
@@ -21,10 +21,11 @@ net.resume().then(s => {
     net.refreshLeaderboard().then(render);
     net.refreshArena().then(render);
     net.refreshAlliance().then(render);
+    net.refreshChat().then(() => renderChat());
   }
 }).catch(()=>{});
 
-let lastTick = Date.now(), lastSave = 0, lastPull = 0, lastBoard = 0;
+let lastTick = Date.now(), lastSave = 0, lastPull = 0, lastBoard = 0, lastChat = 0;
 setInterval(() => {
   const now = Date.now();
   const dt = (now - lastTick)/1000;
@@ -46,11 +47,13 @@ setInterval(() => {
       net.refreshArena();
       net.refreshAlliance();
     }
+    if(now - lastChat > 5000){ lastChat = now; net.refreshChat().then(() => renderChat()); }
   }else if(now - lastSave > 5000){
     save(store.s, now); lastSave = now;
   }
 
   render();
+  renderChat();
 }, 250);
 
 window.addEventListener('pagehide', () => { if(!net.isOnline()) save(store.s, Date.now()); });

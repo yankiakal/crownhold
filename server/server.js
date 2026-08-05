@@ -43,6 +43,7 @@ if(existsSync(DATA_FILE)){
   catch(e){ console.error('could not read save file, starting empty:', e.message); }
 }
 if(!db.alliances) db.alliances = {};
+if(!db.chat) db.chat = { state: [], alliance: {}, dm: {}, group: {} };
 let dirty = false;
 const markDirty = () => { dirty = true; };
 function flush(){
@@ -142,6 +143,41 @@ function allianceView(tag, now){
     helpPct: +(allyHelpFraction(a) * 100).toFixed(2),
     helpCap: allyHelpCap(a),
   };
+}
+
+/* ── chat ──
+   Four kinds of room: the whole state, your alliance, a direct line to one
+   person, and any private group people make for themselves. Kept in memory with
+   a hard cap per room; text is escaped on the way in so nothing a player types
+   can ever become markup. */
+const CHAT_KEEP = 120, CHAT_MAX = 300;
+let chatSeq = 1;
+
+const esc = t => String(t).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+const dmKey = (a, b) => [a.toLowerCase(), b.toLowerCase()].sort().join('|');
+
+function pushMsg(room, from, text){
+  room.push({ id: chatSeq++, from, text: esc(text).slice(0, CHAT_MAX), at: Date.now() });
+  if(room.length > CHAT_KEEP) room.splice(0, room.length - CHAT_KEEP);
+  markDirty();
+}
+function roomFor(u, channel, target){
+  if(channel === 'state') return db.chat.state;
+  if(channel === 'alliance'){
+    if(!u.alliance) return null;
+    return (db.chat.alliance[u.alliance] ||= []);
+  }
+  if(channel === 'dm'){
+    const other = db.users[String(target||'').toLowerCase()];
+    if(!other || other === u) return null;
+    return (db.chat.dm[dmKey(u.name, other.name)] ||= []);
+  }
+  if(channel === 'group'){
+    const g = db.chat.group[target];
+    if(!g || !g.members.includes(u.name)) return null;
+    return g.msgs;
+  }
+  return null;
 }
 
 /* ── the fast-forward: bring a hold from its last save to now ── */
@@ -439,6 +475,61 @@ async function api(req, res, url){
     }
     if(helped) markDirty();
     return send(res, 200, { helped, alliance: allianceView(u.alliance, now) });
+  }
+
+  /* ── chat ── */
+
+  if(path === '/api/chat/send'){
+    const text = String(body.text || '').trim();
+    if(!text) return send(res, 400, { error:'Say something.' });
+    const room = roomFor(u, String(body.channel||'state'), body.target);
+    if(!room) return send(res, 400, { error:'You cannot speak in that room.' });
+    pushMsg(room, u.name, text);
+    return send(res, 200, { ok:true });
+  }
+
+  if(path === '/api/chat/fetch'){
+    const groups = Object.entries(db.chat.group)
+      .filter(([,g]) => g.members.includes(u.name))
+      .map(([id,g]) => ({ id, name:g.name, members:g.members, msgs:g.msgs.slice(-40) }));
+    const dms = {};
+    for(const [key, msgs] of Object.entries(db.chat.dm)){
+      if(!key.split('|').includes(u.name.toLowerCase())) continue;
+      const otherKey = key.split('|').find(n => n !== u.name.toLowerCase());
+      const other = db.users[otherKey];
+      if(other) dms[other.name] = msgs.slice(-40);
+    }
+    return send(res, 200, {
+      state: db.chat.state.slice(-40),
+      alliance: u.alliance ? (db.chat.alliance[u.alliance] || []).slice(-40) : [],
+      dms, groups,
+      online: Object.values(db.users)
+        .filter(x => now - (x.state.lastSeen || 0) < 300000)
+        .map(x => x.name).slice(0, 50),
+    });
+  }
+
+  if(path === '/api/chat/group'){
+    const name = String(body.name || '').trim().slice(0, 24);
+    if(!name) return send(res, 400, { error:'Name the group.' });
+    const id = 'g' + (chatSeq++) + Math.random().toString(36).slice(2, 6);
+    db.chat.group[id] = { name, members:[u.name], msgs:[], owner:u.name };
+    markDirty();
+    return send(res, 200, { id, name });
+  }
+
+  if(path === '/api/chat/invite'){
+    const g = db.chat.group[String(body.id||'')];
+    if(!g || !g.members.includes(u.name)) return send(res, 404, { error:'No such group.' });
+    const other = db.users[String(body.who||'').toLowerCase()];
+    if(!other) return send(res, 404, { error:'No hold by that name.' });
+    if(!g.members.includes(other.name)){
+      if(g.members.length >= 20) return send(res, 400, { error:'That group is full.' });
+      g.members.push(other.name);
+      pushMsg(g.msgs, '—', other.name + ' joins the circle.');
+      markDirty();
+    }
+    return send(res, 200, { ok:true, members:g.members });
   }
 
   if(path === '/api/reset'){

@@ -156,6 +156,28 @@ export async function arenaAttack(target, stance, frac){
   return d;   // { report, name, state }
 }
 
+let chat = null;
+export function chatData(){ return chat; }
+export async function refreshChat(){
+  if(!isOnline()) return null;
+  try{ chat = await post('/api/chat/fetch', { token: session.token }); return chat; }
+  catch(e){ return null; }
+}
+export async function chatSend(channel, target, text){
+  await post('/api/chat/send', { token: session.token, channel, target, text });
+  return refreshChat();
+}
+export async function chatGroup(name){
+  const d = await post('/api/chat/group', { token: session.token, name });
+  await refreshChat();
+  return d;
+}
+export async function chatInvite(id, who){
+  const d = await post('/api/chat/invite', { token: session.token, id, who });
+  await refreshChat();
+  return d;
+}
+
 export async function refreshLeaderboard(){
   if(!server) return null;
   try{

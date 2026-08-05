@@ -29,6 +29,31 @@ real currency, real prices. No premium gem layer to obscure costs.
 - Every gameplay-relevant item on the pass is also earnable free; the paid track is
   cosmetic and convenience only.
 
+## The Steward's Pact — $4.99 / 30 days
+
+Kingshot sells a pack that automates alliance help. Ours can too, with one
+structural difference that keeps it clean.
+
+**Asking for help is free and automatic for everyone.** In Crownhold a build in
+progress is simply visible to your alliance — there is no "request help" button
+to tap, and therefore none to sell. That was a deliberate choice: the moment
+paying players get *helped* faster than free ones, the pack becomes progression
+for money.
+
+So the Pact automates the **giving**, plus conveniences that touch nothing:
+
+- **Standing orders** — your hold helps every ally automatically, even while you
+  are offline. It costs you nothing, it speeds up other people, and it earns you
+  the same Valor a manual tap would.
+- Extra saved army presets and stance presets.
+- Full battle-log and chronicle history (free accounts keep the recent window).
+- A supporter banner and chat flair — visible, which is the actual product.
+- Build-complete and raid-incoming notifications.
+
+Every line passes the deletion test: remove the Pact and no battle, no build
+time, and no ranking changes for the person who bought it. What they bought is
+fewer taps and a visible badge.
+
 ## Rewarded ads (optional module, capped)
 
 Opt-in "watch an ad → small Valor bonus," hard-capped per day, identical cap for

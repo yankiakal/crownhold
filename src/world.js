@@ -2,7 +2,7 @@
 // Same contract as logic.js — pure state functions, injectable time and rng.
 // tickWorld() is called from the main loop and the sim alongside logic.tick().
 
-import { TROOPS } from './defs.js';
+import { TROOPS, TIME_SCALE } from './defs.js';
 import {
   tierPower, heroBonus, spoilBonus, perk, wavePower,
   gainRes, gainValor, gainShield, gainMastery, pushLog, showBanner, fmt, ftime,
@@ -11,6 +11,10 @@ import {
 export const MAP_W = 11, MAP_H = 7, CX = 5, CY = 3;
 export const TRAVEL_MS_PER_TILE = 12000, GATHER_MS = 60000, RUIN_MS = 25000;
 export const RESPAWN_MS = 240000;
+/* The long haul: send a column out for hours and they work the node properly.
+   This is the thing to set going before you close the game — the troops are
+   away the whole time and cannot defend the wall, so it is a real wager. */
+export const LONG_HAUL_WORK = GATHER_MS * 6 * TIME_SCALE, LONG_HAUL_YIELD = 9;
 
 export const TILE_TYPES = {
   woods:    {icon:'🌲', name:'Deep Woods',  kind:'gather', res:'wood'},
@@ -70,11 +74,13 @@ export function gatherYield(s, tile){
   return Math.round(base * scale);
 }
 
-export function startMarch(s, idx, frac, now){
+export function startMarch(s, idx, frac, now, longHaul){
   s.now = now;
   const tile = s.world.tiles[idx];
   if(!tile || tile.respawnAt || tileBusy(s, idx)) return false;
   if((s.marches||[]).length >= marchSlots(s)) return false;
+  const kind = TILE_TYPES[tile.type].kind;
+  const long = !!longHaul && kind === 'gather';   // only nodes can be worked for hours
   const troops = {};
   let total = 0;
   for(const k of Object.keys(TROOPS)){
@@ -84,14 +90,15 @@ export function startMarch(s, idx, frac, now){
   if(total===0) return false;
   for(const [k,n] of Object.entries(troops)) s.t[k] -= n;
   const travel = tileDist(tile)*TRAVEL_MS_PER_TILE;
-  const kind = TILE_TYPES[tile.type].kind;
-  const work = kind==='gather' ? GATHER_MS : kind==='ruin' ? RUIN_MS : 0;
+  const work = kind==='gather' ? (long ? LONG_HAUL_WORK : GATHER_MS) : kind==='ruin' ? RUIN_MS : 0;
   s.marches.push({
-    tile:idx, troops,
+    tile:idx, troops, long,
     arriveAt: now+travel, homeAt: now+travel+work+travel,
     resolved:false,
   });
-  pushLog(s, '🚩 '+total+' troops march on the '+TILE_TYPES[tile.type].name+' ('+ftime(travel)+' out).');
+  pushLog(s, '🚩 '+total+' troops march on the '+TILE_TYPES[tile.type].name
+    + (long ? ' to work it through the night ('+ftime(travel+work+travel)+' round trip).'
+            : ' ('+ftime(travel)+' out).'));
   return true;
 }
 
@@ -119,9 +126,10 @@ function resolveArrival(s, m, now, rand){
       m.homeAt = now + tileDist(tile)*TRAVEL_MS_PER_TILE;
     }
   }else if(tt.kind==='gather'){
-    m.loot = {[tt.res]: gatherYield(s, tile)};
-    m.valor = 0; m.mxp = 6;
-    m.report = '⛏ The '+tt.name+' is worked clean';
+    const mult = m.long ? LONG_HAUL_YIELD : 1;
+    m.loot = {[tt.res]: Math.round(gatherYield(s, tile) * mult)};
+    m.valor = m.long ? 8 : 0; m.mxp = m.long ? 30 : 6;
+    m.report = m.long ? '⛏ The '+tt.name+' is stripped to the bedrock' : '⛏ The '+tt.name+' is worked clean';
     tile.respawnAt = now + RESPAWN_MS;
   }else{ // ruin
     m.loot = {food: 10*tile.lvl*s.b.townhall};

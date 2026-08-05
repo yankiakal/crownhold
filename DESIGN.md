@@ -195,6 +195,46 @@ late-game costs by 3–10× at launch and the cap lands in the intended window �
 still an order of magnitude short of Kingshot's multi-year VIP grind, which is
 the point.
 
+## Events — and the spending-race problem (design, not yet built)
+
+Kingshot's events are the monetisation engine, and the mechanism is worth naming
+precisely: an event is a scoring window, score comes from spending stockpiles
+(speedups, resources), and rewards are ranked. So the leaderboard is a **spending
+leaderboard**. Free players hoard for weeks to place once; payers place whenever
+they like. Remove purchasable speedups and the same structure still rots — it
+just becomes a hoarding contest, where the winner is whoever sat on their
+resources longest rather than whoever played best.
+
+Five rules make events competitive without becoming a wallet or a warehouse race:
+
+1. **Milestones carry the rewards, rankings carry the glory.** Roughly 90% of an
+   event's material value sits in personal thresholds every committed player can
+   reach ("score 5,000 → 3 Writs, 400 Valor"). Ranking pays prestige: titles,
+   banners, a cosmetic frame, a line on the state board. Nobody is priced out of
+   the rewards; the top slots are still worth fighting for.
+2. **Score the doing, not the dumping.** Points come from actions completed
+   during the window — levels raised, waves held, camps burned, troops drilled,
+   research finished — and each source has a **daily cap**, exactly like the Valor
+   quota. Thirty days of hoard cannot be dumped in one hour.
+3. **Bracketed boards.** Rank inside your power band, as the arena already does.
+   A Town Hall 12 hold competes with its peers, not with the server's oldest
+   account.
+4. **Alliance events outnumber solo ones.** A shared bar the whole alliance
+   fills turns "who spent most" into "who showed up", and it is the reason
+   alliances retain people. Rewards go to every member above a participation
+   floor, not to the top contributor.
+5. **Seasons rotate, and the pass is cosmetic.** An eight-week season with its own
+   event calendar, a free reward track and a paid *cosmetic* track — never a
+   power track. This is where the money is, per MONETIZATION.md.
+
+The honest trade: we will earn less per event than Kingshot does. In exchange the
+event calendar stays fun for someone with a job, which is the entire pitch.
+
+Planned first set: **Muster Days** (drilling and troop tiers), **Stonecutters**
+(construction), **The Long Hunt** (frontier camps and ruins), **Scholars' Term**
+(research), and **Warband Season** (alliance-wide waves held) — each a scoring
+window with milestones, a bracketed board, and daily caps per source.
+
 ## The Arena (v1.2 — fair PvP, finally)
 
 This is the system Kingshot gets worst, so ours inverts its incentives.

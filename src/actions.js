@@ -26,7 +26,7 @@ export const GAME_ACTIONS = {
   choose:       (s,p,now)      => chooseOption(s, Number(p.i), now),
   rerollChoice: (s,p,now,rand) => rerollChoice(s, now, rand),
   promote:      (s,p,now)      => promote(s, p.key, now),
-  march:        (s,p,now)      => startMarch(s, Number(p.idx), Number(p.frac), now),
+  march:        (s,p,now)      => startMarch(s, Number(p.idx), Number(p.frac), now, p.long === '1'),
   intro:        (s)            => { s.seenIntro = true; return true; },
 };
 
