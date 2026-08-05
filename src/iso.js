@@ -28,6 +28,7 @@ const PLOTS = {
   tavern:     [4, 2],
   hospital:   [5, 6],
   warehouse:  [3, 6],
+  library:    [6, 1],
   forge:      [1, 3],
   runeworks:  [7, 1],
 };
@@ -46,6 +47,7 @@ const LOOK = {
   tavern:     { roof:'#7a5a2e', body:'#63503b', w:1.0, h:18, kind:'hall'  },
   hospital:   { roof:'#5f6b52', body:'#5f5647', w:1.0, h:18, kind:'hall'  },
   warehouse:  { roof:'#5b4f3a', body:'#5a4f3e', w:1.2, h:18, kind:'hall'  },
+  library:    { roof:'#4a5a6b', body:'#5a5449', w:1.1, h:24, kind:'hall'  },
   forge:      { roof:'#6b3a2c', body:'#4f4640', w:1.0, h:22, kind:'hall'  },
   runeworks:  { roof:'#3c4a6b', body:'#4a4658', w:1.0, h:26, kind:'tower' },
 };

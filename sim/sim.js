@@ -138,6 +138,8 @@ function simulate(minutes, enemyLuck, skilled, label){
         if(!pick && s.b.barracks<s.b.townhall && eligible('barracks')) pick='barracks';
         if(!pick && s.b.watchtower<3 && eligible('watchtower')) pick='watchtower';
         // the refineries are not optional: without them every upgrade stops at 14
+        // the Library is the spine of research — the bot keeps it climbing
+        if(!pick && s.b.library < Math.min(10, s.b.townhall) && eligible('library')) pick='library';
         if(!pick) for(const k of ['forge','runeworks','tavern','granary','hospital','warehouse'])
           if(eligible(k)){ pick=k; break; }
       }

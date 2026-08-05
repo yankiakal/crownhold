@@ -26,7 +26,7 @@ import {
   committedTroops, forcePower,
 } from './arena.js';
 import {
-  RESEARCH, techLvl, techCost, techTime, researchProgress,
+  RESEARCH, techLvl, techCost, techTime, researchProgress, techCap, techBlockedBy,
 } from './research.js';
 import {
   EVENTS, EVENT_MS, currentEvent, eventEndsIn, eventState, eventCap,
@@ -507,7 +507,13 @@ function renderEvent(S){
 
 function renderResearch(S){
   const p = researchProgress(S);
-  let h = '<section class="panel"><h2>Research <span style="letter-spacing:.05em">'+p.done+'/'+p.total+' · '+p.pct+'%</span></h2>';
+  const lib = S.b.library || 0;
+  let h = '<section class="panel"><h2>Research <span style="letter-spacing:.05em">'
+    + p.done+'/'+p.total+' · Library '+lib+'</span></h2>';
+  if(!lib)
+    h += '<div class="stat-note" style="color:var(--bad)">📚 No Great Library — your scholars have nowhere to work. Build it (Town Hall 4) before anything can be studied.</div>';
+  else
+    h += '<div class="stat-note">📚 The Great Library is level '+lib+', so no study may pass level '+lib+'. Raise it to raise the ceiling.</div>';
   if(S.rq){
     const d = RESEARCH[S.rq.key];
     h += queueStrip(S, S.rq, '📚 '+d.name+' → '+(techLvl(S,S.rq.key)+1), 'finishResearch');
@@ -516,13 +522,11 @@ function renderResearch(S){
   }
   for(const [k,d] of Object.entries(RESEARCH)){
     const lvl = techLvl(S,k);
-    const locked = S.b.townhall < d.th;
-    const maxed = lvl >= d.max;
+    const blocked = techBlockedBy(S,k);
     h += '<div class="trow"><span>'+d.icon+'</span><span class="tname">'+d.name+'</span>'
       + '<span class="tmeta">'+(lvl?'+'+(lvl*d.per)+(d.unit||'')+' ':'')+d.fx+'</span>'
       + '<span class="spacer"></span><span class="count">'+lvl+'/'+d.max+'</span>';
-    if(locked) h += '<span class="tmeta">Town Hall '+d.th+'</span>';
-    else if(maxed) h += '<span class="tmeta" style="color:var(--gold)">mastered</span>';
+    if(blocked) h += '<span class="tmeta">'+blocked+'</span>';
     else h += '<button data-act="detail" data-dtype="tech" data-key="'+k+'">Study</button>';
     h += '</div>';
   }
@@ -807,8 +811,9 @@ function renderDetail(S){
       + '<p class="d-row">Now: <b>+'+(lvl*d.per)+(d.unit||'')+'</b>'
       + (maxed ? '' : ' → next level <b>+'+((lvl+1)*d.per)+(d.unit||'')+'</b>')
       + ' · fully mastered: +'+(d.max*d.per)+(d.unit||'')+'</p>';
-    if(S.b.townhall < d.th) body += '<p class="d-warn">Requires Town Hall '+d.th+'.</p>';
-    else if(maxed) body += '<p class="d-delta" style="color:var(--gold)">Fully mastered.</p>';
+    const blocked = techBlockedBy(S,k);
+    body += '<p class="d-row">The Great Library (level '+(S.b.library||0)+') caps this at <b>'+techCap(S,k)+'</b>.</p>';
+    if(blocked) body += '<p class="d-warn">'+blocked+'.</p>';
     else{
       body += '<p class="d-row">Cost: '+costHtml(S, techCost(S,k))+' · ⏱ '+ftime(techTime(S,k))+'</p>'
         + (S.rq ? '<p class="d-warn">Your scholars are already busy with '+RESEARCH[S.rq.key].name+'.</p>' : '')
@@ -866,6 +871,7 @@ function renderCodex(S){
     + '<li>Offline: the hold produces (and the muster eats) for up to 2 hours while you are away. No raids strike while you are gone.</li>'
     + '<li>Build costs scale with level², and build <i>times</i> stretch with level too — a level-3 hut is minutes, a late keep is most of a day. The queue is the wall, and it keeps working while you are away.</li>'
     + '<li><b>A second crew</b> joins at Town Hall '+SECOND_QUEUE_TH+', so two upgrades can run at once (never two on the same building). Training runs on its own queue and is deliberately fast — raids arrive every 75s and the muster has to answer.</li>'
+    + '<li><b>Research lives in the Great Library</b> (Town Hall 4). Nothing can be studied without one, and <b>its level is the ceiling on every track</b> — a Library 7 means no study passes 7. Each level also speeds study by 2%. Research runs on its own queue and never competes with the build crews.</li>'
     + '<li><b>Refined goods</b>: the Forge (Town Hall 12) smelts iron and wood into <b>Steel</b> without pause; the Runeworks (Town Hall 22) binds stone and steel into <b>Runestone</b>. Their vaults are small — 10% and 3.5% of your raw storage.</li>'
     + '<li>From level '+15+' every upgrade also costs Steel; from level '+24+', Runestone too. That is what makes the last third of the game long — and why food, wood, stone and iron never stop mattering: they are the fuel.</li>'
     + '</ul>'

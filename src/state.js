@@ -20,7 +20,7 @@ export function freshState(now, seed){
     research:{}, rq:null, allyBonus:null, ev:null, daily:null,
     valor:0,
     b:{townhall:1,farm:1,lumberyard:1,quarry:0,ironmine:0,barracks:0,wall:0,watchtower:0,
-       tavern:0,granary:0,academy:0,hospital:0,warehouse:0,forge:0,runeworks:0},
+       tavern:0,granary:0,academy:0,hospital:0,warehouse:0,library:0,forge:0,runeworks:0},
     t:{spearman:8,archer:0,knight:0,ballista:0},
     tier:{spearman:1,archer:1,knight:1,ballista:1},
     heroes:{}, spoils:{},
@@ -117,7 +117,7 @@ export function load(now){
     if(!s.marches) s.marches = [];
     // v1.4 the deep economy
     for(const r of ['steel','runestone']) if(s.res[r]==null) s.res[r] = 0;
-    for(const k of ['forge','runeworks']) if(s.b[k]==null) s.b[k] = 0;
+    for(const k of ['forge','runeworks','library']) if(s.b[k]==null) s.b[k] = 0;
     if(s.achieved==null) s.achieved = {};
     if(s.campsBurned==null) s.campsBurned = 0;
     if(s.ruinsRaided==null) s.ruinsRaided = 0;

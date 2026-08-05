@@ -24,6 +24,8 @@ export const BUILDINGS = {
               cost:{wood:120,food:80},  time:18, max:25, th:4},
   warehouse: {name:'Warehouse',  icon:'📦', fx:'Defeats plunder 4% less of your stores per level.',
               cost:{stone:130,wood:80}, time:18, max:20, th:5},
+  library:   {name:'Great Library',icon:'📚', fx:'Houses your scholars. Its level is the ceiling on every study.',
+              cost:{wood:200,stone:140}, time:22, max:30, th:4},
   forge:     {name:'Forge',      icon:'🔥', fx:'Smelts iron and wood into Steel, without pause.',
               cost:{stone:300,iron:180}, time:40, max:25, th:12},
   runeworks: {name:'Runeworks',  icon:'🔮', fx:'Binds stone and steel into Runestone.',
