@@ -18,6 +18,7 @@ import {
 
 import { RESEARCH, techLvl, techBonus, techFlat, techCost, techTime, techAvailable } from './research.js';
 import { scoreDeed, eventState, currentEvent, claimableMilestones } from './events.js';
+import { dailyState, dailyProgress, DAILY_BONUS } from './daily.js';
 
 export { masteryLvl };
 
@@ -381,6 +382,30 @@ export function claimEvent(s, now){
   }
   showBanner(s, '🏆 Event reward claimed', 'win', now);
   return true;
+}
+
+export function claimDaily(s, now){
+  s.now = now;
+  const st = dailyState(s, now);
+  const rows = dailyProgress(s, now);
+  let got = false;
+  for(const t of rows){
+    if(!t.done || t.claimed) continue;
+    st.claimed.push(t.id);
+    gainReward(s, t.reward);
+    gainMastery(s, 8, now);
+    pushLog(s, '📋 Daily task done — '+t.txt+'.', 'gold');
+    got = true;
+  }
+  if(!st.bonus && rows.length && rows.every(t => st.claimed.includes(t.id))){
+    st.bonus = true;
+    gainReward(s, DAILY_BONUS);
+    gainMastery(s, 40, now);
+    pushLog(s, '📋 Every task done today — the hold is well run. +60 Valor, +1 Writ.', 'gold');
+    showBanner(s, '📋 Daily slate cleared', 'win', now);
+    got = true;
+  }
+  return got;
 }
 
 /* ── research: its own queue, so there is always something progressing ── */

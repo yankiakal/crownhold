@@ -12,6 +12,7 @@
 //   · Ranking (server-side, power-bracketed) carries prestige, not power.
 
 import { TIME_SCALE } from './defs.js';
+import { tallyDaily } from './daily.js';
 
 export const EVENT_MS = 6 * 3600 * 1000;          // a window; the live game uses days
 export const EVENT_CAP_BASE = 3000, EVENT_CAP_PER_TH = 250;
@@ -73,6 +74,39 @@ export const EVENTS = [
       {at:5500,  reward:{valor:300, shield:1}, txt:'+300 Valor, +1 Writ'},
     ],
   },
+  {
+    id:'roads', name:'Gathering Days', icon:'🛤️',
+    blurb:'The roads are busy. Score by working the frontier and running expeditions.',
+    sources:{ gathered:200, longHaul:700, expedition:90, camp:250 },
+    milestones:[
+      {at:400,  reward:{valor:35},            txt:'+35 Valor'},
+      {at:1200, reward:{valor:80},            txt:'+80 Valor'},
+      {at:2800, reward:{valor:150, shield:1}, txt:'+150 Valor, +1 Writ'},
+      {at:5400, reward:{valor:250},           txt:'+250 Valor'},
+    ],
+  },
+  {
+    id:'forge', name:'Forge Fires', icon:'🔥',
+    blurb:'The furnaces run hot. Score by building, reforging troops and finishing research.',
+    sources:{ built:150, promoted:450, research:300 },
+    milestones:[
+      {at:350,  reward:{valor:35},            txt:'+35 Valor'},
+      {at:1000, reward:{valor:85, shield:1},  txt:'+85 Valor, +1 Writ'},
+      {at:2400, reward:{valor:160},           txt:'+160 Valor'},
+      {at:4800, reward:{valor:270},           txt:'+270 Valor'},
+    ],
+  },
+  {
+    id:'trial', name:"Champions' Trial", icon:'🏆',
+    blurb:'The lists are open. Score in the arena and by holding your own wall.',
+    sources:{ arenaWin:600, warbandWon:350, waveWon:50 },
+    milestones:[
+      {at:400,  reward:{valor:45},            txt:'+45 Valor'},
+      {at:1200, reward:{valor:95},            txt:'+95 Valor'},
+      {at:2600, reward:{valor:180, shield:1}, txt:'+180 Valor, +1 Writ'},
+      {at:5000, reward:{valor:300, shield:1}, txt:'+300 Valor, +1 Writ'},
+    ],
+  },
 ];
 
 export function eventIndex(now){ return Math.floor(now / EVENT_MS) % EVENTS.length; }
@@ -109,6 +143,7 @@ export function eventState(s, now){
 /* Called wherever a deed happens. Respects the daily cap, which is what stops
    an event from becoming a stockpile-dumping contest. */
 export function scoreDeed(s, source, count, now){
+  tallyDaily(s, source, count, now);      // the same deed feeds today's task list
   const ev = currentEvent(now);
   const per = ev.sources[source];
   if(!per) return 0;

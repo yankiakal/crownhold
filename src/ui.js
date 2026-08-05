@@ -32,6 +32,7 @@ import {
   EVENTS, EVENT_MS, currentEvent, eventEndsIn, eventState, eventCap,
   nextMilestone, claimableMilestones, schedule,
 } from './events.js';
+import { dailyProgress, dailyState, DAILY_BONUS } from './daily.js';
 import * as net from './net.js';
 import { mountScene, sceneResize, pickBuilding } from './iso.js';
 import { store, freshState, save } from './state.js';
@@ -329,6 +330,59 @@ function renderChronicle(S){
   for(const e of S.log.slice(0,16))
     h += '<p class="'+e.cls+'"><time>'+clock(e.t)+'</time>'+e.txt+'</p>';
   h += '</div></section>';
+  return h;
+}
+
+function renderDaily(S){
+  const now = Date.now();
+  const rows = dailyProgress(S, now);
+  const st = dailyState(S, now);
+  const claimable = rows.some(t => t.done && !t.claimed);
+  const doneAll = rows.every(t => t.claimed);
+  const resets = 86400000 - (now % 86400000);
+  let h = '<section class="panel"><h2>Daily Tasks <span style="letter-spacing:.05em">'
+    + rows.filter(t=>t.claimed).length+'/'+rows.length+' · resets in '+ftime(resets)+'</span></h2>';
+  for(const t of rows){
+    h += '<div class="trow'+(t.claimed?'':t.done?' mine':'')+'">'
+      + '<span class="tname">'+(t.claimed?'✔ ':'')+t.txt+'</span>'
+      + '<span class="tmeta">'+t.have+'/'+t.need+'</span><span class="spacer"></span>'
+      + '<span class="tmeta">'+(t.claimed?'claimed':'+'+t.reward.valor+' ⚜')+'</span></div>';
+  }
+  h += '<div style="display:flex;gap:.6rem;align-items:center;margin-top:.5rem">'
+    + '<button class="primary" data-act="claimDaily" '+(claimable?'':'disabled')+'>Collect</button>'
+    + '<span class="tmeta" style="font-family:var(--sans);font-size:.65rem;color:var(--ink-dim)">'
+    + (doneAll && st.bonus ? 'Slate cleared — the full-day bonus is yours.'
+       : 'Clear every line for +'+DAILY_BONUS.valor+' Valor and a Writ.')+'</span></div>';
+  h += '</section>';
+  return h;
+}
+
+function renderBoss(S){
+  if(!net.isOnline()) return '';
+  const d = net.realmData();
+  const b = d && d.boss;
+  if(!b) return '';
+  let h = '<section class="panel"><h2>'+b.icon+' '+b.name
+    + ' <span style="letter-spacing:.05em">'+(b.slain ? 'slain' : b.open ? 'closes in '+ftime(b.closesIn) : 'stirs in '+ftime(b.opensIn))+'</span></h2>';
+  if(b.slain){
+    h += '<div class="stat-note">It is down. Another of its kin will come out of the fog.</div>';
+  }else{
+    const pct = Math.max(0, Math.min(100, 100*b.hp/b.maxHp));
+    h += '<div class="stat-note">'+fmt(b.hp)+' / '+fmt(b.maxHp)+' left — its strength is drawn from your whole alliance, so it takes all of you.</div>'
+      + '<div class="bar threat-fill" style="margin:.2rem 0 .5rem"><i style="width:'+pct+'%"></i></div>'
+      + '<button class="primary" data-act="bossStrike" '+(b.open?'':'disabled')+'>⚔ Strike the beast</button>';
+  }
+  const dmg = Object.entries(b.damage||{}).sort((x,y)=>y[1]-x[1]).slice(0,6);
+  if(dmg.length){
+    h += '<div class="stat-note" style="margin-top:.5rem">Blows landed</div>';
+    const me = net.accountName();
+    for(const [name, v] of dmg)
+      h += '<div class="trow'+(name===me?' mine':'')+'"><span class="tname">'+name+'</span>'
+        + '<span class="spacer"></span><span class="count">'+fmt(v)+'</span></div>';
+  }
+  h += '<p style="font-size:.68rem;font-family:var(--sans);color:var(--ink-dim);margin-top:.45rem">'
+    + 'Every hand that strikes it shares the kill — rank only tilts the share. Nothing here can be bought.</p>';
+  h += '</section>';
   return h;
 }
 
@@ -1001,7 +1055,7 @@ export function render(){
   app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
     + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderSpoils(S)
-      + renderEvent(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
+      + renderDaily(S) + renderEvent(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
       + renderAchievements(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
   fx.innerHTML = renderFx(S) + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
@@ -1082,6 +1136,11 @@ const VIEW_ACTIONS = {
       .catch(e => { acctMsg = e.message; acctOpen = true; renderAccount(); });
   },
   landmarkHelp: b => { net.landmarkHelp(b.dataset.key).then(render).catch(()=>{}); },
+  bossStrike: () => {
+    net.bossStrike()
+      .then(d => { if(d.state) store.s = d.state; render(); })
+      .catch(e => { acctMsg = e.message; acctOpen = true; renderAccount(); });
+  },
   allianceGive:    b => {
     net.allianceContribute(b.dataset.key)
       .then(d => { if(d.levelled) allyMsg = ''; return net.pullState(); })

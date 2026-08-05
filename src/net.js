@@ -194,6 +194,11 @@ export async function landmarkAssault(id){
   await refreshRealm();
   return d;
 }
+export async function bossStrike(){
+  const d = await post('/api/boss/strike', { token: session.token });
+  await refreshRealm();
+  return d;
+}
 export async function landmarkHelp(id){
   const d = await post('/api/landmark/help', { token: session.token, id });
   await refreshRealm();

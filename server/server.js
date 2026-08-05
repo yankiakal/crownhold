@@ -242,6 +242,50 @@ function realmView(now){
   });
 }
 
+/* ── the Hollow King: the alliance boss ──
+   The event type these games are actually loved for. A great beast walks out of
+   the fog on a schedule; the whole alliance piles onto it; damage is ranked but
+   EVERY member who lands a blow shares the kill. It is cooperative by
+   construction — you cannot buy a bigger hit, and one whale cannot solo it away
+   from the group, because its health scales with the alliance that faces it. */
+const BOSS_EVERY = Number(process.env.BOSS_EVERY) || 4 * 3600 * 1000;
+const BOSS_WINDOW = Number(process.env.BOSS_WINDOW) || 45 * 60 * 1000;
+const BOSS_CD = Number(process.env.BOSS_CD) || 3 * 60 * 1000;
+const BOSS_NAMES = [
+  { name:'The Hollow King', icon:'💀' },
+  { name:'Gravemaw',        icon:'🐗' },
+  { name:'The Ashen Stag',  icon:'🦌' },
+  { name:'Old Winter',      icon:'🐻' },
+];
+
+function bossFor(tag, now){
+  if(!tag) return null;
+  const a = db.alliances[tag];
+  if(!a) return null;
+  db.boss ||= {};
+  const cycle = Math.floor(now / BOSS_EVERY);
+  const open = (now % BOSS_EVERY) < BOSS_WINDOW;
+  let b = db.boss[tag];
+  if(!b || b.cycle !== cycle){
+    const power = a.members.reduce((t,n) => {
+      const m = db.users[n.toLowerCase()];
+      return t + (m ? armyPower(m.state) : 0);
+    }, 0);
+    const pick = BOSS_NAMES[cycle % BOSS_NAMES.length];
+    b = db.boss[tag] = {
+      cycle, ...pick,
+      // scales BOTH ways: a great alliance faces a great beast, two friends
+      // face something they can actually bring down
+      hp: Math.max(300, Math.round(power * 3.5)),
+      maxHp: Math.max(300, Math.round(power * 3.5)),
+      damage: {}, slain: false, slainAt: 0,
+    };
+    markDirty();
+  }
+  return { ...b, open, opensIn: open ? 0 : BOSS_EVERY - (now % BOSS_EVERY),
+           closesIn: open ? BOSS_WINDOW - (now % BOSS_EVERY) : 0 };
+}
+
 /* ── seasons ──
    A fortnight. At rollover the standings are frozen, titles are handed out, and
    Laurels drift halfway back to 1000 — a soft reset, so a season's champion
@@ -704,6 +748,7 @@ async function api(req, res, url){
     const mine = band(u.state.b.townhall);
     return send(res, 200, {
       landmarks: realmView(now),
+      boss: bossFor(u.alliance, now),
       season: {
         no: seasonNo(now), endsIn: seasonEndsIn(now),
         realmDay: realmDay(now),
@@ -762,7 +807,8 @@ async function api(req, res, url){
     markDirty();
     return send(res, 200, {
       dealt: power, fallen, claimed,
-      landmarks: realmView(now), ...publicState(u),
+      landmarks: realmView(now),
+      boss: bossFor(u.alliance, now), ...publicState(u),
     });
   }
 
@@ -784,6 +830,54 @@ async function api(req, res, url){
     }
     if(helped) markDirty();
     return send(res, 200, { helped, landmarks: realmView(now) });
+  }
+
+  if(path === '/api/boss/strike'){
+    if(!u.alliance) return send(res, 400, { error:'Only an alliance faces the beast.' });
+    const view = bossFor(u.alliance, now);
+    if(!view) return send(res, 400, { error:'No beast stirs.' });
+    if(!view.open) return send(res, 400, { error:'The beast has not come out of the fog yet.' });
+    const b = db.boss[u.alliance];
+    if(b.slain) return send(res, 400, { error:'It is already down. Its kin will come again.' });
+    if((u.state.bossReady || 0) > now) return send(res, 429, { error:'Your warband is still catching its breath.' });
+    advance(u, now);
+    const hit = armyPower(u.state);
+    if(hit <= 0) return send(res, 400, { error:'You have no army to send.' });
+    u.state.bossReady = now + BOSS_CD;
+    b.hp = Math.max(0, b.hp - hit);
+    b.damage[u.name] = (b.damage[u.name] || 0) + hit;
+    // striking a beast costs less than a siege, but it is not free. Rounding
+    // (not ceiling) so a small muster is not eaten a unit at a time.
+    let fallen = 0;
+    for(const k of Object.keys(u.state.t)){
+      const l = Math.round(u.state.t[k] * 0.03);
+      u.state.t[k] = Math.max(0, u.state.t[k] - l); fallen += l;
+    }
+    gainValor(u.state, 6);
+    gainMastery(u.state, 20, now);
+
+    if(b.hp <= 0 && !b.slain){
+      b.slain = true; b.slainAt = now;
+      const total = Object.values(b.damage).reduce((t,v) => t+v, 0) || 1;
+      const ranked = Object.entries(b.damage).sort((x,y) => y[1] - x[1]);
+      ranked.forEach(([name, dmg], i) => {
+        const m = db.users[name.toLowerCase()];
+        if(!m) return;
+        // everyone who landed a blow shares it; rank only tilts the share
+        const share = dmg / total;
+        gainValor(m.state, Math.round(80 + 220 * share + (i === 0 ? 60 : 0)));
+        gainMastery(m.state, Math.round(200 + 500 * share), now);
+        m.state.shields = Math.min((m.state.shields || 0) + 1, 9);
+        pushLog(m.state, b.icon+' '+b.name+' falls. Your share of the kill: '
+          + Math.round(share*100)+'% of the damage.' + (i === 0 ? ' You struck hardest.' : ''), 'gold');
+      });
+      const a = db.alliances[u.alliance];
+      pushMsg(db.chat.state, '—', b.icon+' '+b.name+' is brought down by '+(a?a.name:u.alliance)+'.');
+      pushMsg(db.chat.alliance[u.alliance] ||= [], '—',
+        b.icon+' '+b.name+' is down — every hand that struck it shares the kill.');
+    }
+    markDirty();
+    return send(res, 200, { hit, fallen, boss: bossFor(u.alliance, now), ...publicState(u) });
   }
 
   if(path === '/api/reset'){

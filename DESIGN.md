@@ -251,6 +251,29 @@ rankings live inside one, and the paid track is cosmetic (MONETIZATION.md).
 (9–16), Dominion (17–24), Crown (25+) — so a new hold never shares a board with
 the server's oldest account.
 
+## The calendar's four rhythms (v1.13)
+
+A live game needs more than a list of events — it needs different *cadences*,
+which is what makes Kingshot's calendar feel full:
+
+1. **Every day — Daily Tasks.** Six short lines drawn from a pool, the same slate
+   for everyone in the realm, reset at midnight, with a bonus for clearing them
+   all. This is the reason to open the game on a quiet Tuesday.
+2. **Every window — the rotating events.** Eight now: Muster Days, Stonecutters,
+   The Long Hunt, Scholars' Term, Warband Season, Gathering Days, Forge Fires,
+   Champions' Trial. Milestones carry the rewards; the board carries the glory.
+3. **Every few hours — the alliance boss.** A great beast walks out of the fog
+   for a window; the alliance piles onto it. **Its health scales to the alliance
+   facing it**, so no whale can solo it away from the group and no small band is
+   locked out. Damage is ranked but *every hand that lands a blow shares the
+   kill* — rank only tilts the share.
+4. **Every fortnight — the season.** Standings freeze, titles are named, Laurels
+   soft-reset. See above.
+
+Still missing, and the honest gap: **realm versus realm**. Kingshot's KvK is the
+fifth rhythm and it needs more than one state to exist, so it waits on the
+multi-state work described under "How states should open".
+
 ## Events — and the spending-race problem
 
 Kingshot's events are the monetisation engine, and the mechanism is worth naming
