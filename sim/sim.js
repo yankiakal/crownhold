@@ -81,11 +81,14 @@ function simulate(minutes, enemyLuck, skilled, label){
       const nextEnemy = L.wavePower(s.wave)*(s.wave%5===0?1.6:1)*1.12;
       if(L.armyPower(s) > 2.2*nextEnemy){
         let target = -1;
-        const q = {}; for(const k of Object.keys(TROOPS)) q[k] = Math.floor(s.t[k]*0.25);
+        // three leaders per column now, and they cap how many troops fit
+        const party = skilled ? W.bestLeaders(s, 3) : [];
+        const want = {}; for(const k of Object.keys(TROOPS)) want[k] = Math.floor(s.t[k]*0.25);
+        const q = W.fitColumn(s, want, party).troops;
         for(let i=0;i<s.world.tiles.length;i++){
           const tl = s.world.tiles[i];
           if(tl.respawnAt || W.tileBusy(s,i) || tl.type!=='camp') continue;
-          if(W.marchPower(s,q) > 1.5*W.campPower(s,tl)){ target=i; break; }
+          if(W.marchPower(s,q,party) > 1.5*W.campPower(s,tl)){ target=i; break; }
         }
         if(target<0){
           const scarce = ['iron','stone','wood','food'].sort((a,b)=>s.res[a]-s.res[b])[0];
@@ -96,11 +99,7 @@ function simulate(minutes, enemyLuck, skilled, label){
             if(tt.kind==='gather' && tt.res===scarce){ target=i; break; }
           }
         }
-        // give the column a leader if one can be spared — heroes idle in the
-        // hall are the commonest thing a real player leaves on the table
-        const lead = Object.keys(s.heroes).find(id => !s.court.includes(id) && W.heroCanLead(s,id))
-                  || Object.keys(s.heroes).find(id => id !== s.captain && W.heroCanLead(s,id));
-        if(target>=0) W.startMarch(s, target, 0.25, ms, false, skilled ? lead : null);
+        if(target>=0) W.startMarch(s, target, want, ms, false, party);
       }
     }
     // expeditions: the skilled bot dispatches by hand; the lazy one sets a caravan and forgets
@@ -233,6 +232,9 @@ function simulate(minutes, enemyLuck, skilled, label){
     +' | army '+L.armyPower(s)+' (upkeep '+L.upkeepPerSec(s).toFixed(1)+'/s, food prod '+L.prodPerSec(s,'food').toFixed(1)+'/s)'
     +' | mastery '+L.masteryLvl(s)+' | quests '+s.questIdx+'/24');
   console.log('-- buildings: '+Object.entries(s.b).map(([k,v])=>k+':'+v).join(' '));
+  console.log('-- troops: '+Object.entries(s.t).map(([k,v])=>k+':'+v).join(' ')
+    +' (total '+Object.values(s.t).reduce((a,b)=>a+b,0)+')'
+    +' | column capacity '+W.marchCapacity(s, W.bestLeaders(s, 3)));
   console.log('-- heroes: '+(Object.entries(s.heroes).map(([k,h])=>k+' L'+h.lvl).join(', ')||'none')
     +' | spoils: '+(Object.entries(s.spoils).map(([k,n])=>k+(n>1?'×'+n:'')).join(', ')||'none'));
   console.log('-- valor left '+Math.floor(s.valor)+' spent '+valorSpent+' | famine events (recent log) '+famines

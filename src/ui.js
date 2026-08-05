@@ -5,12 +5,14 @@ import {
   HERO_POOL, HERO_SLOTS, SPOILS, RARITY, LEAD_FX, SEASON_ARCS, seasonNo, seasonEndsIn, SEASON_MS,
   WAVE_TYPES, STANCES, EXPEDITIONS,
   WAVE_MS, FIRST_WAVE_MS, SHIELD_MS, SECOND_QUEUE_TH, COURT_PER_TH, COURT_MAX,
+  MARCH_HEROES, CLASS_AFFINITY, CAP_PER_HERO, CAP_PER_LEVEL,
 } from './defs.js';
 import { TIERS } from './defs.js';
 import {
   TILE_TYPES, MAP_W, MAP_H, CX, CY, TRAVEL_MS_PER_TILE, GATHER_MS,
   tileDist, marchSlots, tileBusy, marchPower, campPower, gatherYield, startMarch,
-  heroCanLead, LONG_HAUL_WORK, LONG_HAUL_YIELD,
+  heroCanLead, marchCapacity, fitColumn, bestLeaders, marchParty as partyOf,
+  LONG_HAUL_WORK, LONG_HAUL_YIELD,
 } from './world.js';
 import {
   fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor, capFor, isUnlocked,
@@ -20,7 +22,7 @@ import {
   valorQuota, valorToday, isRested, QUEUE_KEYS, buildSlots, activeQueues, freeSlot, townhallReq,
   maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost,
   wavePower, streakMult, finishCost, xpNeed,
-  courtSeats, courtSeated, heroAway, leadBonus, heroSeasonOpen,
+  courtSeats, courtSeated, heroAway, leadBonus, leadTotal, heroSeasonOpen,
 } from './logic.js';
 import { applyAction, isGameAction } from './actions.js';
 import {
@@ -255,10 +257,11 @@ function heroRow(S, k, where){
   const isCapt = S.captain===k, cd = S.orderCd[k]||0;
   const seated = where === 'court';
   const fx = seated ? d.fx(hero.lvl) + (isCapt ? ' <b style="color:var(--gold)">×2</b>' : '')
-                    : LEAD_FX[d.lead.key](hero.lvl);
+                    : LEAD_FX[d.lead.key](hero.lvl) + ' · +'+Math.round(CLASS_AFFINITY*hero.lvl*100)
+                      +'% to '+TROOPS[d.cls].name.toLowerCase()+'s';
   return '<div class="hero'+(where==='away'?' away':'')+'">'
     + '<span class="hname">'+(isCapt?'★ ':'')+(where==='away'?'🚩 ':'')+d.icon+' '+d.name+'</span>'
-    + ' <span class="rar rar-'+d.rarity+'">'+RARITY[d.rarity].tag+'</span>'
+    + ' <span class="rar rar-'+d.rarity+'">'+TROOPS[d.cls].icon+' '+RARITY[d.rarity].tag+'</span>'
     + '<button class="info-btn" data-act="detail" data-dtype="hero" data-key="'+k+'" title="hero details">ⓘ</button>'
     + '<div class="order-row"><span class="hmeta">L'+hero.lvl+' · '+fx+'</span>'
     + '<button class="order-btn" data-act="order" data-key="'+k+'" '+(cd>0?'disabled':'')
@@ -730,27 +733,109 @@ let listView = false, sceneMounted = false;
 const sceneCanvas = document.createElement('canvas');
 sceneCanvas.id = 'holdscene';
 let detail = null; // {type:'building'|'troop'|'hero', key} — the tap-to-inspect sheet
-let marchHero = null; // hero picked to lead the next column out
+// the column being assembled: up to three leaders and a count per troop type
+let marchParty = [];
+let marchWant = {};
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]); }
 
-function leadAttr(){ return marchHero ? 'data-hero="'+marchHero+'"' : ''; }
 function heroesOpen(S){ return Object.keys(HERO_POOL).filter(k => heroSeasonOpen(S,k)).length; }
 
-/* Who rides at the head of this column. Any hero not already out can take it —
-   and a seated one gives up their chair for the trip, which is the choice. */
-function renderLeadPicker(S){
+/* The column being assembled, carried across renders so taps accumulate. */
+function columnAttrs(){
+  return 'data-heroes="'+marchParty.join(',')+'" '
+    + Object.keys(TROOPS).map(k => 'data-t_'+k+'="'+(marchWant[k]||0)+'"').join(' ');
+}
+function marchTotal(){ return Object.keys(TROOPS).reduce((a,k)=>a+(marchWant[k]||0), 0); }
+
+/* Formations name themselves — a text prompt is blocked in sandboxed frames and
+   a keyboard is the wrong thing to raise on a phone mid-march. */
+function formName(S){
+  const lead = marchParty[0] && HERO_POOL[marchParty[0]];
+  const biggest = Object.keys(TROOPS)
+    .filter(k => marchWant[k] > 0)
+    .sort((a,b) => marchWant[b] - marchWant[a])[0];
+  const what = biggest ? TROOPS[biggest].name.toLowerCase()+'s' : 'column';
+  return lead ? lead.name.split(',')[0]+"'s "+what
+              : what.charAt(0).toUpperCase()+what.slice(1);
+}
+
+/* Fill the column proportionally to what the hold owns, up to capacity. The old
+   ¼ / ½ / all buttons, kept because most marches don't want fine-tuning. */
+function fillColumn(S, frac){
+  const want = {};
+  for(const k of Object.keys(TROOPS)) want[k] = Math.floor((S.t[k]||0) * frac);
+  const fit = fitColumn(S, want, marchParty);
+  for(const k of Object.keys(TROOPS)) marchWant[k] = fit.troops[k] || 0;
+}
+
+/* Assemble a column: up to three leaders, then how many of each troop rides.
+   Everything here is a tap — no dragging, no typing, no hover. */
+function renderColumnComposer(S){
   const free = Object.keys(S.heroes).filter(k => HERO_POOL[k] && heroCanLead(S, k));
-  if(!free.length) return '';
-  if(marchHero && !free.includes(marchHero)) marchHero = null;
-  let h = '<p class="d-row" style="margin-top:.6rem">Who leads them?</p><div class="leadpick">'
-    + '<button class="lead'+(marchHero?'':' on')+'" data-act="pickLead" data-key="">No one — send them alone</button>';
-  for(const k of free){
-    const d = HERO_POOL[k], hero = S.heroes[k];
-    const seated = (S.court||[]).includes(k);
-    h += '<button class="lead'+(marchHero===k?' on':'')+'" data-act="pickLead" data-key="'+k+'">'
-      + d.icon+' '+d.name.split(',')[0]+' <span class="hmeta">'+LEAD_FX[d.lead.key](hero.lvl)
-      + (seated ? ' · leaves the court' : '')+'</span></button>';
+  marchParty = marchParty.filter(k => free.includes(k));      // someone may have ridden out
+  const cap = marchCapacity(S, marchParty);
+  const total = marchTotal();
+  const over = total > cap;
+
+  let h = '';
+
+  // ── saved formations ──
+  if((S.formations||[]).length){
+    h += '<p class="d-row" style="margin-top:.6rem">Formations</p><div class="formrow">';
+    for(const f of S.formations){
+      const n = Object.values(f.troops).reduce((a,b)=>a+b,0);
+      h += '<button class="form" data-act="formLoad" data-key="'+esc(f.name)+'">'+esc(f.name)
+        + ' <span class="hmeta">'+f.heroes.length+' lead · '+n+'</span></button>';
+    }
+    h += '</div>';
   }
-  return h + '</div>';
+
+  // ── leaders ──
+  h += '<p class="d-row" style="margin-top:.6rem">Leaders <b>'+marchParty.length+'/'+MARCH_HEROES+'</b>'
+    + ' <span class="hmeta">— they set how many troops the column can hold</span></p>';
+  if(!free.length)
+    h += '<p class="d-warn">No hero is free to ride. A column can still go out alone, but it will be small.</p>';
+  else{
+    h += '<div class="leadpick">';
+    for(const k of free){
+      const d = HERO_POOL[k], hero = S.heroes[k];
+      const on = marchParty.includes(k);
+      const seated = (S.court||[]).includes(k);
+      const full = marchParty.length >= MARCH_HEROES && !on;
+      h += '<button class="lead'+(on?' on':'')+(full?' dim':'')+'" data-act="pickLead" data-key="'+k+'">'
+        + (on?'✓ ':'')+d.icon+' '+d.name.split(',')[0]
+        + ' <span class="rar rar-'+d.rarity+'">'+TROOPS[d.cls].icon+' '+TROOPS[d.cls].name+'</span>'
+        + '<span class="hmeta">L'+hero.lvl+' · '+LEAD_FX[d.lead.key](hero.lvl)
+        + ' · +'+Math.round(CLASS_AFFINITY*hero.lvl*100)+'% to '+TROOPS[d.cls].name.toLowerCase()+'s'
+        + ' · +'+(CAP_PER_HERO + CAP_PER_LEVEL*hero.lvl)+' capacity'
+        + (seated ? ' · leaves the court' : '')+'</span></button>';
+    }
+    h += '</div>';
+  }
+
+  // ── the column itself ──
+  h += '<p class="d-row" style="margin-top:.6rem">Column <b'+(over?' style="color:var(--bad)"':'')+'>'
+    + total+' / '+cap+'</b> <span class="hmeta">troops</span></p>'
+    + '<div class="capbar'+(over?' over':'')+'"><i style="width:'+Math.min(100, cap?100*total/cap:0)+'%"></i></div>';
+  for(const [k,d] of Object.entries(TROOPS)){
+    const owned = S.t[k]||0;
+    if(!owned && !marchWant[k]) continue;
+    const step = Math.max(1, Math.round(owned/10));
+    h += '<div class="troopadj"><span class="tname">'+d.icon+' '+d.name+'</span>'
+      + '<span class="hmeta">'+owned+' at home</span><span class="spacer"></span>'
+      + '<button data-act="troopAdj" data-key="'+k+'" data-n="-'+step+'" '+((marchWant[k]||0)<=0?'disabled':'')+'>−</button>'
+      + '<span class="count">'+(marchWant[k]||0)+'</span>'
+      + '<button data-act="troopAdj" data-key="'+k+'" data-n="'+step+'" '+((marchWant[k]||0)>=owned?'disabled':'')+'>+</button>'
+      + '<button data-act="troopAdj" data-key="'+k+'" data-n="all">max</button></div>';
+  }
+  h += '<div class="fillrow">'
+    + '<button data-act="fillCol" data-key="0.25">¼</button>'
+    + '<button data-act="fillCol" data-key="0.5">½</button>'
+    + '<button data-act="fillCol" data-key="1">Fill to capacity</button>'
+    + '<button data-act="fillCol" data-key="0">Clear</button>'
+    + '</div>';
+  if(over) h += '<p class="d-warn">Over capacity — the extra troops will stay home. Bring stronger leaders.</p>';
+  return h;
 }
 
 function renderDetail(S){
@@ -831,24 +916,26 @@ function renderDetail(S){
       if(busy) body += '<p class="d-warn">A march is already bound here.</p>';
       else if(full) body += '<p class="d-warn">All march slots are in use (Town Hall 10 grants a second).</p>';
       else{
-        const home = armyPower(S);
-        body += '<p class="d-row">Your home power is <b>'+home+'</b> — troops you send stop defending until they return.</p>'
-          + renderLeadPicker(S)
-          + '<div style="display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap">'
-          + '<button data-act="march" data-idx="'+k+'" data-frac="0.25" '+leadAttr()+'>March ¼</button>'
-          + '<button data-act="march" data-idx="'+k+'" data-frac="0.5" '+leadAttr()+'>March ½</button>'
-          + '<button class="primary" data-act="march" data-idx="'+k+'" data-frac="1" '+leadAttr()+'>March all</button>'
+        const fit = fitColumn(S, marchWant, marchParty);
+        body += '<p class="d-row">Your home power is <b>'+armyPower(S)+'</b> — troops you send stop defending until they return.</p>'
+          + renderColumnComposer(S);
+        if(fit.total)
+          body += '<p class="d-delta">This column fights at <b>'+marchPower(S, fit.troops, marchParty)+'</b>'
+            + (tt.kind==='camp' ? ' against ≈'+campPower(S,tile) : '')+'.</p>';
+        const none = fit.total === 0;
+        body += '<div style="display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap">'
+          + '<button class="primary" data-act="march" data-idx="'+k+'" '+columnAttrs()+(none?' disabled':'')+'>'
+          + (none ? 'Choose troops to send' : '🚩 March — '+fit.total+' troops')+'</button>'
+          + (none ? '' : '<button data-act="saveForm" data-key="'+esc(formName(S))+'" '+columnAttrs()+'>Save formation</button>')
           + '</div>';
         if(tt.kind === 'gather'){
-          const haul = 1 + leadBonus(S, marchHero, 'haul') + (S.marchBoost ? 0.5 : 0);
+          const haul = 1 + leadTotal(S, marchParty, 'haul') + (S.marchBoost ? 0.5 : 0);
           body += '<p class="d-delta" style="margin-top:.7rem">🌙 <b>Long haul</b>: work the node for '
             + ftime(LONG_HAUL_WORK)+' instead of '+ftime(GATHER_MS)+' and bring back <b>'
             + fmt(gatherYield(S,tile)*LONG_HAUL_YIELD*haul)+' '+tt.res+'</b> — the thing to set going before you close the game. '
             + 'Those troops defend nothing until dawn.</p>'
-            + '<div style="display:flex;gap:.5rem">'
-            + '<button data-act="march" data-idx="'+k+'" data-frac="0.5" data-long="1" '+leadAttr()+'>Long haul ½</button>'
-            + '<button class="primary" data-act="march" data-idx="'+k+'" data-frac="1" data-long="1" '+leadAttr()+'>Long haul, all</button>'
-            + '</div>';
+            + '<button class="primary" data-act="march" data-idx="'+k+'" data-long="1" '+columnAttrs()+(none?' disabled':'')
+            + '>🌙 Send on the long haul</button>';
         }
       }
     }
@@ -923,7 +1010,9 @@ function renderDetail(S){
       + (arc ? '<p class="d-row" style="opacity:.75">Came to the hold in Season '+(d.season||0)+' — '+arc.name+'</p>' : '')
       + '<p class="d-row">'+(seated?'<b style="color:var(--gold)">Seated.</b> ':'')+'In court: '+d.fx(hero.lvl)
       + (isCapt?' — <b style="color:var(--gold)">doubled as Captain</b>':'')+'</p>'
-      + '<p class="d-row">'+(away?'<b style="color:var(--gold)">Riding out.</b> ':'')+'Leading a column: '+LEAD_FX[d.lead.key](hero.lvl)+'</p>'
+      + '<p class="d-row">'+(away?'<b style="color:var(--gold)">Riding out.</b> ':'')+'Leading a column: '+LEAD_FX[d.lead.key](hero.lvl)
+      + ', and <b>+'+Math.round(CLASS_AFFINITY*hero.lvl*100)+'% to '+TROOPS[d.cls].name.toLowerCase()+'s</b> — the troops they know. '
+      + 'Adds <b>'+(CAP_PER_HERO + CAP_PER_LEVEL*hero.lvl)+'</b> to what the column can hold.</p>'
       + '<p class="d-row">Order — <b>'+d.order.name+'</b>: '+d.order.desc+' Cooldown '+d.order.cd+' waves.'+(cd>0?' Ready in '+cd+'.':'')+'</p>';
     if(away) body += '<p class="d-warn">They are out with a column and cannot take a chair until it comes home.</p>';
     else if(!seated && full) body += '<p class="d-warn">Every chair is taken ('+seats+'). Stand someone down, or raise the Tavern.</p>';
@@ -1054,10 +1143,17 @@ function renderCodex(S){
     + 'and nothing ever leaves — start in Season 9 and the whole roster is still yours to draft. If a draft comes due with nobody left to offer, '
     + 'the slot waits for the next season rather than being spent.</li>'
     + '<li><b>A hero does one job at a time.</b> Seated in your court, their passive lifts the whole hold — but there are only '+courtSeats(S)
-    + ' chairs (one more every '+COURT_PER_TH+' Town Hall levels, to '+COURT_MAX+'). Leading a column, they buff that march alone and give up their chair until it comes home. '
-    + 'That is why a wide roster matters with '+marchSlots(S)+' march slots: heroes are the answer to "who leads column six?"</li>'
-    + '<li>Marching leaders bring one of: column power, resources hauled, travel speed, losses on the road, Valor, or Mastery. '
+    + ' chairs (one more every '+COURT_PER_TH+' Town Hall levels, to '+COURT_MAX+'). Leading a column, they buff that march alone and give up their chair until it comes home.</li>'
+    + '<li><b>Three heroes ride at the head of every column</b>, and their levels decide how many troops it can hold: '
+    + CAP_PER_HERO+' + '+CAP_PER_LEVEL+' per level each, over a base of 6. Yours currently command <b>'+marchCapacity(S, bestLeaders(S, MARCH_HEROES))+'</b>. '
+    + 'March slots are given by the Command Center; the capacity to fill them is earned hero by hero.</li>'
+    + '<li><b>Every hero knows one troop class.</b> They add +'+Math.round(CLASS_AFFINITY*100)+'% per level to that troop type in their column, '
+    + 'so three cavalry heroes leading knights hit far harder than a mixed party. This is what makes a wide roster worth having — '
+    + 'and with '+marchSlots(S)+' march slots and three leaders each, a full field needs '+(marchSlots(S)*MARCH_HEROES)+' heroes.</li>'
+    + '<li>Marching leaders also bring one of: column power, resources hauled, travel speed, losses on the road, Valor, or Mastery. '
     + 'A hero who actually rides earns far more XP than one who sits.</li>'
+    + '<li><b>Formations</b> save a column — its three leaders and the exact count of each troop — for one-tap reuse. '
+    + 'They hold nothing you could not assemble by hand; they just spare you assembling it eight times a day.</li>'
     + '<li>Heroes level to 20 on raid XP. Spoils are permanent; most stack.</li>'
     + '<li>Mastery: the full 10-perk track is listed in its panel with exact XP thresholds. XP comes from every kind of play.</li>'
     + '</ul>'
@@ -1127,9 +1223,10 @@ function renderWorld(S){
     const n = Object.values(m.troops).reduce((a,b)=>a+b,0);
     const phase = !m.resolved ? 'outbound · arrives '+ftime(m.arriveAt-now)
                               : 'returning · home '+ftime(m.homeAt-now);
-    const hd = m.hero && HERO_POOL[m.hero];
+    const party = partyOf(m).filter(id => HERO_POOL[id]);
     h += '<div class="stat-note">🚩 '+n+' troops → '+tt.icon+' '+tt.name+' — '+phase
-      + (hd ? ' <span style="color:var(--gold)">· '+hd.icon+' '+hd.name.split(',')[0]+'</span>' : '')+'</div>';
+      + (party.length ? ' <span style="color:var(--gold)">· '
+          + party.map(id => HERO_POOL[id].icon+' '+HERO_POOL[id].name.split(',')[0]).join(', ')+'</span>' : '')+'</div>';
   }
   if(!S.marches.length)
     h += '<div class="stat-note">Tap a tile to inspect it and send a march.</div>';
@@ -1196,8 +1293,25 @@ const VIEW_ACTIONS = {
   codex: () => { codexOpen = !codexOpen; },
   detail: b => { detail = {type:b.dataset.dtype, key:b.dataset.key}; },
   detailClose: () => { detail = null; },
-  // who leads the next column out — a view choice, cleared once they ride
-  pickLead: b => { marchHero = (marchHero === b.dataset.key) ? null : b.dataset.key; },
+  // assembling a column: all view state until the march order is actually given
+  pickLead: b => {
+    const k = b.dataset.key, at = marchParty.indexOf(k);
+    if(at >= 0) marchParty.splice(at, 1);
+    else if(marchParty.length < MARCH_HEROES) marchParty.push(k);
+  },
+  troopAdj: b => {
+    const k = b.dataset.key, owned = store.s.t[k] || 0;
+    marchWant[k] = b.dataset.n === 'all' ? owned
+      : Math.max(0, Math.min(owned, (marchWant[k]||0) + Number(b.dataset.n)));
+  },
+  fillCol: b => fillColumn(store.s, Number(b.dataset.key)),
+  formLoad: b => {
+    const f = (store.s.formations||[]).find(x => x.name === b.dataset.key);
+    if(!f) return;
+    marchParty = f.heroes.filter(id => heroCanLead(store.s, id));
+    marchWant = {};
+    for(const k of Object.keys(TROOPS)) marchWant[k] = Math.min(f.troops[k]||0, store.s.t[k]||0);
+  },
   holdView:    () => { listView = !listView; sceneMounted = false; },
   arenaStance: b => { arenaStance = b.dataset.key; },
   arenaFrac:   b => { arenaFrac = Number(b.dataset.key); },
@@ -1288,7 +1402,9 @@ const VIEW_ACTIONS = {
 
 function paramsOf(btn){
   const d = btn.dataset;
-  return { key:d.key, n:d.n, i:d.i, idx:d.idx, frac:d.frac, long:d.long, mode:d.mode, hero:d.hero };
+  const p = { key:d.key, n:d.n, i:d.i, idx:d.idx, frac:d.frac, long:d.long, mode:d.mode, heroes:d.heroes };
+  for(const k of Object.keys(TROOPS)) if(d['t_'+k] != null) p['t_'+k] = d['t_'+k];
+  return p;
 }
 
 function runAction(btn){
@@ -1297,7 +1413,7 @@ function runAction(btn){
   if(VIEW_ACTIONS[act]){ VIEW_ACTIONS[act](btn); render(); return; }
   if(!isGameAction(act)) return;
   const params = paramsOf(btn);
-  if(act === 'march'){ detail = null; marchHero = null; }
+  if(act === 'march'){ detail = null; marchParty = []; marchWant = {}; }
   if(net.isOnline()){
     // the server rules on it, then hands back the truth
     net.sendAction(act, params)

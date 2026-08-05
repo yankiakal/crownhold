@@ -2,11 +2,12 @@
 // Same contract as logic.js — pure state functions, injectable time and rng.
 // tickWorld() is called from the main loop and the sim alongside logic.tick().
 
-import { TROOPS, TIME_SCALE, HERO_POOL } from './defs.js';
+import { TROOPS, TIME_SCALE, HERO_POOL,
+         MARCH_HEROES, MARCH_BASE_CAP, CAP_PER_HERO, CAP_PER_LEVEL } from './defs.js';
 import { scoreDeed } from './events.js';
 import { takeCasualties } from './logic.js';
 import {
-  tierPower, heroBonus, spoilBonus, perk, wavePower, leadBonus, heroAway,
+  tierPower, heroBonus, spoilBonus, perk, wavePower, leadBonus, leadTotal, affinity, heroAway,
   gainRes, gainValor, gainShield, gainMastery, pushLog, showBanner, fmt, ftime,
 } from './logic.js';
 
@@ -56,6 +57,9 @@ export function genWorld(seed){
 }
 
 export function tileDist(t){ return Math.max(Math.abs(t.x-CX), Math.abs(t.y-CY)); }
+/* Columns used to carry a single `hero`; they now carry a party of three.
+   Old saves and in-flight marches are read through here. */
+export function marchParty(m){ return m.heroes || (m.hero ? [m.hero] : []); }
 /* The Command Center is what lets you field more columns at once, and move them
    faster — march capacity is its whole job. */
 export function marchSlots(s){
@@ -64,19 +68,37 @@ export function marchSlots(s){
 export function marchSpeed(s){ return Math.max(0.5, 1 - 0.02 * (s.b.command || 0)); }
 export function tileBusy(s, idx){ return (s.marches||[]).some(m => m.tile===idx); }
 
-/* A column's strength: the hold's standing bonuses, plus whatever the hero at
-   its head is worth. The hero half is the only part you can aim — which is the
-   point of having more of them than you have chairs at the table. */
-export function marchPower(s, troops, hero){
+/* A column's strength: the hold's standing bonuses, plus what its three leaders
+   are worth. Troops are counted class by class, so a hero's affinity lifts only
+   the soldiers they actually know how to handle. */
+export function marchPower(s, troops, heroes){
   let p = 0;
-  for(const k of Object.keys(TROOPS)) p += tierPower(s,k) * (troops[k]||0);
-  return Math.round(p * (1 + heroBonus(s,'troopPower') + spoilBonus(s,'troopPower') + leadBonus(s, hero, 'power'))
+  for(const k of Object.keys(TROOPS))
+    p += tierPower(s,k) * (troops[k]||0) * (1 + affinity(s, heroes, k));
+  return Math.round(p * (1 + heroBonus(s,'troopPower') + spoilBonus(s,'troopPower') + leadTotal(s, heroes, 'power'))
     * (1 + (perk(s,2)?0.06:0) + (perk(s,8)?0.08:0) + (perk(s,10)?0.15:0)
          + (perk(s,12)?0.08:0) + (perk(s,20)?0.20:0)));
 }
 /* Can this hero take a column out right now? */
 export function heroCanLead(s, id){
   return !!(s.heroes[id] && HERO_POOL[id] && !heroAway(s, id));
+}
+/* How many soldiers this party of leaders can actually command. Slots are given
+   by the Command Center; the capacity to fill them is earned hero by hero. */
+export function marchCapacity(s, heroes){
+  const list = (Array.isArray(heroes) ? heroes : (heroes ? [heroes] : []))
+    .filter(id => s.heroes[id] && HERO_POOL[id]).slice(0, MARCH_HEROES);
+  let cap = MARCH_BASE_CAP;
+  for(const id of list) cap += CAP_PER_HERO + CAP_PER_LEVEL * s.heroes[id].lvl;
+  return Math.round(cap);
+}
+/* The strongest available party, highest level first — used to preview capacity
+   and by the sim's bot. Ties break on id so the pick is deterministic. */
+export function bestLeaders(s, n = MARCH_HEROES){
+  return Object.keys(s.heroes)
+    .filter(id => HERO_POOL[id] && heroCanLead(s, id))
+    .sort((a,b) => (s.heroes[b].lvl - s.heroes[a].lvl) || (a < b ? -1 : 1))
+    .slice(0, n);
 }
 export function campPower(s, tile){
   return Math.round(wavePower(Math.max(3, s.wave-3)) * (0.45 + 0.3*tile.lvl));
@@ -88,41 +110,61 @@ export function gatherYield(s, tile){
   return Math.round(base * scale);
 }
 
-export function startMarch(s, idx, frac, now, longHaul, hero){
+/* Trim a requested column to what is actually available and commandable:
+   never more of a troop than you own, never more in total than the leaders can
+   hold. Trimming is proportional, so the mix the player chose is preserved. */
+export function fitColumn(s, want, heroes){
+  const cap = marchCapacity(s, heroes);
+  const troops = {};
+  let total = 0;
+  for(const k of Object.keys(TROOPS)){
+    const n = Math.max(0, Math.min(Math.floor(want[k]||0), s.t[k]||0));
+    if(n > 0){ troops[k] = n; total += n; }
+  }
+  if(total > cap){
+    const scale = cap / total;
+    total = 0;
+    for(const k of Object.keys(troops)){
+      const n = Math.floor(troops[k] * scale);
+      if(n > 0){ troops[k] = n; total += n; } else delete troops[k];
+    }
+  }
+  return { troops, total, cap };
+}
+
+export function startMarch(s, idx, want, now, longHaul, heroes){
   s.now = now;
   const tile = s.world.tiles[idx];
   if(!tile || tile.respawnAt || tileBusy(s, idx)) return false;
   if((s.marches||[]).length >= marchSlots(s)) return false;
-  if(hero && !heroCanLead(s, hero)) return false;
+  const party = (Array.isArray(heroes) ? heroes : (heroes ? [heroes] : []))
+    .filter(Boolean).slice(0, MARCH_HEROES);
+  if(new Set(party).size !== party.length) return false;      // no hero rides twice
+  if(party.some(id => !heroCanLead(s, id))) return false;
   const kind = TILE_TYPES[tile.type].kind;
   const long = !!longHaul && kind === 'gather';   // only nodes can be worked for hours
-  const troops = {};
-  let total = 0;
-  for(const k of Object.keys(TROOPS)){
-    const n = Math.floor(s.t[k]*frac);
-    if(n>0){ troops[k]=n; total+=n; }
-  }
-  if(total===0) return false;
+  const { troops, total } = fitColumn(s, want, party);
+  if(total === 0) return false;
   for(const [k,n] of Object.entries(troops)) s.t[k] -= n;
   const travel = Math.round(tileDist(tile)*TRAVEL_MS_PER_TILE*marchSpeed(s)
-    * Math.max(0.4, 1 - leadBonus(s, hero, 'speed')));
+    * Math.max(0.4, 1 - leadTotal(s, party, 'speed')));
   const work = kind==='gather' ? (long ? LONG_HAUL_WORK : GATHER_MS) : kind==='ruin' ? RUIN_MS : 0;
   const boost = !!s.marchBoost;                   // Fair Winds, spent on this column
   s.marchBoost = false;
   s.marches.push({
-    tile:idx, troops, long, hero: hero || null, boost, out: travel,
+    tile:idx, troops, long, heroes: party, boost, out: travel,
     arriveAt: now+travel, homeAt: now+travel+work+travel,
     resolved:false,
   });
-  // a seated hero who rides out gives the chair up — someone else can fill it
-  if(hero && s.court){
-    const at = s.court.indexOf(hero);
+  // seated heroes who ride out give their chairs up — someone else can fill them
+  for(const id of party){
+    if(!s.court) break;
+    const at = s.court.indexOf(id);
     if(at >= 0) s.court.splice(at, 1);
-    if(s.captain === hero) s.captain = null;
+    if(s.captain === id) s.captain = null;
   }
-  const hd = hero && HERO_POOL[hero];
   pushLog(s, '🚩 '+total+' troops march on the '+TILE_TYPES[tile.type].name
-    + (hd ? ', led by '+hd.icon+' '+hd.name.split(',')[0] : '')
+    + (party.length ? ', under '+party.map(id => HERO_POOL[id].icon+' '+HERO_POOL[id].name.split(',')[0]).join(', ') : '')
     + (long ? ' to work it through the night ('+ftime(travel+work+travel)+' round trip).'
             : ' ('+ftime(travel)+' out).'));
   return true;
@@ -132,11 +174,12 @@ function resolveArrival(s, m, now, rand){
   const tile = s.world.tiles[m.tile];
   const tt = TILE_TYPES[tile.type];
   m.resolved = true;
-  const haul = 1 + leadBonus(s, m.hero, 'haul') + (m.boost ? 0.5 : 0);
-  const guard = Math.max(0.25, 1 - leadBonus(s, m.hero, 'guard'));
+  const party = marchParty(m);
+  const haul = 1 + leadTotal(s, party, 'haul') + (m.boost ? 0.5 : 0);
+  const guard = Math.max(0.25, 1 - leadTotal(s, party, 'guard'));
   if(tt.kind==='camp'){
     const enemy = campPower(s, tile) * (0.88 + rand()*0.24);
-    const mine = marchPower(s, m.troops, m.hero);
+    const mine = marchPower(s, m.troops, party);
     if(mine >= enemy){
       const ratio = enemy/Math.max(mine,1);
       const lf = 0.25*ratio*ratio*guard;
@@ -195,18 +238,19 @@ function resolveReturn(s, m, now){
     const r = takeCasualties(s, k, n, true);   // the frontier wounds, it does not kill
     dead += r.dead; hurt += r.hurt;
   }
-  const hd = m.hero && HERO_POOL[m.hero];
-  let txt = m.report+'. '+home+' return'+(hd ? ' under '+hd.icon+' '+hd.name.split(',')[0] : '')
+  const party = marchParty(m).filter(id => HERO_POOL[id]);
+  let txt = m.report+'. '+home+' return'
+    + (party.length ? ' under '+party.map(id => HERO_POOL[id].name.split(',')[0]).join(', ') : '')
     + (dead||hurt ? ' ('+dead+' fell'+(hurt?', '+hurt+' wounded':'')+')' : '');
   if(m.loot){
     for(const [r,v] of Object.entries(m.loot)) gainRes(s, r, v);
     txt += ' with '+Object.entries(m.loot).map(([r,v])=>'+'+fmt(v)+' '+r).join(', ');
   }
-  const v = Math.round((m.valor||0) * (1 + leadBonus(s, m.hero, 'valor')));
+  const v = Math.round((m.valor||0) * (1 + leadTotal(s, party, 'valor')));
   if(v){ gainValor(s, v); txt += ', +'+v+' Valor'; }
-  if(m.mxp) gainMastery(s, Math.round(m.mxp * (1 + leadBonus(s, m.hero, 'lore'))), now);
-  // a hero who actually rode learns more than one who sat at the table
-  if(hd && s.heroes[m.hero]) s.heroes[m.hero].xp += 40 + (m.long ? 120 : 0);
+  if(m.mxp) gainMastery(s, Math.round(m.mxp * (1 + leadTotal(s, party, 'lore'))), now);
+  // heroes who actually rode learn more than those who sat at the table
+  for(const id of party) if(s.heroes[id]) s.heroes[id].xp += 40 + (m.long ? 120 : 0);
   if(m.writ){ gainShield(s, 1); txt += ', and a sealed Writ of Peace'; }
   pushLog(s, txt+'.', m.loot ? 'win' : 'loss');
   showBanner(s, '🚩 March returned — '+m.report.toLowerCase(), m.loot?'win':'loss', now);

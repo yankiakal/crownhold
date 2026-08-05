@@ -5,9 +5,21 @@
 import {
   startUpgrade, startTraining, finishBuildNow, finishTrainNow, startResearch, finishResearchNow, claimEvent, claimDaily, startHealing, finishHealNow,
   expedition, setCaravan, setStance, setDefStance, setCaptain, seatHero, useOrder, raiseShield,
-  chooseOption, rerollChoice, promote,
+  chooseOption, rerollChoice, promote, saveFormation, deleteFormation,
 } from './logic.js';
 import { startMarch } from './world.js';
+import { TROOPS } from './defs.js';
+
+/* Marches arrive as flat form fields (`t_spearman=120`) so the same params
+   object survives a POST to the server unchanged. */
+function troopsFrom(p){
+  const t = {};
+  for(const k of Object.keys(TROOPS)) t[k] = Number(p['t_'+k]) || 0;
+  return t;
+}
+function partyFrom(p){
+  return String(p.heroes || '').split(',').filter(Boolean).slice(0, 3);
+}
 
 export const GAME_ACTIONS = {
   upgrade:      (s,p,now)      => startUpgrade(s, p.key, now),
@@ -31,7 +43,9 @@ export const GAME_ACTIONS = {
   choose:       (s,p,now)      => chooseOption(s, Number(p.i), now),
   rerollChoice: (s,p,now,rand) => rerollChoice(s, now, rand),
   promote:      (s,p,now)      => promote(s, p.key, now),
-  march:        (s,p,now)      => startMarch(s, Number(p.idx), Number(p.frac), now, p.long === '1', p.hero || null),
+  march:        (s,p,now)      => startMarch(s, Number(p.idx), troopsFrom(p), now, p.long === '1', partyFrom(p)),
+  saveForm:     (s,p,now)      => saveFormation(s, p.key, partyFrom(p), troopsFrom(p), now),
+  deleteForm:   (s,p,now)      => deleteFormation(s, p.key, now),
   intro:        (s)            => { s.seenIntro = true; return true; },
 };
 

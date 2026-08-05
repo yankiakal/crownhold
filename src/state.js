@@ -24,7 +24,7 @@ export function freshState(now, seed){
        range:0,stable:0,siegeyard:0,embassy:0,command:0},
     t:{spearman:8,archer:0,knight:0,ballista:0},
     tier:{spearman:1,archer:1,knight:1,ballista:1},
-    heroes:{}, spoils:{}, court:[], marchBoost:false,
+    heroes:{}, spoils:{}, court:[], marchBoost:false, formations:[],
     choice:null, choiceQueue:[], offersDone:0,
     stance:'balanced', captain:null, orderCd:{}, mods:null,
     laurels:1000, defStance:'shieldwall', arenaWins:0, arenaLosses:0,
@@ -131,7 +131,9 @@ export function load(now){
       if(s.captain && !s.court.includes(s.captain)) s.captain = null;
     }
     if(s.marchBoost==null) s.marchBoost = false;
-    for(const m of s.marches) if(m.hero===undefined) m.hero = null;
+    // v1.19: one leader per column became a party of three
+    if(!Array.isArray(s.formations)) s.formations = [];
+    for(const m of s.marches) if(!Array.isArray(m.heroes)) m.heroes = m.hero ? [m.hero] : [];
     // v1.15: one training queue became one per yard
     if(!s.tq || typeof s.tq !== 'object' || s.tq.key){
       const old = s.tq && s.tq.key ? s.tq : null;

@@ -6,7 +6,7 @@
 import {
   BUILDINGS, TROOPS, MASTERY, QUESTS, ACHIEVEMENTS, RES_META,
   HERO_POOL, HERO_SLOTS, SPOILS, RARITY,
-  COURT_BASE, COURT_PER_TH, COURT_MAX, seasonNo,
+  COURT_BASE, COURT_PER_TH, COURT_MAX, seasonNo, CLASS_AFFINITY, MARCH_HEROES,
   WAVE_TYPES, STANCES, COUNTER_BONUS, COUNTER_PENALTY, COUNTER_CASUALTY, SCREEN,
   EXPEDITIONS, EXPEDITION_CD,
   COST_EXP, TIME_EXP, TIERS, TIER_POWER, TIER_UPKEEP, TIER_COST,
@@ -40,7 +40,9 @@ export function clock(t){ const d=new Date(t); return String(d.getHours()).padSt
 export function courtSeats(s){
   return Math.min(COURT_MAX, COURT_BASE + Math.floor((s.b.townhall||1) / COURT_PER_TH));
 }
-export function heroAway(s, id){ return (s.marches||[]).some(m => m.hero === id); }
+export function heroAway(s, id){
+  return (s.marches||[]).some(m => m.heroes ? m.heroes.includes(id) : m.hero === id);
+}
 export function courtSeated(s){
   return (s.court||[]).filter(id => s.heroes[id] && HERO_POOL[id]).slice(0, courtSeats(s));
 }
@@ -78,6 +80,25 @@ export function leadBonus(s, id, key){
   const d = HERO_POOL[id], h = s.heroes[id];
   if(!d || !h || !d.lead || d.lead.key !== key) return 0;
   return d.lead.val * h.lvl;
+}
+/* Three heroes ride per column, so every lead trait is a sum over the party.
+   Accepts a single id too, so older callers and saves keep working. */
+export function leadTotal(s, heroes, key){
+  const list = Array.isArray(heroes) ? heroes : (heroes ? [heroes] : []);
+  let b = 0;
+  for(const id of list) b += leadBonus(s, id, key);
+  return b;
+}
+/* A hero knows one troop class. Lead a column of what they know and it hits
+   harder — the reason to keep archers' captains and knights' captains both. */
+export function affinity(s, heroes, troopKey){
+  const list = Array.isArray(heroes) ? heroes : (heroes ? [heroes] : []);
+  let b = 0;
+  for(const id of list){
+    const d = HERO_POOL[id], h = s.heroes[id];
+    if(d && h && d.cls === troopKey) b += CLASS_AFFINITY * h.lvl;
+  }
+  return b;
 }
 export function spoilBonus(s, key){
   let b = 0;
@@ -665,6 +686,40 @@ export function setCaptain(s, id, now){
   if(!(s.court||[]).includes(id)) return false;   // the Captain is chosen from the court
   s.now = now;
   s.captain = (s.captain===id) ? null : id;
+  return true;
+}
+
+/* ── formations ──
+   A saved column: who leads it and how many of each troop go. Sending the same
+   shaped march eight times a day is the single most repetitive thing this genre
+   asks of a player, so it gets one tap. Purely a convenience — a formation can
+   hold nothing you could not assemble by hand. */
+export const MAX_FORMATIONS = 8;
+export function saveFormation(s, name, heroes, troops, now){
+  s.now = now;
+  s.formations = s.formations || [];
+  const clean = {
+    name: String(name || 'Column').trim().slice(0, 24) || 'Column',
+    heroes: (heroes||[]).filter(id => s.heroes[id] && HERO_POOL[id]).slice(0, MARCH_HEROES),
+    troops: {},
+  };
+  for(const k of Object.keys(TROOPS)){
+    const n = Math.max(0, Math.floor(troops && troops[k] || 0));
+    if(n) clean.troops[k] = n;
+  }
+  const at = s.formations.findIndex(f => f.name === clean.name);
+  if(at >= 0) s.formations[at] = clean;
+  else{
+    if(s.formations.length >= MAX_FORMATIONS) return false;
+    s.formations.push(clean);
+  }
+  return true;
+}
+export function deleteFormation(s, name, now){
+  s.now = now;
+  const at = (s.formations||[]).findIndex(f => f.name === name);
+  if(at < 0) return false;
+  s.formations.splice(at, 1);
   return true;
 }
 
