@@ -19,6 +19,8 @@ import {
 } from './defs.js';
 
 import { RESEARCH, techLvl, techBonus, techFlat, techCost, techTime, techAvailable } from './research.js';
+import { REGALIA, WARGEAR, GEAR_MAX, gearCost, gearTime, regaliaBonus, regaliaTier,
+         wargearTier, gearLevels } from './gear.js';
 import { scoreDeed, eventState, currentEvent, claimableMilestones } from './events.js';
 import { dailyState, dailyProgress, DAILY_BONUS } from './daily.js';
 
@@ -41,7 +43,7 @@ export function heroStars(s, id){ return (s.heroes[id] && s.heroes[id].stars) ||
 export function effLvl(s, id){
   const h = s.heroes[id];
   if(!h) return 0;
-  return Math.round(h.lvl * (1 + STAR_POWER * (h.stars || 0)));
+  return Math.round(h.lvl * (1 + STAR_POWER * (h.stars || 0))) + gearLevels(s, id);
 }
 export function heroStarCap(s){ return starCap(s.now || Date.now()); }
 /* Deeds are earned by fielding the hero. Ascension is automatic — there is no
@@ -96,8 +98,12 @@ export function seatHero(s, id, now){
 }
 
 /* ── bonus aggregation: the court + spoils feed every stat below ── */
+/* Standing bonuses: your seated court, plus the regalia you wear yourself.
+   The Lord's Regalia is folded in here rather than plumbed to four separate
+   call sites, so production, Valor, troop power and casualties all pick it up
+   wherever they are already computed. */
 export function heroBonus(s, key){
-  let b = 0;
+  let b = regaliaBonus(s, key);
   for(const id of courtActive(s)){
     const d = HERO_POOL[id];
     if(d && d.bonus[key]) b += d.bonus[key]*effLvl(s,id) * (s.captain===id ? 2 : 1); // the Captain's passive counts double
@@ -738,6 +744,64 @@ export function setCaptain(s, id, now){
   return true;
 }
 
+/* ── the Forge's other job: gear ──
+   One smithing queue, shared by the Regalia and every hero's kit. Crafting is
+   deterministic — a tier-6 blade is a tier-6 blade — so there is nothing to
+   reroll and nothing to sell rerolls of. It is gated on the Forge because Steel
+   is what it eats, and Steel is the scarcest honest thing in the economy. */
+export function gearTarget(s, who, slot){
+  if(who === 'lord') return REGALIA[slot] ? regaliaTier(s, slot) : -1;
+  return (s.heroes[who] && WARGEAR[slot]) ? wargearTier(s, who, slot) : -1;
+}
+export function gearBlockedBy(s, who, slot){
+  if((s.b.forge || 0) < 1) return 'Light the Forge first';
+  const tier = gearTarget(s, who, slot);
+  if(tier < 0) return 'No such piece';
+  if(tier >= GEAR_MAX) return 'Already at the finest work the Reach can do';
+  if(s.gq) return 'The Forge is already at work';
+  if(!canAfford(s, gearCost(tier))) return 'Not enough materials';
+  return null;
+}
+export function startGear(s, who, slot, now){
+  s.now = now;
+  if(gearBlockedBy(s, who, slot)) return false;
+  const tier = gearTarget(s, who, slot);
+  payCost(s, gearCost(tier));
+  s.gq = { who, slot, to: tier + 1, start: now, end: now + gearTime(tier) };
+  const name = who === 'lord' ? REGALIA[slot].name
+    : HERO_POOL[who].name.split(',')[0] + '’s ' + WARGEAR[slot].name.toLowerCase();
+  pushLog(s, '🔥 The Forge takes up ' + name + ' — tier ' + (tier + 1) + '.');
+  return true;
+}
+export function finishGearNow(s, now){
+  if(!s.gq) return false;
+  const c = finishCost(s.gq.end, now);
+  if(s.valor < c) return false;
+  s.valor -= c; s.gq.end = now;
+  return true;
+}
+function completeGear(s, now){
+  const q = s.gq;
+  if(q.who === 'lord'){
+    s.regalia = s.regalia || {};
+    s.regalia[q.slot] = q.to;
+    const d = REGALIA[q.slot];
+    pushLog(s, d.icon + ' ' + d.name + ' is raised to tier ' + q.to + ' — ' + d.fx(q.to) + '.', 'gold');
+    showBanner(s, d.icon + ' ' + d.name + ' · tier ' + q.to, 'win', now);
+  }else{
+    const h = s.heroes[q.who];
+    if(h){
+      h.gear = h.gear || {};
+      h.gear[q.slot] = q.to;
+      const d = HERO_POOL[q.who];
+      pushLog(s, WARGEAR[q.slot].icon + ' ' + d.name.split(',')[0] + ' takes up new '
+        + WARGEAR[q.slot].name.toLowerCase() + ' — tier ' + q.to + '.', 'gold');
+    }
+  }
+  s.gq = null;
+  gainMastery(s, 12, now);
+}
+
 /* ── formations ──
    A saved column: who leads it and how many of each troop go. Sending the same
    shaped march eight times a day is the single most repetitive thing this genre
@@ -1004,6 +1068,7 @@ export function tick(s, now, dt, rand=Math.random){
       }
     }
   }
+  if(s.gq && now >= s.gq.end) completeGear(s, now);
   if(s.hq && now >= s.hq.end){
     let back = 0;
     for(const [k,n] of Object.entries(s.hq.troops)){ s.t[k] = (s.t[k]||0) + n; back += n; }

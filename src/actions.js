@@ -6,6 +6,7 @@ import {
   startUpgrade, startTraining, finishBuildNow, finishTrainNow, startResearch, finishResearchNow, claimEvent, claimDaily, startHealing, finishHealNow,
   expedition, setCaravan, setStance, setDefStance, setCaptain, seatHero, useOrder, raiseShield,
   chooseOption, rerollChoice, promote, saveFormation, deleteFormation, setArenaTeam,
+  startGear, finishGearNow,
 } from './logic.js';
 import { startMarch } from './world.js';
 import { TROOPS } from './defs.js';
@@ -39,6 +40,8 @@ export const GAME_ACTIONS = {
   captain:      (s,p,now)      => setCaptain(s, p.key, now),
   seat:         (s,p,now)      => seatHero(s, p.key, now),
   arenaTeam:    (s,p,now)      => setArenaTeam(s, p.key, now),
+  gear:         (s,p,now)      => startGear(s, p.mode, p.key, now),
+  finishGear:   (s,p,now)      => finishGearNow(s, now),
   order:        (s,p,now)      => useOrder(s, p.key, now),
   raiseShield:  (s,p,now)      => raiseShield(s, now),
   choose:       (s,p,now)      => chooseOption(s, Number(p.i), now),

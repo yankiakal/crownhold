@@ -24,10 +24,12 @@ import {
   maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost,
   wavePower, streakMult, finishCost, xpNeed,
   courtSeats, courtSeated, heroAway, leadBonus, leadTotal, heroSeasonOpen,
-  effLvl, heroStarCap, arenaTeam, setArenaTeam,
+  effLvl, heroStarCap, arenaTeam, setArenaTeam, gearBlockedBy,
 } from './logic.js';
 import { applyAction, isGameAction } from './actions.js';
 import { CHRONICLE, SEASON_LORE } from './lore.js';
+import { REGALIA, WARGEAR, GEAR_MAX, GEAR_PER_LEVEL, gearCost, gearTime,
+         regaliaTier, wargearTier, wargearTotal, gearLevels, costLabel } from './gear.js';
 import {
   STANCE_BEATS, CLASS_ANSWER, stanceMult, composition, answerBonusForClass,
   committedTroops, forcePower,
@@ -349,6 +351,36 @@ function renderHeroes(S){
       + 'and the roster grows every season. Heroes are drafted, never pulled and never sold.</div>';
   h += '</section>';
   return h;
+}
+
+/* One forgeable piece — used for both the Regalia and a hero's kit. */
+function gearRow(S, who, slot, label, icon, fxText){
+  const tier = who === 'lord' ? regaliaTier(S, slot) : wargearTier(S, who, slot);
+  const maxed = tier >= GEAR_MAX;
+  const blocked = gearBlockedBy(S, who, slot);
+  const cost = maxed ? null : gearCost(tier);
+  return '<div class="gearrow"><span class="tname">'+icon+' '+label+'</span>'
+    + '<span class="gtier">'+(tier ? 'tier '+tier+'/'+GEAR_MAX : 'unforged')+'</span>'
+    + '<span class="hmeta">'+(fxText || '')+'</span><span class="spacer"></span>'
+    + (maxed
+        ? '<span class="hmeta" style="color:var(--gold)">the finest work the Reach can do</span>'
+        : '<span class="hmeta">'+costLabel(cost)+' · '+ftime(gearTime(tier))+'</span>'
+          + '<button data-act="gear" data-mode="'+who+'" data-key="'+slot+'" '+(blocked?'disabled':'')
+          + ' title="'+(blocked||'')+'">'+(tier ? 'Reforge to '+(tier+1) : 'Forge')+'</button>')
+    + '</div>';
+}
+
+function renderRegalia(S){
+  if((S.b.forge||0) < 1) return '';
+  let h = '<section class="panel"><h2>The Lord’s Regalia <span style="letter-spacing:.05em">worn by you, not by any captain</span></h2>'
+    + '<div class="stat-note">Forged from Steel and Runestone, never bought. No random stats — a tier-6 blade is a '
+    + 'tier-6 blade for everyone, so there is nothing to reroll.</div>';
+  if(S.gq) h += queueStrip(S, S.gq, '🔥 '+(S.gq.who==='lord' ? REGALIA[S.gq.slot].name
+      : (HERO_POOL[S.gq.who] ? HERO_POOL[S.gq.who].name.split(',')[0] : '')+'’s '+WARGEAR[S.gq.slot].name.toLowerCase())
+      +' → tier '+S.gq.to, 'finishGear', null);
+  for(const [slot,d] of Object.entries(REGALIA))
+    h += gearRow(S, 'lord', slot, d.name, d.icon, d.fx(regaliaTier(S, slot)) || 'nothing yet');
+  return h + '</section>';
 }
 
 function renderSpoils(S){
@@ -1109,6 +1141,17 @@ function renderDetail(S){
       + '<p class="d-row">'+(inFive?'<b style="color:var(--gold)">In your arena five.</b> ':'')
       + 'In the arena their class affinity applies to the force you commit.</p>'
       + '<p class="d-row">Order — <b>'+d.order.name+'</b>: '+d.order.desc+' Cooldown '+d.order.cd+' waves.'+(cd>0?' Ready in '+cd+'.':'')+'</p>';
+    // wargear: four pieces, each worth a quarter of an effective level
+    if((S.b.forge||0) >= 1){
+      const worn = wargearTotal(S, k), gl = gearLevels(S, k);
+      body += '<p class="d-row" style="margin-top:.6rem"><b>Wargear</b> — '+worn+'/'+(GEAR_MAX*4)
+        + ' tiers forged, worth <b>+'+gl+'</b> effective level'+(gl===1?'':'s')
+        + ' (one per '+GEAR_PER_LEVEL+' tiers).</p>';
+      for(const [slot,g] of Object.entries(WARGEAR))
+        body += gearRow(S, k, slot, g.name, g.icon, '');
+    }else{
+      body += '<p class="d-row" style="opacity:.7;margin-top:.6rem">Wargear needs the Forge — Steel is what it eats.</p>';
+    }
     if(away) body += '<p class="d-warn">They are out with a column and cannot take a chair until it comes home.</p>';
     else if(!seated && full) body += '<p class="d-warn">Every chair is taken ('+seats+'). Stand someone down, or raise the Tavern.</p>';
     body += '<div style="display:flex;gap:.6rem;margin-top:.5rem;flex-wrap:wrap">'
@@ -1291,6 +1334,13 @@ function renderCodex(S){
     + 'Yours cap at <b>'+heroStarCap(S)+'★</b> this season.</li>'
     + '<li><b>Five heroes ride with an arena sortie</b>, attacking and defending alike, and their class affinity lifts the force you commit. '
     + 'They are not away while they fight — a sortie is over in a minute — so the only rule is that a hero out with a column cannot be in the line.</li>'
+    + '<li><b>Gear, both kinds.</b> The <b>Lord’s Regalia</b> (crown, signet, mantle, blade) is worn by you and lifts the whole hold: '
+    + 'a full set is +20% production, +20% Valor, +20% troop power and −15% casualties. <b>Wargear</b> is per hero — four pieces, '
+    + 'each '+GEAR_PER_LEVEL+' tiers worth one effective level, so a fully kitted captain gains +10. '
+    + 'Everything is forged at the Forge from Steel and Runestone, never bought, and there are <b>no random stats</b> — '
+    + 'a tier-6 blade is a tier-6 blade for everyone, so there is nothing to reroll and nothing to sell rerolls of. '
+    + 'One smithing queue serves it all, which is the real cost: a full Regalia is about ten hours of exclusive forge time, '
+    + 'and kitting an entire roster is hundreds.</li>'
     + '<li>Heroes level to 20 on raid XP. Spoils are permanent; most stack.</li>'
     + '<li>Mastery: the full 10-perk track is listed in its panel with exact XP thresholds. XP comes from every kind of play.</li>'
     + '</ul>'
@@ -1414,7 +1464,7 @@ export function render(){
   const S = store.s;
   app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
-    + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderSpoils(S)
+    + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderRegalia(S) + renderSpoils(S)
       + renderDaily(S) + renderEvent(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
       + renderAchievements(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();

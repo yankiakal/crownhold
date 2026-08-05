@@ -25,6 +25,7 @@ export function freshState(now, seed){
     t:{spearman:8,archer:0,knight:0,ballista:0},
     tier:{spearman:1,archer:1,knight:1,ballista:1},
     heroes:{}, spoils:{}, court:[], arenaTeam:[], marchBoost:false, formations:[],
+    regalia:{}, gq:null,
     choice:null, choiceQueue:[], offersDone:0,
     stance:'balanced', captain:null, orderCd:{}, mods:null,
     laurels:1000, defStance:'shieldwall', arenaWins:0, arenaLosses:0,
@@ -141,6 +142,10 @@ export function migrate(s, now){
       if(h.deeds == null) h.deeds = 0;
     }
     if(!Array.isArray(s.arenaTeam)) s.arenaTeam = Object.keys(s.heroes).slice(0, 5);
+    // v1.23: the Lord's Regalia and a hero's wargear
+    if(s.regalia==null) s.regalia = {};
+    if(s.gq===undefined) s.gq = null;
+    for(const h of Object.values(s.heroes)) if(h.gear==null) h.gear = {};
     // v1.15: one training queue became one per yard
     if(!s.tq || typeof s.tq !== 'object' || s.tq.key){
       const old = s.tq && s.tq.key ? s.tq : null;

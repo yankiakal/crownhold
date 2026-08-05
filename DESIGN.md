@@ -225,6 +225,31 @@ what makes a *wide* roster valuable rather than a tall one, and it is why
 **formations** (saved leader+troop presets) are a real tool and not just a
 convenience.
 
+### Gear, both kinds (v1.23)
+
+Kingshot has hero gear and lord gear, and both are heavy spend funnels there —
+fed by random forging and paid refreshes. Three rules keep this version honest:
+
+- **Everything is crafted**, at the Forge, from Steel and Runestone. Those are
+  already the scarcest goods in the economy (storage caps of 10% and 3.5%) and
+  cannot be bought.
+- **No random stats.** A tier-6 blade is a tier-6 blade for everyone. There is
+  nothing to reroll, so there is nothing to sell rerolls of. This is the single
+  most important line in the system.
+- **Wargear raises effective level**, exactly as stars do — so it needs no
+  special case anywhere in the rules, and it cannot overtake a hero you have
+  actually been fielding.
+
+| Track | Slots | Full set |
+|---|---|---|
+| Lord's Regalia (account-wide) | crown, signet, mantle, blade | +20% production, +20% Valor, +20% troop power, −15% casualties |
+| Hero wargear (per hero) | weapon, armour, helm, banner | +10 effective levels (4 tiers = 1 level) |
+
+**The real cost is the queue, not the materials.** One smithing queue serves the
+Regalia and all 32 heroes. Measured: a full Regalia is ~10 hours of exclusive
+forge time; kitting an entire roster is several hundred. Runestone enters at
+tier 6, so early gear never blocks on the Runeworks (TH22).
+
 ### The hold that grows (v1.21)
 
 Buildings you cannot yet raise are no longer shown at all. A new hold displays

@@ -181,6 +181,16 @@ section.panel{
 .temper .tname{font-size:.88rem;color:var(--gold)}
 .temper .meta{font-family:var(--sans);font-size:.7rem;color:var(--ink-dim)}
 .temper .meta b{color:var(--ink)}
+/* gear: one row per forgeable piece, Regalia and wargear alike */
+.gearrow{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.4rem 0;
+  border-bottom:1px solid rgba(58,47,37,.45)}
+.gearrow:last-child{border-bottom:none}
+.gearrow .tname{font-size:.88rem;min-width:6.5rem}
+.gearrow .gtier{font-family:var(--sans);font-size:.64rem;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--gold)}
+.gearrow .hmeta{font-family:var(--sans);font-size:.68rem;color:var(--ink-dim);font-variant-numeric:tabular-nums}
+.gearrow .spacer{flex:1}
+.gearrow button{padding:.3rem .6rem;font-size:.76rem}
 /* the arena five: a compact grid of faces, tapped on and off */
 .fiverow{display:flex;gap:.35rem;flex-wrap:wrap;margin:.35rem 0}
 .fiverow .five{padding:.3rem .45rem;font-size:.9rem;line-height:1.1;text-align:center}
