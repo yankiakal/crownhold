@@ -223,7 +223,9 @@ export async function landmarkHelp(id){
 export async function refreshLeaderboard(){
   if(!server) return null;
   try{
-    const res = await fetch(server.replace(/\/$/,'') + '/api/leaderboard');
+    // pass the token so the server can scope the ladder to your realm
+    const q = session && session.token ? '?token=' + encodeURIComponent(session.token) : '';
+    const res = await fetch(server.replace(/\/$/,'') + '/api/leaderboard' + q);
     if(!res.ok) return null;
     board = (await res.json()).rows;
     return board;

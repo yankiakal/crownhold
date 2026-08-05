@@ -152,6 +152,64 @@ function allianceView(tag, now){
   };
 }
 
+/* ── realms ──
+   Until now there was one world and everything hung off it globally. A realm is
+   now a container: holds, alliances, landmarks, the state chat and the ladder all
+   belong to one. New accounts join the youngest realm still taking people; when
+   it fills or ages out, the next one opens. That is the mechanic Kingshot uses
+   too, and it matters for fairness — a hold founded in month six should never be
+   dropped into a world that has been compounding for six months.
+
+   Realm 1 is the world that already existed, so every account predating this
+   change belongs to it. */
+const REALM_CAP = Number(process.env.REALM_CAP) || 60;
+const REALM_MAX_AGE = Number(process.env.REALM_MAX_AGE) || 30 * 24 * 3600 * 1000;
+const REALM_NAMES = ['Ashmark', 'Coldwater', 'Hallowmere', 'Duncairn', 'Saltmere',
+                     'Greyfell', 'Thornhold', 'Windward', 'Blackmoor', 'Farlight'];
+
+function realmName(n){
+  const i = n - 1;
+  return i < REALM_NAMES.length ? REALM_NAMES[i] : 'Reach ' + n;
+}
+function allRealms(){
+  db.realms ||= {};
+  if(!Object.keys(db.realms).length) db.realms.r1 = { id:'r1', no:1, opened: REALM_EPOCH };
+  return db.realms;
+}
+function realmPop(id){
+  return Object.values(db.users).filter(u => (u.realm || 'r1') === id).length;
+}
+/* Where a brand-new hold is founded. */
+function assignRealm(now){
+  const realms = allRealms();
+  const sorted = Object.values(realms).sort((a,b) => b.no - a.no);
+  const youngest = sorted[0];
+  const full = realmPop(youngest.id) >= REALM_CAP;
+  const aged = now - youngest.opened >= REALM_MAX_AGE;
+  if(!full && !aged) return youngest.id;
+  const no = youngest.no + 1, id = 'r' + no;
+  realms[id] = { id, no, opened: now };
+  pushMsg(db.chat.state[youngest.id] ||= [], '—',
+    '🌍 A new reach opens: ' + realmName(no) + '. The frontier is wider than it was.');
+  markDirty();
+  return id;
+}
+const realmOf = u => u.realm || 'r1';
+/* Every hold in a realm, and every alliance whose members live there. */
+function realmUsers(id){ return Object.values(db.users).filter(u => realmOf(u) === id); }
+function realmOfAlliance(tag){
+  const a = db.alliances[tag];
+  if(!a || !a.members.length) return 'r1';
+  const m = db.users[a.members[0].toLowerCase()];
+  return m ? realmOf(m) : 'r1';
+}
+function stateChat(id){
+  db.chat.state ||= {};
+  // the state channel used to be one global array — carry it into realm 1
+  if(Array.isArray(db.chat.state)) db.chat.state = { r1: db.chat.state };
+  return (db.chat.state[id] ||= []);
+}
+
 /* ── the realm: landmarks, banners, seasons ──
    The state-wide layer. Five landmarks sit on the map; whichever alliance holds
    one gives EVERY member a standing bonus. Taking one has two beats:
@@ -187,11 +245,22 @@ const ASSAULT_CD = Number(process.env.ASSAULT_CD) || 5 * 60 * 1000;
 const GARRISON_SCALE = Number(process.env.GARRISON_SCALE) || 1;
 const GARRISON_REGEN = 0.02;           // share of full per minute
 
-function landmarkState(id){
-  const d = LANDMARKS.find(l => l.id === id);
+/* Landmark state is per realm now. The old shape was db.realm[landmarkId];
+   it is carried into realm 1 so an existing world keeps its banners. */
+function landmarkStore(realm){
+  db.landmarks ||= {};
+  if(db.realm && !db.landmarks.r1){          // migrate the single-world layout
+    db.landmarks.r1 = db.realm;
+    delete db.realm;
+    markDirty();
+  }
+  return (db.landmarks[realm] ||= {});
+}
+function landmarkState(id, realm){
+  const d = LANDMARKS.find(l => l.id === id) || RIFT_HOLDS.find(l => l.id === id);
   if(!d) return null;
-  db.realm ||= {};
-  return (db.realm[id] ||= {
+  const store = landmarkStore(realm);
+  return (store[id] ||= {
     id, holder:null, heldSince:0, garrison:d.base * GARRISON_SCALE, banner:null, lastTick:Date.now(),
   });
 }
@@ -203,11 +272,11 @@ function maxGarrison(d, st){
   }, 0) : 0;
   return Math.round((d.base + held * 0.25) * GARRISON_SCALE);   // a strong holder is harder to dislodge
 }
-function tickRealm(now){
+function tickRealm(now, realm){
   checkSeasonRollover(now);
   for(const d of LANDMARKS){
     if(!isAwake(d, now)) continue;
-    const st = landmarkState(d.id);
+    const st = landmarkState(d.id, realm);
     const mins = (now - (st.lastTick || now)) / 60000;
     st.lastTick = now;
     const cap = maxGarrison(d, st);
@@ -217,7 +286,7 @@ function tickRealm(now){
       st.heldSince = now;
       st.garrison = maxGarrison(d, st);
       const a = db.alliances[st.banner.tag];
-      if(a) pushMsg(db.chat.state, '—', '🚩 ' + a.name + ' raises its banner over ' + d.name + '.');
+      if(a) pushMsg(stateChat(realm), '—', '🚩 ' + a.name + ' raises its banner over ' + d.name + '.');
       st.banner = null;
       markDirty();
     }
@@ -226,18 +295,22 @@ function tickRealm(now){
 function realmBonusFor(tag, now = Date.now()){
   const b = {};
   if(!tag) return b;
+  const realm = realmOfAlliance(tag);
   for(const d of LANDMARKS){
     if(!isAwake(d, now)) continue;
-    const st = landmarkState(d.id);
+    const st = landmarkState(d.id, realm);
     if(st.holder !== tag) continue;
     for(const [k,v] of Object.entries(d.bonus)) b[k] = (b[k] || 0) + v;
   }
   return b;
 }
-function realmView(now){
-  tickRealm(now);
-  return LANDMARKS.map(d => {
-    const st = landmarkState(d.id);
+/* The map a realm actually sees: its own landmarks, plus the contested Rift
+   Holds while a Rift is open. */
+function realmView(now, realm, withRift){
+  tickRealm(now, realm);
+  const sites = withRift ? LANDMARKS.concat(RIFT_HOLDS) : LANDMARKS;
+  return sites.map(d => {
+    const st = landmarkState(d.id, realm);
     const a = st.holder && db.alliances[st.holder];
     return {
       id:d.id, name:d.name, icon:d.icon, fx:d.fx,
@@ -245,6 +318,7 @@ function realmView(now){
       holder: a ? { tag:a.tag, name:a.name } : null,
       garrison: Math.round(st.garrison), max: maxGarrison(d, st),
       banner: st.banner ? { tag: st.banner.tag, endsIn: Math.max(0, st.banner.end - now), helps: st.banner.helps || 0 } : null,
+      rift: !!d.rift,
     };
   });
 }
@@ -291,6 +365,128 @@ function bossFor(tag, now){
   }
   return { ...b, open, opensIn: open ? 0 : BOSS_EVERY - (now % BOSS_EVERY),
            closesIn: open ? BOSS_WINDOW - (now % BOSS_EVERY) : 0 };
+}
+
+/* ── the Rift: realm against realm ──
+   Kingshot's Kingdom-vs-Kingdom, with the farming removed. Every other season a
+   pair of realms is opened to each other for a week. During a Rift:
+
+     · the Arena pool includes the paired realm, and beating one of their holds
+       scores a point for yours;
+     · three neutral Rift Holds appear that alliances from EITHER realm can take
+       and hold, scoring continuously;
+     · breaking a Great Host scores.
+
+   What is deliberately absent: nothing is ever taken. No resources, no buildings,
+   no troops, no occupation. A Rift is a scoreboard, not a conquest — because the
+   moment a realm can be farmed, the biggest wallet in it decides who plays.
+   The winning realm gets a standing bonus for the following season and a title;
+   the losing realm keeps everything it built. */
+const RIFT_EVERY = Number(process.env.RIFT_EVERY) || 2;      // seasons between Rifts
+const RIFT_DAYS = Number(process.env.RIFT_DAYS) || 7;
+const RIFT_HOLD_TICK = 60000;                                // score per minute held
+const RIFT_HOLDS = [
+  { id:'rift-bridge', name:'The Sundered Bridge', icon:'🌉', fx:'contested ground', base:6000, wake:0, rift:true },
+  { id:'rift-cairn',  name:'The Broken Cairn',    icon:'🪨', fx:'contested ground', base:6000, wake:0, rift:true },
+  { id:'rift-gate',   name:'The Hollow Gate',     icon:'🚪', fx:'contested ground', base:9000, wake:0, rift:true },
+];
+const RIFT_POINTS = { arena: 30, host: 120, hold: 4 };
+
+function riftSeason(now){ return defSeasonNo(now) % RIFT_EVERY === 0; }
+/* Realms pair up two at a time by age: 1↔2, 3↔4, and so on. */
+function riftPartner(id){
+  const realms = Object.values(allRealms()).sort((a,b) => a.no - b.no);
+  const me = realms.find(r => r.id === id);
+  if(!me) return null;
+  const idx = realms.indexOf(me);
+  const partner = idx % 2 === 0 ? realms[idx+1] : realms[idx-1];
+  return partner ? partner.id : null;
+}
+function riftState(now){
+  const no = defSeasonNo(now);
+  db.rift ||= {};
+  if(db.rift.season !== no){
+    db.rift = { season: no, score: {}, opened: now, history: db.rift.history || [] };
+    markDirty();
+  }
+  /* `open` is DERIVED, never stored. Snapshotting it at creation meant a season
+     that should be sealed still read as open if the schedule ever changed under
+     it — which is exactly what happened the first time RIFT_EVERY was retuned. */
+  const open = riftSeason(now);
+  const endsAt = db.rift.opened + RIFT_DAYS * 86400000;
+  const live = open && now < endsAt && Object.keys(allRealms()).length > 1;
+  return { ...db.rift, open, live, endsAt, endsIn: Math.max(0, endsAt - now) };
+}
+function riftScore(realm, kind, mult = 1, now = Date.now()){
+  const r = riftState(now);
+  if(!r.live) return 0;
+  const pts = Math.round((RIFT_POINTS[kind] || 0) * mult);
+  db.rift.score[realm] = (db.rift.score[realm] || 0) + pts;
+  markDirty();
+  return pts;
+}
+/* Held Rift Holds pay out over time rather than on capture, so holding ground
+   matters more than sniping it once. Lazy, like everything else here. */
+function tickRift(now){
+  const r = riftState(now);
+  if(!r.live) return;
+  db.rift.lastTick ||= now;
+  const mins = Math.floor((now - db.rift.lastTick) / RIFT_HOLD_TICK);
+  if(mins <= 0) return;
+  db.rift.lastTick += mins * RIFT_HOLD_TICK;
+  for(const realm of Object.keys(allRealms())){
+    const store = landmarkStore(realm);
+    for(const d of RIFT_HOLDS){
+      const st = store[d.id];
+      if(st && st.holder) riftScore(realmOfAlliance(st.holder), 'hold', mins, now);
+    }
+  }
+}
+function riftView(u, now){
+  const r = riftState(now);
+  const mine = realmOf(u), theirs = riftPartner(mine);
+  const realms = allRealms();
+  return {
+    live: r.live, endsIn: r.endsIn,
+    season: r.season, every: RIFT_EVERY,
+    nextIn: r.live ? 0 : (RIFT_EVERY - (defSeasonNo(now) % RIFT_EVERY)) % RIFT_EVERY,
+    mine: { id: mine, no: realms[mine] ? realms[mine].no : 1,
+            name: realmName(realms[mine] ? realms[mine].no : 1),
+            score: r.score[mine] || 0, holds: realmPop(mine) },
+    theirs: theirs ? { id: theirs, no: realms[theirs].no, name: realmName(realms[theirs].no),
+                       score: r.score[theirs] || 0, holds: realmPop(theirs) } : null,
+    points: RIFT_POINTS,
+    history: (r.history || []).slice(-3).reverse(),
+  };
+}
+/* At the close of a Rift the winner is recorded and everyone who scored is paid.
+   The loser loses nothing — that is the whole point. */
+function closeRift(now){
+  const r = riftState(now);
+  if(!r.open || now < r.endsAt || db.rift.closed) return;
+  db.rift.closed = true;
+  const scores = Object.entries(db.rift.score).sort((a,b) => b[1] - a[1]);
+  const winner = scores[0] && scores[0][1] > 0 ? scores[0][0] : null;
+  for(const realm of Object.keys(allRealms())){
+    const won = realm === winner;
+    for(const u of realmUsers(realm)){
+      if(!won && !(db.rift.score[realm] > 0)) continue;
+      gainValor(u.state, won ? 400 : 150);
+      gainMastery(u.state, won ? 900 : 350, now);
+      u.state.shields = Math.min((u.state.shields || 0) + (won ? 2 : 1), 9);
+      if(won) u.titles = (u.titles || []).concat({ season: r.season, title:'Rift-Warden' });
+      pushLog(u.state, won
+        ? '🌌 The Rift closes and ' + realmName(allRealms()[realm].no) + ' stands ahead. You are named Rift-Warden.'
+        : '🌌 The Rift closes. Your reach did not take it — and lost nothing it built.', 'gold');
+    }
+    pushMsg(stateChat(realm), '—', winner
+      ? '🌌 The Rift closes. ' + realmName(allRealms()[winner].no) + ' took it.'
+      : '🌌 The Rift closes with nothing decided.');
+  }
+  db.rift.history = (db.rift.history || []).concat({
+    season: r.season, winner, scores: Object.fromEntries(scores),
+  }).slice(-12);
+  markDirty();
 }
 
 /* ── rallies: the Great Hosts ──
@@ -402,7 +598,12 @@ function resolveRallies(now){
     pushMsg(db.chat.alliance[tag] ||= [], '—', won
       ? h.icon+' '+h.name+' is down. '+joins.length+' answered the horn.'
       : h.icon+' The rally on '+h.name+' fell short — '+fmtNum(committed)+' of '+fmtNum(r.power)+' needed.');
-    if(won) pushMsg(db.chat.state, '—', h.icon+' '+(a?a.name:tag)+' broke '+h.name+'.');
+    if(won){
+      const realm = realmOfAlliance(tag);
+      pushMsg(stateChat(realm), '—', h.icon+' '+(a?a.name:tag)+' broke '+h.name+'.');
+      const pts = riftScore(realm, 'host', h.mult / 1.8, now);
+      if(pts) pushMsg(stateChat(realm), '—', '🌌 +'+pts+' to the Rift.');
+    }
     delete db.rallies[tag];
     markDirty();
   }
@@ -465,7 +666,7 @@ function checkSeasonRollover(now){
   });
   if(db.season.history.length > 12) db.season.history.shift();
   db.season.no = no;
-  pushMsg(db.chat.state, '—', '👑 Season ' + (no - 1) + ' has closed. '
+  for(const rid of Object.keys(allRealms())) pushMsg(stateChat(rid), '—', '👑 Season ' + (no - 1) + ' has closed. '
     + (holds[0] ? holds[0].name + ' is named ' + SEASON_TITLES[0] + '.' : '')
     + ' Laurels drift back toward the middle; the realm begins again.');
   markDirty(); flush();
@@ -488,7 +689,7 @@ function pushMsg(room, from, text){
   markDirty();
 }
 function roomFor(u, channel, target){
-  if(channel === 'state') return db.chat.state;
+  if(channel === 'state') return stateChat(realmOf(u));
   if(channel === 'alliance'){
     if(!u.alliance) return null;
     return (db.chat.alliance[u.alliance] ||= []);
@@ -597,13 +798,22 @@ async function api(req, res, url){
   /* Rallies resolve here, on EVERY request, rather than in the rally endpoints.
      A rally holds real troops out of their owners' holds, so if resolution only
      ran when someone happened to poll the rally, an alliance that all logged off
-     mid-muster would leave those columns stranded indefinitely. */
+     mid-muster would leave those columns stranded indefinitely. The Rift's
+     hold-scoring and its closing are lazy for the same reason. */
   resolveRallies(now);
+  tickRift(now);
+  closeRift(now);
 
   if(path === '/api/health') return send(res, 200, { ok:true, players:Object.keys(db.users).length });
 
   if(path === '/api/leaderboard'){
-    const rows = Object.values(db.users).map(u => ({
+    /* A ladder belongs to its realm; comparing worlds of different ages is noise.
+       This handler runs before the POST body is read (it answers GETs too), so
+       the token comes off the query string — reading `body` here would have
+       thrown on every leaderboard request. */
+    const who = userByToken(url.searchParams.get('token'));
+    const scope = who ? realmOf(who) : null;
+    const rows = Object.values(db.users).filter(x => !scope || realmOf(x) === scope).map(u => ({
       name: u.name,
       wavesWon: u.state.wavesWon || 0,
       power: armyPower(u.state),
@@ -632,6 +842,7 @@ async function api(req, res, url){
       const u = {
         name, salt, hash: hash(pw, salt), token: newToken(),
         state: freshState(now), created: now, alliance: null,
+        realm: assignRealm(now),
       };
       u.state.seenIntro = true;
       db.users[key] = u; markDirty(); flush();
@@ -667,8 +878,13 @@ async function api(req, res, url){
   if(path === '/api/arena/list'){
     advance(u, now);
     const key = u.name.toLowerCase();
+    /* The ladder is your realm's. During a Rift the paired realm joins the pool
+       — that is what makes a Rift felt rather than announced. */
+    const mineRealm = realmOf(u);
+    const rift = riftView(u, now);
+    const across = rift.live && rift.theirs ? rift.theirs.id : null;
     const pool = Object.entries(db.users)
-      .filter(([k]) => k !== key)
+      .filter(([k,o]) => k !== key && (realmOf(o) === mineRealm || realmOf(o) === across))
       .map(([k,o]) => ({
         key: k, name: o.name,
         power: defensePower(o.state),
@@ -676,6 +892,7 @@ async function api(req, res, url){
         townhall: o.state.b.townhall,
         dominant: dominantClass(o.state),
         defStance: o.state.defStance || 'shieldwall',
+        across: realmOf(o) === across,
       }));
     return send(res, 200, {
       opponents: pickOpponents(u.state, pool),
@@ -695,6 +912,12 @@ async function api(req, res, url){
       return send(res, 429, { error: 'Your marshals are still regrouping.' });
     const target = db.users[String(body.target || '').toLowerCase()];
     if(!target || target === u) return send(res, 404, { error: 'No such hold.' });
+    // you may only reach across realms while the Rift is open
+    const rift = riftView(u, now);
+    const sameRealm = realmOf(target) === realmOf(u);
+    const across = rift.live && rift.theirs && realmOf(target) === rift.theirs.id;
+    if(!sameRealm && !across)
+      return send(res, 400, { error:'That hold is in another reach. Only an open Rift bridges them.' });
     advance(target, now);
     // the bracket is enforced here, not just offered in the list
     const mine = defensePower(u.state), theirs = defensePower(target.state);
@@ -704,6 +927,12 @@ async function api(req, res, url){
     u.state.name = u.name; target.state.name = target.name;   // for battle reports
     const report = resolveArena(u.state, target.state, { stance: body.stance, frac: body.frac }, now);
     if(report.error) return send(res, 400, { error: report.error });
+    // a win across the Rift scores for your reach; nothing is ever taken
+    if(across && report.won){
+      report.riftPoints = riftScore(realmOf(u), 'arena', 1, now);
+      pushMsg(stateChat(realmOf(u)), '—',
+        '🌌 '+u.name+' broke '+target.name+' across the Rift (+'+report.riftPoints+').');
+    }
     markDirty(); flush();
     return send(res, 200, { report, ...publicState(u) });
   }
@@ -838,7 +1067,7 @@ async function api(req, res, url){
       if(other) dms[other.name] = msgs.slice(-40);
     }
     return send(res, 200, {
-      state: db.chat.state.slice(-40),
+      state: stateChat(realmOf(u)).slice(-40),
       alliance: u.alliance ? (db.chat.alliance[u.alliance] || []).slice(-40) : [],
       dms, groups,
       online: Object.values(db.users)
@@ -884,9 +1113,10 @@ async function api(req, res, url){
     const band = t => t <= 8 ? 'Reach' : t <= 16 ? 'March' : t <= 24 ? 'Dominion' : 'Crown';
     const mine = band(u.state.b.townhall);
     return send(res, 200, {
-      landmarks: realmView(now),
+      landmarks: realmView(now, realmOf(u), riftView(u, now).live),
       boss: bossFor(u.alliance, now),
       rally: rallyView(u.alliance, now),
+      rift: riftView(u, now),
       musterMs: MUSTER_MS,
       hosts: HOSTS.map(h => ({ ...h, power: hostPower(u.alliance, h.mult) })),
       season: {
@@ -908,18 +1138,21 @@ async function api(req, res, url){
           const m = db.users[n.toLowerCase()];
           return t + (m ? armyPower(m.state) : 0);
         }, 0),
-        holds: LANDMARKS.filter(d => landmarkState(d.id).holder === a.tag).length,
+        holds: LANDMARKS.filter(d => landmarkState(d.id, realmOfAlliance(a.tag)).holder === a.tag).length,
       })).sort((x,y) => y.power - x.power).slice(0, 20),
     });
   }
 
   if(path === '/api/landmark/assault'){
     if(!u.alliance) return send(res, 400, { error:'Only an alliance can take a landmark.' });
-    const d = LANDMARKS.find(l => l.id === String(body.id||''));
+    const rift = riftView(u, now);
+    const d = LANDMARKS.find(l => l.id === String(body.id||''))
+           || (rift.live ? RIFT_HOLDS.find(l => l.id === String(body.id||'')) : null);
     if(!d) return send(res, 404, { error:'No such landmark.' });
     if(!isAwake(d, now)) return send(res, 400, { error:'That site still sleeps.' });
-    tickRealm(now);
-    const st = landmarkState(d.id);
+    const realm = realmOf(u);
+    tickRealm(now, realm);
+    const st = landmarkState(d.id, realm);
     if(st.holder === u.alliance) return send(res, 400, { error:'Your banner already flies there.' });
     if(st.banner) return send(res, 400, { error:'A banner is already going up there.' });
     if((u.state.assaultReady || 0) > now)
@@ -943,23 +1176,24 @@ async function api(req, res, url){
       st.banner = { tag: u.alliance, end: now + BANNER_MS, helps: 0, helpers: [] };
       claimed = true;
       const a = db.alliances[u.alliance];
-      pushMsg(db.chat.state, '—',
+      pushMsg(stateChat(realm), '—',
         '⚔️ ' + (a ? a.name : u.alliance) + ' breaks the garrison at ' + d.name + ' and begins raising a banner.');
     }
     markDirty();
     return send(res, 200, {
       dealt: power, fallen, claimed,
-      landmarks: realmView(now),
+      landmarks: realmView(now, realmOf(u), riftView(u, now).live),
       boss: bossFor(u.alliance, now), ...publicState(u),
     });
   }
 
   if(path === '/api/landmark/help'){
     if(!u.alliance) return send(res, 400, { error:'You are in no alliance.' });
-    tickRealm(now);
+    const realm = realmOf(u);
+    tickRealm(now, realm);
     let helped = 0;
-    for(const d of LANDMARKS){
-      const st = landmarkState(d.id);
+    for(const d of LANDMARKS.concat(RIFT_HOLDS)){
+      const st = landmarkState(d.id, realm);
       const b = st.banner;
       if(!b || b.tag !== u.alliance) continue;
       if(body.id && d.id !== body.id) continue;
@@ -971,7 +1205,7 @@ async function api(req, res, url){
       helped++;
     }
     if(helped) markDirty();
-    return send(res, 200, { helped, landmarks: realmView(now) });
+    return send(res, 200, { helped, landmarks: realmView(now, realm, riftView(u, now).live) });
   }
 
   if(path === '/api/rally/call'){
@@ -1073,7 +1307,7 @@ async function api(req, res, url){
           + Math.round(share*100)+'% of the damage.' + (i === 0 ? ' You struck hardest.' : ''), 'gold');
       });
       const a = db.alliances[u.alliance];
-      pushMsg(db.chat.state, '—', b.icon+' '+b.name+' is brought down by '+(a?a.name:u.alliance)+'.');
+      pushMsg(stateChat(realmOf(u)), '—', b.icon+' '+b.name+' is brought down by '+(a?a.name:u.alliance)+'.');
       pushMsg(db.chat.alliance[u.alliance] ||= [], '—',
         b.icon+' '+b.name+' is down — every hand that struck it shares the kill.');
     }

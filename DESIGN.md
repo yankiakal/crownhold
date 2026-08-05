@@ -250,6 +250,52 @@ Regalia and all 32 heroes. Measured: a full Regalia is ~10 hours of exclusive
 forge time; kitting an entire roster is several hundred. Runestone enters at
 tier 6, so early gear never blocks on the Runeworks (TH22).
 
+### KvK — realms and the Rift (v1.26)
+
+The last structural gap. Two parts.
+
+**Realms are now first-class containers.** Holds, alliances, landmarks, the state
+chat channel and the ladder all belong to one. New accounts join the youngest
+realm still taking people (population cap, or 30 days old, whichever first); when
+it closes, the next one opens and is announced in the old one's chat. Realm 1 is
+the world that already existed, so every pre-existing account belongs to it and
+the old global structures migrate into it.
+
+This matters for fairness on its own, before any war: a hold founded in month six
+should never be dropped into a world that has been compounding for six months.
+The ladder is scoped for the same reason — comparing worlds of different ages is
+noise, not competition.
+
+**The Rift** pairs realms by age (1↔2, 3↔4, …) every other season for a week:
+
+| Scores | Points |
+|---|---|
+| Beating a paired-realm hold in the Arena | 30 |
+| Breaking a Great Host | 120 × tier |
+| Holding contested ground | 4 per minute |
+
+While a Rift is open the Arena pool includes the paired realm and three neutral
+**Rift Holds** appear that alliances from either realm can take. While it is
+sealed, cross-realm attacks are refused outright.
+
+**What is deliberately absent: nothing is ever taken.** No resources, no
+buildings, no troops, no occupation, no migration under duress. Verified: the
+losing realm's holds finished with their troops and stores untouched. A Rift
+decides a title and a standing bonus — because the moment a realm can be *farmed*,
+the biggest wallet in it decides who else gets to play. The winner's holds are
+named Rift-Warden; the loser keeps everything it built.
+
+Two bugs found while testing with four accounts across two realms:
+
+- **The Rift's `open` flag was snapshotted at creation.** A season that should
+  have been sealed still read as open once the schedule changed under it — so
+  cross-realm attacks stayed legal after the window should have closed. Openness
+  is now derived at read time, never stored. Anything computed from config and
+  cached is a bug waiting for the config to change.
+- **The leaderboard handler ran before the POST body was parsed.** Scoping the
+  ladder by `body.token` would have thrown on every single leaderboard request;
+  it reads the token off the query string instead, and the client now sends it.
+
 ### Rallies: the Great Hosts (v1.25)
 
 The alliance boss is an **asynchronous** pile-on — everyone strikes when they

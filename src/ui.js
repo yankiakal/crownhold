@@ -508,6 +508,47 @@ function renderDaily(S){
   return h;
 }
 
+/* The Rift — realm against realm. A scoreboard, never a conquest. */
+function renderRift(S){
+  if(!net.isOnline()) return '';
+  const d = net.realmData();
+  const r = d && d.rift;
+  if(!r) return '';
+  const me = r.mine, them = r.theirs;
+  let h = '<section class="panel"><h2>The Rift <span style="letter-spacing:.05em">'
+    + (r.live ? 'open — closes in '+ftime(r.endsIn)
+       : them ? 'sealed' : 'no neighbouring reach yet')+'</span></h2>';
+
+  if(!them){
+    h += '<div class="stat-note">Yours is the only reach so far — <b>'+me.name+'</b>, '+me.holds
+      + ' hold'+(me.holds===1?'':'s')+'. When it fills, another opens beside it, and every '+r.every
+      + ' seasons the Rift bridges the two.</div>';
+    return h + '</section>';
+  }
+
+  const total = Math.max(1, me.score + them.score);
+  h += '<div class="riftrow">'
+    + '<span class="side mine">'+me.name+'<b>'+fmt(me.score)+'</b></span>'
+    + '<span class="side them">'+them.name+'<b>'+fmt(them.score)+'</b></span></div>'
+    + '<div class="riftbar"><i style="width:'+Math.round(100*me.score/total)+'%"></i></div>';
+
+  if(r.live){
+    h += '<div class="stat-note">The Arena reaches across: their holds are in your bracket, and beating one scores <b>+'
+      + r.points.arena+'</b>. Breaking a Great Host scores <b>+'+r.points.host
+      + '</b>. Contested ground pays <b>+'+r.points.hold+'</b> a minute while you hold it.</div>'
+      + '<div class="stat-note" style="color:var(--gold)">Nothing is ever taken across a Rift — not stores, not troops, '
+      + 'not ground you keep. The loser keeps everything it built. A Rift decides a title, not a fate.</div>';
+  }else{
+    h += '<div class="stat-note">Sealed. It opens every '+r.every+' seasons'
+      + (r.nextIn ? ' — next in '+r.nextIn+' season'+(r.nextIn===1?'':'s') : '')+'.</div>';
+  }
+  for(const past of (r.history||[]))
+    h += '<div class="trow"><span>🌌</span><span class="tname">Season '+past.season+'</span>'
+      + '<span class="spacer"></span><span class="tmeta">'
+      + (past.winner ? (past.winner === me.id ? 'your reach took it' : 'theirs took it') : 'nothing decided')+'</span></div>';
+  return h + '</section>';
+}
+
 /* Rallies: the synchronous ritual. One member calls, the muster window opens,
    everyone commits a real column, and it goes as one attack. */
 function renderRally(S){
@@ -1617,7 +1658,7 @@ export function render(){
   app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
     + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderPets(S) + renderRegalia(S) + renderSpoils(S)
-      + renderDaily(S) + renderEvent(S) + renderRally(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
+      + renderDaily(S) + renderEvent(S) + renderRift(S) + renderRally(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
       + renderAchievements(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
   fx.innerHTML = renderFx(S) + renderLore(S)

@@ -411,3 +411,12 @@ footer button{font-size:.68rem;padding:.25rem .6rem}
   background:#191410;border:1px solid var(--edge);border-radius:3px;
 }
 .chat-row input:focus{outline:2px solid var(--gold);outline-offset:1px}
+/* the Rift: two reaches, one bar between them */
+.riftrow{display:flex;justify-content:space-between;margin:.4rem 0 .2rem;font-size:.9rem}
+.riftrow .side{display:flex;flex-direction:column;font-family:var(--sans);font-size:.66rem;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim)}
+.riftrow .side b{font-family:var(--serif);font-size:1.15rem;letter-spacing:0;text-transform:none}
+.riftrow .side.mine{color:var(--gold)} .riftrow .side.mine b{color:var(--gold)}
+.riftrow .side.them{text-align:right;color:var(--info)} .riftrow .side.them b{color:var(--info)}
+.riftbar{height:6px;background:#2a3138;border-radius:3px;overflow:hidden;margin-bottom:.5rem}
+.riftbar i{display:block;height:100%;background:linear-gradient(90deg,var(--gold-deep),var(--gold))}
