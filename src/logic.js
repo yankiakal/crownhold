@@ -7,6 +7,7 @@ import {
   BUILDINGS, TROOPS, MASTERY, QUESTS, ACHIEVEMENTS, RES_META,
   HERO_POOL, HERO_SLOTS, SPOILS, RARITY,
   COURT_BASE, COURT_PER_TH, COURT_MAX, seasonNo, CLASS_AFFINITY, MARCH_HEROES,
+  ARENA_HEROES, STAR_POWER, starCap, starNeed, DEEDS,
   WAVE_TYPES, STANCES, COUNTER_BONUS, COUNTER_PENALTY, COUNTER_CASUALTY, SCREEN,
   EXPEDITIONS, EXPEDITION_CD,
   COST_EXP, TIME_EXP, TIERS, TIER_POWER, TIER_UPKEEP, TIER_COST,
@@ -31,6 +32,35 @@ export function allyBonus(s, key){ return (s.allyBonus && s.allyBonus[key]) || 0
 export function fmt(n){ return n>=10000 ? (n/1000).toFixed(1)+'k' : String(Math.floor(n)); }
 export function ftime(ms){ const s=Math.max(0,Math.ceil(ms/1000)); return s>=60 ? Math.floor(s/60)+'m '+(s%60)+'s' : s+'s'; }
 export function clock(t){ const d=new Date(t); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+
+/* ── stars ──
+   A star is worth +5% of everything a hero does, applied by raising their
+   effective level. One number feeds passives, lead traits, class affinity and
+   column capacity alike, so ascension never needs a special case anywhere. */
+export function heroStars(s, id){ return (s.heroes[id] && s.heroes[id].stars) || 0; }
+export function effLvl(s, id){
+  const h = s.heroes[id];
+  if(!h) return 0;
+  return Math.round(h.lvl * (1 + STAR_POWER * (h.stars || 0)));
+}
+export function heroStarCap(s){ return starCap(s.now || Date.now()); }
+/* Deeds are earned by fielding the hero. Ascension is automatic — there is no
+   currency to hoard and nothing to buy, so there is nothing to sell. */
+export function addDeeds(s, ids, kind, now){
+  const list = (Array.isArray(ids) ? ids : [ids]).filter(id => s.heroes[id] && HERO_POOL[id]);
+  const gain = DEEDS[kind] || 1, cap = heroStarCap(s);
+  for(const id of list){
+    const h = s.heroes[id];
+    h.deeds = (h.deeds || 0) + gain;
+    while((h.stars || 0) < cap && h.deeds >= starNeed(h.stars || 0)){
+      h.deeds -= starNeed(h.stars || 0);
+      h.stars = (h.stars || 0) + 1;
+      const d = HERO_POOL[id];
+      pushLog(s, '✦ '+d.icon+' '+d.name.split(',')[0]+' ascends to '+h.stars+'★.', 'gold');
+      showBanner(s, '✦ '+d.name.split(',')[0]+' — '+h.stars+'★', 'win', now);
+    }
+  }
+}
 
 /* ── the court ──
    A hero either sits in the court or rides at the head of a column; they
@@ -69,8 +99,8 @@ export function seatHero(s, id, now){
 export function heroBonus(s, key){
   let b = 0;
   for(const id of courtActive(s)){
-    const d = HERO_POOL[id], h = s.heroes[id];
-    if(d && d.bonus[key]) b += d.bonus[key]*h.lvl * (s.captain===id ? 2 : 1); // the Captain's passive counts double
+    const d = HERO_POOL[id];
+    if(d && d.bonus[key]) b += d.bonus[key]*effLvl(s,id) * (s.captain===id ? 2 : 1); // the Captain's passive counts double
   }
   return b;
 }
@@ -79,7 +109,7 @@ export function heroBonus(s, key){
 export function leadBonus(s, id, key){
   const d = HERO_POOL[id], h = s.heroes[id];
   if(!d || !h || !d.lead || d.lead.key !== key) return 0;
-  return d.lead.val * h.lvl;
+  return d.lead.val * effLvl(s, id);
 }
 /* Three heroes ride per column, so every lead trait is a sum over the party.
    Accepts a single id too, so older callers and saves keep working. */
@@ -96,9 +126,28 @@ export function affinity(s, heroes, troopKey){
   let b = 0;
   for(const id of list){
     const d = HERO_POOL[id], h = s.heroes[id];
-    if(d && h && d.cls === troopKey) b += CLASS_AFFINITY * h.lvl;
+    if(d && h && d.cls === troopKey) b += CLASS_AFFINITY * effLvl(s, id);
   }
   return b;
+}
+
+/* ── the arena five ──
+   Who sorties with an arena attack, and who answers one. Unlike a march party
+   these heroes are not away — a sortie is over in a minute — so the only rule
+   is that a hero out with a column cannot also be in the line. */
+export function arenaTeam(s){
+  return (s.arenaTeam || []).filter(id => s.heroes[id] && HERO_POOL[id] && !heroAway(s, id)).slice(0, ARENA_HEROES);
+}
+export function setArenaTeam(s, id, now){
+  if(!s.heroes[id] || !HERO_POOL[id]) return false;
+  s.now = now;
+  s.arenaTeam = s.arenaTeam || [];
+  const at = s.arenaTeam.indexOf(id);
+  if(at >= 0){ s.arenaTeam.splice(at, 1); return true; }
+  if(heroAway(s, id)) return false;
+  if(s.arenaTeam.length >= ARENA_HEROES) return false;
+  s.arenaTeam.push(id);
+  return true;
 }
 export function spoilBonus(s, key){
   let b = 0;
@@ -449,7 +498,7 @@ export function chooseOption(s, idx, now){
   if(!c || idx<0 || idx>=c.options.length) return false;
   const id = c.options[idx];
   if(c.type==='hero'){
-    s.heroes[id] = {lvl:1, xp:0};
+    s.heroes[id] = {lvl:1, xp:0, stars:0, deeds:0};
     const d = HERO_POOL[id];
     s.court = s.court || [];
     // a free chair is filled straight away so the draft never feels inert

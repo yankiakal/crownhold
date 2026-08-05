@@ -8,6 +8,7 @@ import { scoreDeed } from './events.js';
 import { takeCasualties } from './logic.js';
 import {
   tierPower, heroBonus, spoilBonus, perk, wavePower, leadBonus, leadTotal, affinity, heroAway,
+  effLvl, addDeeds,
   gainRes, gainValor, gainShield, gainMastery, pushLog, showBanner, fmt, ftime,
 } from './logic.js';
 
@@ -89,7 +90,7 @@ export function marchCapacity(s, heroes){
   const list = (Array.isArray(heroes) ? heroes : (heroes ? [heroes] : []))
     .filter(id => s.heroes[id] && HERO_POOL[id]).slice(0, MARCH_HEROES);
   let cap = MARCH_BASE_CAP;
-  for(const id of list) cap += CAP_PER_HERO + CAP_PER_LEVEL * s.heroes[id].lvl;
+  for(const id of list) cap += CAP_PER_HERO + CAP_PER_LEVEL * effLvl(s, id);
   return Math.round(cap);
 }
 /* The strongest available party, highest level first — used to preview capacity
@@ -251,6 +252,8 @@ function resolveReturn(s, m, now){
   if(m.mxp) gainMastery(s, Math.round(m.mxp * (1 + leadTotal(s, party, 'lore'))), now);
   // heroes who actually rode learn more than those who sat at the table
   for(const id of party) if(s.heroes[id]) s.heroes[id].xp += 40 + (m.long ? 120 : 0);
+  // and the ride itself counts toward their next star
+  addDeeds(s, party, m.long ? 'longHaul' : (m.report||'').startsWith('⚔️') ? 'camp' : 'march', now);
   if(m.writ){ gainShield(s, 1); txt += ', and a sealed Writ of Peace'; }
   pushLog(s, txt+'.', m.loot ? 'win' : 'loss');
   showBanner(s, '🚩 March returned — '+m.report.toLowerCase(), m.loot?'win':'loss', now);

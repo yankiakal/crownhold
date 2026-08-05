@@ -14,9 +14,10 @@
 // theirs, and how much of your army you dare commit (casualties here weaken the
 // wall that has to hold the next raid).
 
-import { TROOPS } from './defs.js';
+import { TROOPS, HERO_POOL } from './defs.js';
 import {
   armyBreakdown, tierPower, gainValor, gainMastery, pushLog, showBanner, fmt,
+  arenaTeam, affinity, leadTotal, addDeeds,
 } from './logic.js';
 import { scoreDeed } from './events.js';
 import { takeCasualties } from './logic.js';
@@ -86,7 +87,7 @@ export function armyOnly(s){
 }
 /* what the ladder shows and brackets on: a prepared army plus the wall's siege value */
 export function defensePower(s){
-  const bd = armyBreakdown(s);
+  const bd = defenceWithHeroes(s);
   return Math.round(bd.base * bd.mult * PREPARED + bd.wall * WALL_IN_SIEGE);
 }
 
@@ -99,11 +100,23 @@ export function committedTroops(s, frac){
   }
   return troops;
 }
-export function forcePower(s, troops){
+/* Five heroes ride with a sortie. Their class affinity lifts the troops they
+   know, exactly as it does on a march, so the same roster knowledge pays off in
+   both places — and the line you bring is a real choice, not a stat check. */
+export function forcePower(s, troops, team){
   const bd = armyBreakdown(s);
+  const five = team || arenaTeam(s);
   let base = 0;
-  for(const [k,n] of Object.entries(troops)) base += tierPower(s, k) * n;
-  return { base, mult: bd.mult };
+  for(const [k,n] of Object.entries(troops)) base += tierPower(s, k) * n * (1 + affinity(s, five, k));
+  return { base, mult: bd.mult * (1 + leadTotal(s, five, 'power')) };
+}
+/* A defender's five answer from the walls whether or not anyone is watching. */
+export function defenceWithHeroes(s){
+  const bd = armyBreakdown(s);
+  const five = arenaTeam(s);
+  let base = 0;
+  for(const k of Object.keys(TROOPS)) base += tierPower(s, k) * (s.t[k]||0) * (1 + affinity(s, five, k));
+  return { base, mult: bd.mult * (1 + leadTotal(s, five, 'power')), wall: bd.wall };
 }
 
 export function elo(attL, defL, won){
@@ -122,12 +135,13 @@ export function resolveArena(att, def, opts, now, rand = Math.random){
   const sent = Object.values(troops).reduce((a,b) => a+b, 0);
   if(!sent) return { error: 'You have no troops to send.' };
 
+  const attFive = arenaTeam(att), defFive = arenaTeam(def);
   const sm = stanceMult(attStance, defStance);
   const ab = answerBonus(att, def);
-  const f = forcePower(att, troops);
+  const f = forcePower(att, troops, attFive);
   const attackPower = Math.round(f.base * f.mult * sm * (1 + ab) * (ROLL_LOW + rand()*ROLL_SPAN));
   const wf = wallFactor(att, troops);
-  const defBd = armyBreakdown(def);
+  const defBd = defenceWithHeroes(def);
   const defPower = Math.round(defBd.base * defBd.mult * PREPARED + defBd.wall * wf);
   const won = attackPower >= defPower;
 
@@ -150,6 +164,11 @@ export function resolveArena(att, def, opts, now, rand = Math.random){
   if(won){ att.arenaWins = (att.arenaWins||0)+1; def.arenaLosses = (def.arenaLosses||0)+1; gainValor(att, 15); gainMastery(att, 25, now); }
   else   { att.arenaLosses = (att.arenaLosses||0)+1; def.arenaWins = (def.arenaWins||0)+1; gainValor(att, 3); gainMastery(att, 8, now); }
   att.arenaReady = now + ARENA_CD;
+  // both sides' fives earn from the fight — defending counts, even asleep
+  addDeeds(att, attFive, won ? 'arenaWin' : 'arena', now);
+  addDeeds(def, defFive, won ? 'arena' : 'arenaWin', now);
+  for(const id of attFive) if(att.heroes[id]) att.heroes[id].xp += won ? 60 : 25;
+  for(const id of defFive) if(def.heroes[id]) def.heroes[id].xp += won ? 25 : 60;
 
   const stanceNote = sm > 1 ? ' Your ' + attStance + ' broke their ' + defStance + '.'
                    : sm < 1 ? ' Their ' + defStance + ' answered your ' + attStance + '.' : '';

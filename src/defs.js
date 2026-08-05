@@ -243,6 +243,30 @@ export const HERO_POOL = {
    three level-10s command 108, three level-20s command 198. It binds hard while
    your heroes are green and stops binding once they are veterans, which makes it
    a gate on the *journey* rather than a permanent tax. */
+/* ── stars: the ladder that never ends ──
+   XP alone is too shallow a track for a hero you keep for a year, so heroes
+   ascend in stars on top of it. Stars are earned by *fielding* the hero —
+   marches led, arena fought, camps burned — never by acquiring duplicates.
+   That is the whole difference from a shard shop: the grind rewards attachment
+   to the heroes you have, not acquisition of the ones you don't.
+
+   The cap is the season number (floored at 5 so it is useful from day one), so
+   Season 16 means sixteen stars for your ENTIRE roster — the founding twelve
+   included. The ladder rises for everyone at once; nobody's hero is ever
+   retired by the calendar. A star is worth +5% of everything that hero does,
+   applied by raising their effective level. */
+export const STAR_MAX = 30, STAR_FLOOR = 5, STAR_POWER = 0.05;
+export function starCap(now){ return Math.min(STAR_MAX, Math.max(STAR_FLOOR, seasonNo(now))); }
+export function starNeed(stars){ return Math.round(12 * Math.pow(stars + 1, 1.6)); }
+/* deeds, by what the hero was actually doing when they earned them */
+export const DEEDS = { march:1, longHaul:3, camp:2, arena:2, arenaWin:3 };
+
+/* ── the arena five ──
+   Five heroes ride out with an arena sortie, as in Kingshot. They are not
+   "away" the way a march party is — a sortie is over in a minute — so the
+   choice here is which five, not whether you can spare them. */
+export const ARENA_HEROES = 5;
+
 export const MARCH_HEROES = 3;
 export const MARCH_BASE_CAP = 6;                  // a column with no leaders is a scouting party
 export const CAP_PER_HERO = 4, CAP_PER_LEVEL = 3;

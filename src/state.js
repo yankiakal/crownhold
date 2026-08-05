@@ -24,7 +24,7 @@ export function freshState(now, seed){
        range:0,stable:0,siegeyard:0,embassy:0,command:0},
     t:{spearman:8,archer:0,knight:0,ballista:0},
     tier:{spearman:1,archer:1,knight:1,ballista:1},
-    heroes:{}, spoils:{}, court:[], marchBoost:false, formations:[],
+    heroes:{}, spoils:{}, court:[], arenaTeam:[], marchBoost:false, formations:[],
     choice:null, choiceQueue:[], offersDone:0,
     stance:'balanced', captain:null, orderCd:{}, mods:null,
     laurels:1000, defStance:'shieldwall', arenaWins:0, arenaLosses:0,
@@ -74,13 +74,14 @@ export function applyOffline(s, awayMs){
   }
 }
 
-export function load(now){
-  try{
-    const raw = localStorage.getItem(SAVE_KEY);
-    if(!raw) return freshState(now);
-    const s = JSON.parse(raw);
+/* ── save migration ──
+   Backfill every field an older save lacks. This MUST be shared: the browser
+   runs it on load, and the server runs it before advancing a stored hold. It
+   used to live inside load(), which is browser-only — so online accounts silently
+   missed every field added since they were created, and new systems read
+   undefined on the server while working perfectly in local play. */
+export function migrate(s, now){
     s.now = now;
-    // migration: backfill fields that older saves lack
     if(s.mxp==null) s.mxp = 0;
     if(s.shields==null) s.shields = 0;
     if(s.shieldUntil==null) s.shieldUntil = 0;
@@ -134,6 +135,12 @@ export function load(now){
     // v1.19: one leader per column became a party of three
     if(!Array.isArray(s.formations)) s.formations = [];
     for(const m of s.marches) if(!Array.isArray(m.heroes)) m.heroes = m.hero ? [m.hero] : [];
+    // v1.20: heroes ascend in stars, and five of them ride with an arena sortie
+    for(const h of Object.values(s.heroes)){
+      if(h.stars == null) h.stars = 0;
+      if(h.deeds == null) h.deeds = 0;
+    }
+    if(!Array.isArray(s.arenaTeam)) s.arenaTeam = Object.keys(s.heroes).slice(0, 5);
     // v1.15: one training queue became one per yard
     if(!s.tq || typeof s.tq !== 'object' || s.tq.key){
       const old = s.tq && s.tq.key ? s.tq : null;
@@ -166,6 +173,14 @@ export function load(now){
     if(s.arenaLosses==null) s.arenaLosses = 0;
     if(s.arenaReady==null) s.arenaReady = 0;
     if(s.arenaLast===undefined) s.arenaLast = null;
+    return s;
+}
+
+export function load(now){
+  try{
+    const raw = localStorage.getItem(SAVE_KEY);
+    if(!raw) return freshState(now);
+    const s = migrate(JSON.parse(raw), now);
     // time away banks Rest — the catch-up for anyone who has been gone
     const trueAway = Math.max(now - (s.lastSeen||now), 0);
     if(trueAway > 7200000){

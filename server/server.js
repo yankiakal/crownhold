@@ -22,7 +22,7 @@ import { tick, armyPower, masteryLvl, upkeepPerSec, gainValor, gainMastery, push
 import { SEASON_MS as DEFAULT_SEASON_MS, SEASON_EPOCH, SEASON_ARCS,
          seasonNo as defSeasonNo, seasonEndsIn as defSeasonEndsIn } from '../src/defs.js';
 import { tickWorld } from '../src/world.js';
-import { freshState, applyOffline } from '../src/state.js';
+import { freshState, applyOffline, migrate } from '../src/state.js';
 import { applyAction, isGameAction } from '../src/actions.js';
 import {
   resolveArena, pickOpponents, defensePower, dominantClass,
@@ -391,7 +391,9 @@ function roomFor(u, channel, target){
 /* ── the fast-forward: bring a hold from its last save to now ── */
 
 function advance(u, now){
-  const s = u.state;
+  // stored holds predate every field added since they were created — run the
+  // same migration the browser runs before touching anything
+  const s = migrate(u.state, now);
   // alliance techs AND held landmarks reach the member through the state itself
   const techB = allyMemberBonus(db.alliances[u.alliance]) || {};
   const realmB = realmBonusFor(u.alliance);

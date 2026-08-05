@@ -6,6 +6,7 @@ import {
   WAVE_TYPES, STANCES, EXPEDITIONS,
   WAVE_MS, FIRST_WAVE_MS, SHIELD_MS, SECOND_QUEUE_TH, COURT_PER_TH, COURT_MAX,
   MARCH_HEROES, CLASS_AFFINITY, CAP_PER_HERO, CAP_PER_LEVEL,
+  ARENA_HEROES, STAR_POWER, starNeed,
 } from './defs.js';
 import { TIERS } from './defs.js';
 import {
@@ -23,6 +24,7 @@ import {
   maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost,
   wavePower, streakMult, finishCost, xpNeed,
   courtSeats, courtSeated, heroAway, leadBonus, leadTotal, heroSeasonOpen,
+  effLvl, heroStarCap, arenaTeam, setArenaTeam,
 } from './logic.js';
 import { applyAction, isGameAction } from './actions.js';
 import {
@@ -250,20 +252,30 @@ function renderMuster(S){
   return h;
 }
 
+/* Stars, drawn compactly — a hero at 20★ should not push the row off a phone. */
+function starStr(n, cap){
+  if(n >= 6) return '✦'+n+(cap && n>=cap ? ' (max)' : '');
+  return '✦'.repeat(n) || '';
+}
+function heroStars(S, k){ return (S.heroes[k] && S.heroes[k].stars) || 0; }
+
 /* One hero row, told from wherever they happen to be standing. */
 function heroRow(S, k, where){
   const d = HERO_POOL[k], hero = S.heroes[k];
   if(!d || !hero) return '';
   const isCapt = S.captain===k, cd = S.orderCd[k]||0;
   const seated = where === 'court';
-  const fx = seated ? d.fx(hero.lvl) + (isCapt ? ' <b style="color:var(--gold)">×2</b>' : '')
-                    : LEAD_FX[d.lead.key](hero.lvl) + ' · +'+Math.round(CLASS_AFFINITY*hero.lvl*100)
+  const eff = effLvl(S, k);
+  const fx = seated ? d.fx(eff) + (isCapt ? ' <b style="color:var(--gold)">×2</b>' : '')
+                    : LEAD_FX[d.lead.key](eff) + ' · +'+Math.round(CLASS_AFFINITY*eff*100)
                       +'% to '+TROOPS[d.cls].name.toLowerCase()+'s';
+  const st = heroStars(S, k);
   return '<div class="hero'+(where==='away'?' away':'')+'">'
     + '<span class="hname">'+(isCapt?'★ ':'')+(where==='away'?'🚩 ':'')+d.icon+' '+d.name+'</span>'
+    + (st ? ' <span class="stars">'+starStr(st, heroStarCap(S))+'</span>' : '')
     + ' <span class="rar rar-'+d.rarity+'">'+TROOPS[d.cls].icon+' '+RARITY[d.rarity].tag+'</span>'
     + '<button class="info-btn" data-act="detail" data-dtype="hero" data-key="'+k+'" title="hero details">ⓘ</button>'
-    + '<div class="order-row"><span class="hmeta">L'+hero.lvl+' · '+fx+'</span>'
+    + '<div class="order-row"><span class="hmeta">L'+hero.lvl+(st?'+'+st+'✦':'')+' · '+fx+'</span>'
     + '<button class="order-btn" data-act="order" data-key="'+k+'" '+(cd>0?'disabled':'')
     + ' title="'+d.order.desc+'">'+d.order.name+(cd>0?' · '+cd+'w':'')+'</button></div>'
     + '</div>';
@@ -656,6 +668,25 @@ function renderAlliance(S){
   return h;
 }
 
+/* The five who ride with a sortie — and who answer one while you sleep. */
+function renderArenaFive(S){
+  const own = Object.keys(S.heroes).filter(k => HERO_POOL[k]);
+  if(!own.length) return '';
+  const five = S.arenaTeam || [];
+  let h = '<div class="stat-note" style="margin-top:.5rem">Your arena five '
+    + '<b>'+five.length+'/'+ARENA_HEROES+'</b> — their class affinity lifts the troops you commit, '
+    + 'attacking <i>and</i> defending. They are not away; a sortie is over in a minute.</div>'
+    + '<div class="fiverow">';
+  for(const k of own){
+    const d = HERO_POOL[k], on = five.includes(k), away = heroAway(S, k);
+    const full = five.length >= ARENA_HEROES && !on;
+    h += '<button class="five'+(on?' on':'')+((full||away)?' dim':'')+'" data-act="arenaTeam" data-key="'+k+'"'
+      + ((full||away)?' disabled':'')+'>'+(on?'✓':'')+d.icon+' '+TROOPS[d.cls].icon
+      + '<span class="hmeta">'+d.name.split(',')[0]+(away?' · away':'')+'</span></button>';
+  }
+  return h + '</div>';
+}
+
 function renderArena(S){
   if(!net.isOnline())
     return '<section class="panel"><h2>The Arena</h2>'
@@ -672,6 +703,7 @@ function renderArena(S){
       + st.icon+' '+st.name+'</button>';
   }
   h += '</div>';
+  h += renderArenaFive(S);
 
   if(S.arenaLast){
     const r = S.arenaLast;
@@ -802,12 +834,14 @@ function renderColumnComposer(S){
       const on = marchParty.includes(k);
       const seated = (S.court||[]).includes(k);
       const full = marchParty.length >= MARCH_HEROES && !on;
+      const eff = effLvl(S, k), st = hero.stars||0;
       h += '<button class="lead'+(on?' on':'')+(full?' dim':'')+'" data-act="pickLead" data-key="'+k+'">'
         + (on?'✓ ':'')+d.icon+' '+d.name.split(',')[0]
+        + (st ? ' <span class="stars">'+starStr(st)+'</span>' : '')
         + ' <span class="rar rar-'+d.rarity+'">'+TROOPS[d.cls].icon+' '+TROOPS[d.cls].name+'</span>'
-        + '<span class="hmeta">L'+hero.lvl+' · '+LEAD_FX[d.lead.key](hero.lvl)
-        + ' · +'+Math.round(CLASS_AFFINITY*hero.lvl*100)+'% to '+TROOPS[d.cls].name.toLowerCase()+'s'
-        + ' · +'+(CAP_PER_HERO + CAP_PER_LEVEL*hero.lvl)+' capacity'
+        + '<span class="hmeta">L'+hero.lvl+(st?'+'+st+'✦':'')+' · '+LEAD_FX[d.lead.key](eff)
+        + ' · +'+Math.round(CLASS_AFFINITY*eff*100)+'% to '+TROOPS[d.cls].name.toLowerCase()+'s'
+        + ' · +'+(CAP_PER_HERO + CAP_PER_LEVEL*eff)+' capacity'
         + (seated ? ' · leaves the court' : '')+'</span></button>';
     }
     h += '</div>';
@@ -1003,16 +1037,29 @@ function renderDetail(S){
     const seated = (S.court||[]).includes(k), away = heroAway(S,k);
     const seats = courtSeats(S), full = (S.court||[]).length >= seats;
     const arc = SEASON_ARCS[d.season||0];
+    const st = hero.stars||0, cap = heroStarCap(S), dNeed = starNeed(st);
+    const eff = effLvl(S, k);
+    const inFive = (S.arenaTeam||[]).includes(k);
     title = (isCapt?'★ ':'')+d.icon+' '+d.name;
-    body += '<p class="d-fx"><span class="rar rar-'+d.rarity+'">'+RARITY[d.rarity].tag+'</span> · Level '+hero.lvl
+    body += '<p class="d-fx"><span class="rar rar-'+d.rarity+'">'+RARITY[d.rarity].tag+'</span> · '
+      + TROOPS[d.cls].icon+' '+TROOPS[d.cls].name+' captain · Level '+hero.lvl
       + (hero.lvl>=20?' (max)':' · '+fmt(hero.xp)+'/'+fmt(need)+' xp')+'</p>'
       + '<div class="xpbar"><i style="width:'+(hero.lvl>=20?100:Math.min(100,100*hero.xp/need))+'%"></i></div>'
+      + '<p class="d-row"><b class="stars">'+(st?starStr(st):'—')+'</b> '+st+' of '+cap+' stars'
+      + (st>=cap ? ' — <b>at this season’s ceiling; it rises with the next.</b>'
+                 : ' · '+(hero.deeds||0)+'/'+dNeed+' deeds to the next')+'</p>'
+      + (st>=cap ? '' : '<div class="xpbar"><i style="width:'+Math.min(100,100*(hero.deeds||0)/dNeed)+'%;background:var(--gold)"></i></div>')
+      + '<p class="d-row" style="opacity:.75">Stars come from <b>fielding them</b> — every march led, camp burned and arena fought. '
+      + 'Each is worth +'+Math.round(STAR_POWER*100)+'% of everything they do'
+      + (st ? ', so they act as level <b>'+eff+'</b>' : '')+'.</p>'
       + (arc ? '<p class="d-row" style="opacity:.75">Came to the hold in Season '+(d.season||0)+' — '+arc.name+'</p>' : '')
-      + '<p class="d-row">'+(seated?'<b style="color:var(--gold)">Seated.</b> ':'')+'In court: '+d.fx(hero.lvl)
+      + '<p class="d-row">'+(seated?'<b style="color:var(--gold)">Seated.</b> ':'')+'In court: '+d.fx(eff)
       + (isCapt?' — <b style="color:var(--gold)">doubled as Captain</b>':'')+'</p>'
-      + '<p class="d-row">'+(away?'<b style="color:var(--gold)">Riding out.</b> ':'')+'Leading a column: '+LEAD_FX[d.lead.key](hero.lvl)
-      + ', and <b>+'+Math.round(CLASS_AFFINITY*hero.lvl*100)+'% to '+TROOPS[d.cls].name.toLowerCase()+'s</b> — the troops they know. '
-      + 'Adds <b>'+(CAP_PER_HERO + CAP_PER_LEVEL*hero.lvl)+'</b> to what the column can hold.</p>'
+      + '<p class="d-row">'+(away?'<b style="color:var(--gold)">Riding out.</b> ':'')+'Leading a column: '+LEAD_FX[d.lead.key](eff)
+      + ', and <b>+'+Math.round(CLASS_AFFINITY*eff*100)+'% to '+TROOPS[d.cls].name.toLowerCase()+'s</b> — the troops they know. '
+      + 'Adds <b>'+(CAP_PER_HERO + CAP_PER_LEVEL*eff)+'</b> to what the column can hold.</p>'
+      + '<p class="d-row">'+(inFive?'<b style="color:var(--gold)">In your arena five.</b> ':'')
+      + 'In the arena their class affinity applies to the force you commit.</p>'
       + '<p class="d-row">Order — <b>'+d.order.name+'</b>: '+d.order.desc+' Cooldown '+d.order.cd+' waves.'+(cd>0?' Ready in '+cd+'.':'')+'</p>';
     if(away) body += '<p class="d-warn">They are out with a column and cannot take a chair until it comes home.</p>';
     else if(!seated && full) body += '<p class="d-warn">Every chair is taken ('+seats+'). Stand someone down, or raise the Tavern.</p>';
@@ -1020,6 +1067,9 @@ function renderDetail(S){
       + (away ? '' : '<button class="primary" data-act="seat" data-key="'+k+'" '+((!seated && full)?'disabled':'')
           + '>'+(seated?'Stand down from the court':'🪑 Seat in the court')+'</button>')
       + (seated ? '<button data-act="captain" data-key="'+k+'">'+(isCapt?'Relieve of command':'★ Appoint Captain')+'</button>' : '')
+      + (away ? '' : '<button data-act="arenaTeam" data-key="'+k+'" '
+          + ((!inFive && (S.arenaTeam||[]).length >= ARENA_HEROES)?'disabled':'')+'>'
+          + (inFive?'Stand down from the five':'⚔ Add to the arena five')+'</button>')
       + '<button data-act="order" data-key="'+k+'" '+(cd>0?'disabled':'')+'>Use '+d.order.name+'</button>'
       + '</div>';
   }
@@ -1154,6 +1204,13 @@ function renderCodex(S){
     + 'A hero who actually rides earns far more XP than one who sits.</li>'
     + '<li><b>Formations</b> save a column — its three leaders and the exact count of each troop — for one-tap reuse. '
     + 'They hold nothing you could not assemble by hand; they just spare you assembling it eight times a day.</li>'
+    + '<li><b>Stars are the ladder that never ends.</b> On top of levels, heroes ascend in stars — earned by <i>fielding</i> them '
+    + '(marches led, camps burned, arena fought), never by acquiring duplicates. Each star is worth +'+Math.round(STAR_POWER*100)
+    + '% of everything that hero does. The cap is the season number, so Season 16 means sixteen stars for your <i>whole roster</i>, '
+    + 'the founding twelve included — the ladder rises for everyone at once and no hero is ever retired by the calendar. '
+    + 'Yours cap at <b>'+heroStarCap(S)+'★</b> this season.</li>'
+    + '<li><b>Five heroes ride with an arena sortie</b>, attacking and defending alike, and their class affinity lifts the force you commit. '
+    + 'They are not away while they fight — a sortie is over in a minute — so the only rule is that a hero out with a column cannot be in the line.</li>'
     + '<li>Heroes level to 20 on raid XP. Spoils are permanent; most stack.</li>'
     + '<li>Mastery: the full 10-perk track is listed in its panel with exact XP thresholds. XP comes from every kind of play.</li>'
     + '</ul>'

@@ -76,10 +76,14 @@ function simulate(minutes, enemyLuck, skilled, label){
         if(!L.seatHero(s, id, ms)) break;
       }
     }
-    // marches: the skilled bot raids the frontier when the wall can spare a quarter of the army
+    /* Marches: the skilled bot works the frontier whenever the wall can spare a
+       quarter of the army. The old 2.2x gate almost never opened — the bot sat
+       at home and the sim gave no signal at all on columns, leaders or stars,
+       which is not how anyone actually plays. 1.4x is still cautious (it keeps
+       a comfortable margin over the next wave) but it does go out. */
     if(skilled && s.marches.length < W.marchSlots(s)){
       const nextEnemy = L.wavePower(s.wave)*(s.wave%5===0?1.6:1)*1.12;
-      if(L.armyPower(s) > 2.2*nextEnemy){
+      if(L.armyPower(s) > 1.4*nextEnemy){
         let target = -1;
         // three leaders per column now, and they cap how many troops fit
         const party = skilled ? W.bestLeaders(s, 3) : [];
@@ -235,7 +239,7 @@ function simulate(minutes, enemyLuck, skilled, label){
   console.log('-- troops: '+Object.entries(s.t).map(([k,v])=>k+':'+v).join(' ')
     +' (total '+Object.values(s.t).reduce((a,b)=>a+b,0)+')'
     +' | column capacity '+W.marchCapacity(s, W.bestLeaders(s, 3)));
-  console.log('-- heroes: '+(Object.entries(s.heroes).map(([k,h])=>k+' L'+h.lvl).join(', ')||'none')
+  console.log('-- heroes: '+(Object.entries(s.heroes).map(([k,h])=>k+' L'+h.lvl+(h.stars?'+'+h.stars+'✦':'')+(h.deeds?'('+h.deeds+'d)':'')).join(', ')||'none')
     +' | spoils: '+(Object.entries(s.spoils).map(([k,n])=>k+(n>1?'×'+n:'')).join(', ')||'none'));
   console.log('-- valor left '+Math.floor(s.valor)+' spent '+valorSpent+' | famine events (recent log) '+famines
     +' | build-idle '+Math.round(100*idleBuild/T)+'% | at-cap '+Math.round(100*cappedTime/T)+'%');
