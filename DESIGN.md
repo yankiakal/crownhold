@@ -143,6 +143,81 @@ The season clock itself lives in `defs.js` (`seasonNo`, `SEASON_EPOCH`,
 never disagree about which heroes have arrived. Offline play uses the same
 calendar as online play.
 
+### Stars: the ladder that never ends (v1.20)
+
+The objection that forced this: *"if Season 16's heroes are no stronger, why
+does Season 16 matter?"* That was right, and "every hero equal forever" was a
+dead system. The fix separates two things Kingshot deliberately fuses.
+
+**Does a player need something that always gets stronger?** Yes.
+**Does the *new hero* need to be stronger than the *old hero*?** No — and that
+specific choice is what turns a roster into a subscription.
+
+In Kingshot, stars come from **duplicate shards**: the new hero is stronger *and*
+the only way to ascend them is the shop. The creep isn't retention, it's the
+collection funnel. Change where stars come from and the same infinite vertical
+grind stops being P2W:
+
+- **Stars are earned by fielding the hero** — marches led, camps burned, arena
+  fought. Never by acquiring duplicates. The grind rewards attachment to the
+  heroes you have, not acquisition of next season's.
+- **Each star is +5% of everything that hero does**, applied by raising their
+  *effective level*. One number feeds passives, lead traits, class affinity and
+  column capacity alike, so ascension needs no special case anywhere.
+- **The cap is the season number** (floored at 5). Season 16 means sixteen stars
+  for your *whole roster*, the founding twelve included. The ladder rises for
+  everyone at once; no hero is ever retired by the calendar.
+- **Deeds curve:** `12 × (n+1)^1.6`. An active player's core heroes take ~a day
+  for the first star, ~3 weeks to 5★, months to 10★, a year-plus to 20★. Infinite
+  by construction, and every rung is paid in play.
+
+The remaining lever, still unbuilt and the strongest of the four: **seasonal meta
+shifts.** If Season 7's raids run cavalry-heavy, spearman heroes are *correct*
+that season. That makes seasons matter enormously, makes a wide roster valuable,
+and needs no creep at all.
+
+### Columns and the arena five (v1.19–1.20)
+
+Three heroes ride at the head of every march and five with an arena sortie, as in
+Kingshot. Two consequences worth stating:
+
+- **Column capacity comes from the leaders' levels** (6 base, +4 +3/level each).
+  This is the honest answer to "why eight march slots?" — the slots are free, the
+  capacity to fill them is not. Sized against the armies this game actually
+  fields (upkeep holds a hold to dozens or low hundreds, not millions), so it
+  binds hard while heroes are green and stops binding once they are veterans.
+- **Eight slots × three leaders = 24 heroes** to field a full frontier. That is
+  the real reason the roster grew to 32, and it resolves into *assignment
+  decisions* rather than *power*.
+
+**Class affinity** gives every hero one troop class (8 each across spearman /
+archer / knight / ballista — our siege tier, which Kingshot lacks, gets its own
+captains). +1%/level to that troop type in their column. Measured on 50 knights:
+930 power under three cavalry heroes, 666 mixed, 550 unled. That 69% spread is
+what makes a *wide* roster valuable rather than a tall one, and it is why
+**formations** (saved leader+troop presets) are a real tool and not just a
+convenience.
+
+### The hold that grows (v1.21)
+
+Buildings you cannot yet raise are no longer shown at all. A new hold displays
+**5 of 21** structures and reveals new ground as the Town Hall rises, announcing
+each one. The alternative — greeting a new player with sixteen greyed-out cards —
+communicated "look what you don't have" instead of "look what you built".
+
+### Lore (v1.21)
+
+`src/lore.js` — the Annals of the Reach, ~950 words in nine entries plus a
+per-season thread. It has a job beyond flavour: **every rule that makes Crownhold
+different is given a reason in the world.** Valor cannot be bought because
+oath-coin was never minted, only witnessed. Heroes cannot be pulled because they
+answer horns, not purses. Raids come back weaker after winning because the
+Unpaid are collecting a debt, not farming a resource. Nothing is taken in the
+Arena because a Warden who strips another Warden's granary has made the frontier
+one hall weaker against the thing that actually comes at night.
+
+A player who never reads a word of it still feels the shape of it.
+
 ## The deep economy (v1.4 — refined goods and the long climb)
 
 Kingshot introduces new currencies deep into the curve; Crownhold does the same,

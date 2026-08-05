@@ -182,6 +182,19 @@ section.panel{
 .fiverow .five.on{border-color:var(--gold);color:var(--gold)}
 .fiverow .five.on .hmeta{color:var(--gold);opacity:.8}
 .fiverow .five.dim{opacity:.4}
+/* the Chronicle: made to be read, so it gets measure, rhythm and a drop cap */
+.lore-open{font-size:.86rem;line-height:1.6;color:var(--ink-dim);font-style:italic;
+  max-width:34rem;margin:.6rem auto .2rem;text-align:left}
+.lorebook{max-width:38rem}
+.chron{margin:1.1rem 0}
+.chron h3{margin:0;font-size:1.02rem;color:var(--gold);letter-spacing:.02em}
+.chron .when{display:block;font-family:var(--sans);font-size:.62rem;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--ink-dim);margin:.1rem 0 .45rem}
+.chron p{font-size:.88rem;line-height:1.62;margin:.5rem 0;max-width:34rem;text-wrap:pretty}
+.chron p:first-of-type::first-letter{float:left;font-size:2.4rem;line-height:.85;
+  padding:.1rem .3rem 0 0;color:var(--gold)}
+.chron p.unwritten{opacity:.5;font-style:italic}
+.chron p.unwritten::first-letter{float:none;font-size:inherit;padding:0;color:inherit}
 .xpbar{height:3px;background:#151009;border-radius:2px;margin-top:.3rem;overflow:hidden}
 .xpbar i{display:block;height:100%;background:var(--info)}
 .quest-txt{font-size:.95rem}

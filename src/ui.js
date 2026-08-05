@@ -27,6 +27,7 @@ import {
   effLvl, heroStarCap, arenaTeam, setArenaTeam,
 } from './logic.js';
 import { applyAction, isGameAction } from './actions.js';
+import { CHRONICLE, SEASON_LORE } from './lore.js';
 import {
   STANCE_BEATS, CLASS_ANSWER, stanceMult, composition, answerBonusForClass,
   committedTroops, forcePower,
@@ -161,8 +162,17 @@ function renderHold(S){
       + '</section>';
     return h;
   }
+  /* Buildings you cannot yet raise are not shown at all — the hold visibly
+     grows new ground as the Town Hall rises, instead of greeting a new player
+     with twenty-one greyed-out cards. Only the count is teased, so there is
+     still something to look forward to. */
+  const all = Object.entries(BUILDINGS);
+  const shown = all.filter(([k,d]) => !d.th || S.b.townhall >= d.th || S.b[k] > 0);
+  const hidden = all.length - shown.length;
+  const nextAt = all.filter(([,d]) => d.th > S.b.townhall).map(([,d]) => d.th).sort((a,b)=>a-b)[0];
+
   h += '<div class="bgrid">';
-  for(const [k,d] of Object.entries(BUILDINGS)){
+  for(const [k,d] of shown){
     const lvl = S.b[k];
     const lockedTH = d.th && S.b.townhall < d.th;
     const fxTxt = d.prod
@@ -190,7 +200,11 @@ function renderHold(S){
     }
     h += '</div>';
   }
-  h += '</div></section>';
+  h += '</div>';
+  if(hidden > 0)
+    h += '<div class="stat-note">🏗 <b>'+hidden+'</b> more structure'+(hidden===1?'':'s')
+      + ' still want ground you have not cleared. The next breaks earth at <b>Town Hall '+nextAt+'</b>.</div>';
+  h += '</section>';
   return h;
 }
 
@@ -448,7 +462,7 @@ function renderSeasonCast(S, now){
     const cast = Object.entries(HERO_POOL).filter(([,d]) => (d.season||0) === n);
     if(!cast.length) continue;
     const here = n <= cur;
-    h += '<div class="trow'+(n===cur?' mine':'')+'"><span>'+(here?'✓':'🕓')+'</span>'
+    h += '<div class="trow'+(n===cur?' mine':'')+'" title="'+esc(arc.blurb)+'"><span>'+(here?'✓':'🕓')+'</span>'
       + '<span class="tname">Season '+n+' · '+arc.name+'</span>'
       + '<span class="tmeta">'+cast.map(([k,d]) => d.icon+' '+d.name.split(',')[0]
           + (S.heroes[k] ? '' : '')).join(' · ')+'</span>'
@@ -753,12 +767,13 @@ function renderFooter(){
   return '<footer><span>Crownhold prototype — every Valor point was earned, none were sold.</span>'
     + '<button data-act="account">'+(who ? '☁ '+who : '☁ Play online')+'</button>'
     + '<button data-act="codex">📖 Codex — all the rules</button>'
+    + '<button data-act="lore">📜 Annals — the story of the Reach</button>'
     + '<button data-act="about">About</button>'
     + '<button data-act="reset"'+(armed?' style="color:var(--bad);border-color:var(--bad)"':'')+'>'
     + (armed?'⚠ Tap again to raze EVERYTHING':'Raze &amp; restart')+'</button></footer>';
 }
 
-let codexOpen = false;
+let codexOpen = false, loreOpen = false;
 let resetArmedUntil = 0; // two-tap raze confirmation window
 let arenaStance = 'balanced', arenaFrac = 0.5;
 let listView = false, sceneMounted = false;
@@ -1081,6 +1096,33 @@ function renderDetail(S){
     + '</div></div>';
 }
 
+/* The Chronicle — the story, kept where it can be read at leisure rather than
+   dribbled through tooltips. Every rule that makes this game unusual has a
+   reason in here, which is the point of writing it at all. */
+function renderLore(S){
+  if(!loreOpen) return '';
+  const cur = seasonNo(Date.now());
+  let h = '<div class="overlay"><div class="card codex lorebook">'
+    + '<h1 style="font-size:1.4rem">THE ANNALS OF THE REACH</h1><div class="rule"></div>';
+  for(const e of CHRONICLE){
+    h += '<article class="chron"><h3>'+e.title+'</h3>'
+      + '<span class="when">'+e.when+'</span>'
+      + e.body.trim().split(/\n\s*\n/).map(p => '<p>'+p.replace(/\s+/g,' ').trim()+'</p>').join('')
+      + '</article>';
+  }
+  h += '<article class="chron"><h3>The seasons so far</h3><span class="when">The turning</span>';
+  for(const [n, text] of Object.entries(SEASON_LORE)){
+    const here = Number(n) <= cur;
+    h += '<p class="'+(here?'':'unwritten')+'"><b>'+(here?'':'✎ ')+'Season '+n+' — '
+      + (SEASON_ARCS[n] ? SEASON_ARCS[n].name : '')+'.</b> '
+      + (here ? text.replace(/\s+/g,' ').trim() : 'Not yet written. The riders are still on the road.')+'</p>';
+  }
+  h += '</article>'
+    + '<button class="primary" data-act="lore" style="margin-top:.6rem">Close the Annals</button>'
+    + '</div></div>';
+  return h;
+}
+
 function renderCodex(S){
   if(!codexOpen) return '';
   const tm = trainMult(S);
@@ -1226,13 +1268,20 @@ function renderFx(S){
     h += '<div class="overlay"><div class="card">'
       + '<h1>CROWNHOLD</h1><div class="rule"></div>'
       + '<p class="sub">Hold the frontier. Pay in effort, never in coin.</p>'
+      + '<p class="lore-open">There was a Crown once, and it was not metal — it was an oath, that no one '
+      + 'who held the line would go unpaid. It broke at Hallowmere ninety years ago in an empty counting-house. '
+      + 'What comes over the ridge each night are the ones who were owed.<br><br>'
+      + 'Nobody appointed you Warden. You walked out here and started building, and people sheltered behind it. '
+      + '<b>Nobody is coming.</b> Everything else is what you decide to do about that.</p>'
       + '<div class="pillars">'
       + '<p><b>No cash shop.</b> Every timer can be finished instantly — with Valor, a currency you can only earn by playing.</p>'
       + '<p><b>Heroes are drafted,</b> never gambled. Milestones offer three champions — you choose who stays. No banners, no pity timers, no pulls.</p>'
       + '<p><b>Losing never spirals.</b> A band that beats you returns <i>weaker</i>, not stronger — raids only escalate when you win. And armies eat: feed your muster or it deserts.</p>'
       + '</div>'
+      + '<div style="display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap">'
       + '<button class="primary" data-act="intro" style="font-size:.95rem;padding:.6rem 1.6rem">Take the field</button>'
-      + '</div></div>';
+      + '<button data-act="lore" style="font-size:.95rem;padding:.6rem 1.2rem">📜 Read the Annals</button>'
+      + '</div></div></div>';
   }
   return h;
 }
@@ -1331,7 +1380,8 @@ export function render(){
       + renderDaily(S) + renderEvent(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
       + renderAchievements(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
-  fx.innerHTML = renderFx(S) + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
+  fx.innerHTML = renderFx(S) + renderLore(S)
+    + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
   drawMap(S);
   const slot = document.getElementById('scene-slot');
   if(slot){
@@ -1348,6 +1398,7 @@ export function render(){
 const VIEW_ACTIONS = {
   about: () => { store.s.seenIntro = false; },
   codex: () => { codexOpen = !codexOpen; },
+  lore: () => { loreOpen = !loreOpen; },
   detail: b => { detail = {type:b.dataset.dtype, key:b.dataset.key}; },
   detailClose: () => { detail = null; },
   // assembling a column: all view state until the march order is actually given

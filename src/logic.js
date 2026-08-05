@@ -984,12 +984,21 @@ export function tick(s, now, dt, rand=Math.random){
 
   for(const q of QUEUE_KEYS){
     if(s[q] && now >= s[q].end){
+      const wasTH = s.b.townhall;
       s.b[s[q].key]++;
       const d = BUILDINGS[s[q].key];
       pushLog(s, d.name+' complete — now level '+s.b[s[q].key]+'. +2 Valor.', 'gold');
       gainValor(s, 2); s[q] = null;
       gainMastery(s, 6, now);
       scoreDeed(s, 'built', 1, now);
+      // a growing hall makes room for new ground — announce what just appeared
+      if(s.b.townhall > wasTH){
+        const opened = Object.entries(BUILDINGS).filter(([,b]) => b.th === s.b.townhall);
+        for(const [,b] of opened){
+          pushLog(s, '🏗 Ground is cleared for the '+b.name+' — '+b.fx, 'gold');
+          showBanner(s, '🏗 New ground: the '+b.name, 'win', now);
+        }
+      }
     }
   }
   if(s.hq && now >= s.hq.end){
