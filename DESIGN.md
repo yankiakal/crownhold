@@ -292,6 +292,15 @@ Regalia and all 32 heroes. Measured: a full Regalia is ~10 hours of exclusive
 forge time; kitting an entire roster is several hundred. Runestone enters at
 tier 6, so early gear never blocks on the Runeworks (TH22).
 
+**Charms and gear sockets: declined (v1.32).** Proposed and set aside, so it does
+not get re-proposed as though it were new. Two reasons. Progression already has
+three multiplying layers on a hero — level, stars, wargear — and a fourth adds
+arithmetic, not decisions: nobody chooses *between* charm slots, they simply fill
+them. And sockets are the standard vehicle for exactly what the no-random-stats
+rule above exists to forbid; a socket wants something random to put in it, and
+once a slot can hold a rerollable thing, rerolls are the obvious sale. The two
+gear tracks stay as the ceiling on how much a hero can be equipped.
+
 ### The Salt Isle (v1.29) — a second map that plays the opposite way
 
 A second map is only worth building if it plays differently from the first,
