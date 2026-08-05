@@ -6,9 +6,9 @@ import {
   startUpgrade, startTraining, finishBuildNow, finishTrainNow, startResearch, finishResearchNow, claimEvent, claimDaily, startHealing, finishHealNow,
   expedition, setCaravan, setStance, setDefStance, setCaptain, seatHero, useOrder, raiseShield,
   chooseOption, rerollChoice, promote, saveFormation, deleteFormation, setArenaTeam,
-  startGear, finishGearNow,
+  startGear, finishGearNow, setPetOut,
 } from './logic.js';
-import { startMarch } from './world.js';
+import { startMarch, startHunt } from './world.js';
 import { TROOPS } from './defs.js';
 
 /* Marches arrive as flat form fields (`t_spearman=120`) so the same params
@@ -48,6 +48,8 @@ export const GAME_ACTIONS = {
   rerollChoice: (s,p,now,rand) => rerollChoice(s, now, rand),
   promote:      (s,p,now)      => promote(s, p.key, now),
   march:        (s,p,now)      => startMarch(s, Number(p.idx), troopsFrom(p), now, p.long === '1', partyFrom(p)),
+  hunt:         (s,p,now)      => startHunt(s, Number(p.idx), troopsFrom(p), now, partyFrom(p)),
+  petOut:       (s,p,now)      => setPetOut(s, p.key || null, now),
   saveForm:     (s,p,now)      => saveFormation(s, p.key, partyFrom(p), troopsFrom(p), now),
   deleteForm:   (s,p,now)      => deleteFormation(s, p.key, now),
   intro:        (s)            => { s.seenIntro = true; return true; },

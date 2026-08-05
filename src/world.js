@@ -2,13 +2,14 @@
 // Same contract as logic.js — pure state functions, injectable time and rng.
 // tickWorld() is called from the main loop and the sim alongside logic.tick().
 
-import { TROOPS, TIME_SCALE, HERO_POOL,
+import { TROOPS, TIME_SCALE, HERO_POOL, BEASTS, BEAST_UNLOCK, BEAST_COUNT, BEAST_ROAM_MS,
+         BEAST_RESPAWN_MS,
          MARCH_HEROES, MARCH_BASE_CAP, CAP_PER_HERO, CAP_PER_LEVEL } from './defs.js';
 import { scoreDeed } from './events.js';
 import { takeCasualties } from './logic.js';
 import {
   tierPower, heroBonus, spoilBonus, perk, wavePower, leadBonus, leadTotal, affinity, heroAway,
-  effLvl, addDeeds,
+  effLvl, addDeeds, petBonus, gainBond, gainPetXp,
   gainRes, gainValor, gainShield, gainMastery, pushLog, showBanner, fmt, ftime,
 } from './logic.js';
 
@@ -54,7 +55,92 @@ export function genWorld(seed){
     x:spots[i].x, y:spots[i].y, type,
     lvl:1+Math.floor(rng()*3), respawnAt:0,
   }));
-  return { seed, tiles };
+  return { seed, tiles, beasts: [], roamAt: 0 };
+}
+
+/* ── beasts ──
+   They wander open ground rather than sitting on a node, so the map has
+   something in it that changes on its own. A hunt is a thing you have to catch. */
+export function openGround(s){
+  const taken = new Set(s.world.tiles.map(t => t.x+','+t.y));
+  const out = [];
+  for(let y=0; y<MAP_H; y++) for(let x=0; x<MAP_W; x++){
+    if(Math.abs(x-CX)<=1 && Math.abs(y-CY)<=1) continue;
+    if(!taken.has(x+','+y)) out.push({x,y});
+  }
+  return out;
+}
+export function beastSpecies(s){
+  const th = s.b.townhall;
+  return Object.keys(BEASTS).filter(k => th >= (BEAST_UNLOCK[k] || 1));
+}
+/* A hunted beast is never in the way of a march already out after it. */
+export function beastBusy(s, i){ return (s.marches||[]).some(m => m.beast === i); }
+
+export function spawnBeasts(s, now, rand){
+  const w = s.world;
+  w.beasts = w.beasts || [];
+  const kinds = beastSpecies(s);
+  if(!kinds.length) return;
+  const ground = openGround(s).filter(g => !w.beasts.some(b => b.x===g.x && b.y===g.y));
+  while(w.beasts.length < BEAST_COUNT && ground.length){
+    const at = ground.splice(Math.floor(rand()*ground.length), 1)[0];
+    // heavier beasts are rarer: bias the roll toward the front of the unlock list
+    const roll = Math.floor(Math.pow(rand(), 1.8) * kinds.length);
+    w.beasts.push({
+      species: kinds[Math.min(kinds.length-1, roll)],
+      x: at.x, y: at.y, lvl: 1 + Math.floor(rand()*3),
+    });
+  }
+  w.roamAt = now + BEAST_ROAM_MS;
+}
+/* The herds move. A beast a column is already committed to stays put — being
+   led on a wild chase by the interface is not the kind of difficulty anyone wants. */
+export function roamBeasts(s, now, rand){
+  const w = s.world;
+  if(!w.beasts) return;
+  const ground = openGround(s);
+  w.beasts.forEach((b, i) => {
+    if(beastBusy(s, i)) return;
+    const near = ground.filter(g => Math.abs(g.x-b.x) <= 2 && Math.abs(g.y-b.y) <= 2
+      && !w.beasts.some(o => o !== b && o.x===g.x && o.y===g.y));
+    if(!near.length) return;
+    const to = near[Math.floor(rand()*near.length)];
+    b.x = to.x; b.y = to.y;
+  });
+  w.roamAt = now + BEAST_ROAM_MS;
+}
+
+/* ── how hard the frontier is ──
+   Measured against a COLUMN, not against the raid clock. Camps and beasts used
+   to scale on wavePower(s.wave), which grows without bound — while a column is
+   hard-capped by its leaders' levels at a couple of hundred troops. The result
+   was that from around wave 20 the entire frontier quietly became unbeatable,
+   and nothing in the game said so.
+
+   The anchor is now a reference column: how many troops your three best captains
+   could command, times what a soldier of your current tier is worth. Both terms
+   are bounded — capacity tops out at 198, tiers at ten — so difficulty converges
+   while stars, gear and class affinity keep adding column power on top. That is
+   what makes the late frontier feel earned rather than endless, and it rises in
+   steps you can see coming instead of drifting up with the raid counter.
+
+   Note it uses your best three heroes whether or not they are free: if this read
+   availability, camp strength would lurch about every time a column rode out. */
+export const REF_K = 0.93;
+export function topLeaders(s, n = MARCH_HEROES){
+  return Object.keys(s.heroes)
+    .filter(id => HERO_POOL[id])
+    .sort((a,b) => (effLvl(s,b) - effLvl(s,a)) || (a < b ? -1 : 1))
+    .slice(0, n);
+}
+export function refPower(s){
+  return REF_K * marchCapacity(s, topLeaders(s)) * tierPower(s, 'spearman');
+}
+export function beastPower(s, b){
+  const d = BEASTS[b.species];
+  if(!d) return 1;
+  return Math.round(refPower(s) * d.power * (0.5 + 0.25*b.lvl));
 }
 
 export function tileDist(t){ return Math.max(Math.abs(t.x-CX), Math.abs(t.y-CY)); }
@@ -102,7 +188,7 @@ export function bestLeaders(s, n = MARCH_HEROES){
     .slice(0, n);
 }
 export function campPower(s, tile){
-  return Math.round(wavePower(Math.max(3, s.wave-3)) * (0.45 + 0.3*tile.lvl));
+  return Math.round(refPower(s) * (0.55 + 0.3*tile.lvl));
 }
 export function gatherYield(s, tile){
   const th = s.b.townhall;
@@ -131,6 +217,40 @@ export function fitColumn(s, want, heroes){
     }
   }
   return { troops, total, cap };
+}
+
+/* Hunt a beast. Shares everything with startMarch except the target: a beast is
+   a moving point on open ground rather than an index into the tile list. */
+export function startHunt(s, bi, want, now, heroes){
+  s.now = now;
+  const b = (s.world.beasts || [])[bi];
+  if(!b || beastBusy(s, bi)) return false;
+  if((s.marches||[]).length >= marchSlots(s)) return false;
+  const party = (Array.isArray(heroes) ? heroes : (heroes ? [heroes] : []))
+    .filter(Boolean).slice(0, MARCH_HEROES);
+  if(new Set(party).size !== party.length) return false;
+  if(party.some(id => !heroCanLead(s, id))) return false;
+  const { troops, total } = fitColumn(s, want, party);
+  if(total === 0) return false;
+  for(const [k,n] of Object.entries(troops)) s.t[k] -= n;
+  const travel = Math.round(tileDist(b)*TRAVEL_MS_PER_TILE*marchSpeed(s)
+    * Math.max(0.4, 1 - leadTotal(s, party, 'speed') - petBonus(s, 'speed')));
+  s.marches.push({
+    beast: bi, troops, heroes: party, out: travel,
+    arriveAt: now+travel, homeAt: now+travel+travel,
+    resolved:false,
+  });
+  for(const id of party){
+    if(!s.court) break;
+    const at = s.court.indexOf(id);
+    if(at >= 0) s.court.splice(at, 1);
+    if(s.captain === id) s.captain = null;
+  }
+  const d = BEASTS[b.species];
+  pushLog(s, '🏹 '+total+' troops go out after the '+d.name
+    + (party.length ? ', under '+party.map(id => HERO_POOL[id].name.split(',')[0]).join(', ') : '')
+    + ' ('+ftime(travel)+' out).');
+  return true;
 }
 
 export function startMarch(s, idx, want, now, longHaul, heroes){
@@ -171,12 +291,64 @@ export function startMarch(s, idx, want, now, longHaul, heroes){
   return true;
 }
 
+/* The hunt. A beast never kills — it wounds — so the wager is the column's time
+   and the wall standing thinner while they are out, not the veterans themselves. */
+function resolveHunt(s, m, now, rand){
+  m.resolved = true;
+  const party = marchParty(m);
+  const b = (s.world.beasts || [])[m.beast];
+  if(!b){                                  // it moved on or was already taken
+    m.loot = null; m.valor = 0; m.mxp = 4;
+    m.report = '🏹 The trail went cold';
+    return;
+  }
+  const d = BEASTS[b.species];
+  const haul = 1 + leadTotal(s, party, 'haul') + petBonus(s, 'haul');
+  const guard = Math.max(0.25, 1 - leadTotal(s, party, 'guard'));
+  const enemy = beastPower(s, b) * (0.9 + rand()*0.2);
+  const mine = Math.round(marchPower(s, m.troops, party) * (1 + petBonus(s, 'hunt')));
+  m.woundedBack = {};
+  if(mine >= enemy){
+    const ratio = enemy/Math.max(mine,1);
+    const lf = 0.22*ratio*ratio*guard;
+    for(const k of Object.keys(m.troops)){
+      const l = Math.round(m.troops[k]*lf);
+      m.troops[k] = Math.max(0, m.troops[k]-l);
+      m.woundedBack[k] = (m.woundedBack[k]||0) + l;
+    }
+    const L = Math.round(enemy * 0.55 * haul);
+    m.loot = {food:Math.round(L*0.55), wood:Math.round(L*0.2), iron:Math.round(L*0.12)};
+    m.valor = d.valor + 4*b.lvl;
+    m.mxp = d.mxp + 8*b.lvl;
+    m.bond = d.pet * b.lvl;                // the hunt is the only road to a companion
+    m.report = d.icon+' The '+d.name+' is brought down ('+mine+' vs '+Math.round(enemy)+')';
+    s.beastsSlain = (s.beastsSlain||0) + 1;
+    scoreDeed(s, 'beast', 1, now);
+    s.world.beasts.splice(m.beast, 1);
+    s.world.spawnAt = now + BEAST_RESPAWN_MS;   // the herds wander back in their own time
+    // indices shift when one is removed — keep every other hunt pointed correctly
+    for(const o of s.marches) if(o !== m && o.beast > m.beast) o.beast--;
+    m.beast = -1;
+  }else{
+    const keep = 1 - 0.30*guard;
+    for(const k of Object.keys(m.troops)){
+      const l = m.troops[k] - Math.floor(m.troops[k]*keep);
+      m.troops[k] = Math.floor(m.troops[k]*keep);
+      m.woundedBack[k] = (m.woundedBack[k]||0) + l;
+    }
+    m.loot = null; m.valor = 3; m.mxp = 10; m.bond = Math.ceil(d.pet/2);
+    m.report = d.icon+' The '+d.name+' drove them off ('+mine+' vs '+Math.round(enemy)+')';
+    m.homeAt = now + (m.out || 0);
+  }
+}
+
 function resolveArrival(s, m, now, rand){
+  if(m.beast != null) return resolveHunt(s, m, now, rand);
   const tile = s.world.tiles[m.tile];
   const tt = TILE_TYPES[tile.type];
   m.resolved = true;
   const party = marchParty(m);
-  const haul = 1 + leadTotal(s, party, 'haul') + (m.boost ? 0.5 : 0);
+  const haul = 1 + leadTotal(s, party, 'haul') + petBonus(s, 'haul') + (m.boost ? 0.5 : 0);
   const guard = Math.max(0.25, 1 - leadTotal(s, party, 'guard'));
   if(tt.kind==='camp'){
     const enemy = campPower(s, tile) * (0.88 + rand()*0.24);
@@ -254,6 +426,8 @@ function resolveReturn(s, m, now){
   for(const id of party) if(s.heroes[id]) s.heroes[id].xp += 40 + (m.long ? 120 : 0);
   // and the ride itself counts toward their next star
   addDeeds(s, party, m.long ? 'longHaul' : (m.report||'').startsWith('⚔️') ? 'camp' : 'march', now);
+  // the hunt is what brings companions in, and what teaches the one at your side
+  if(m.bond){ gainBond(s, m.bond, now); gainPetXp(s, m.bond); }
   if(m.writ){ gainShield(s, 1); txt += ', and a sealed Writ of Peace'; }
   pushLog(s, txt+'.', m.loot ? 'win' : 'loss');
   showBanner(s, '🚩 March returned — '+m.report.toLowerCase(), m.loot?'win':'loss', now);
@@ -270,6 +444,10 @@ export function tickWorld(s, now, rand=Math.random){
       s.marches.splice(i,1);
     }
   }
+  // the herds: restock on a cadence, and move what is not being hunted
+  if(!s.world.beasts || (s.world.beasts.length < BEAST_COUNT && now >= (s.world.spawnAt || 0)))
+    spawnBeasts(s, now, rand);
+  if(now >= (s.world.roamAt || 0)) roamBeasts(s, now, rand);
   // worked-out tiles regrow, sometimes richer
   for(const t of s.world.tiles){
     if(t.respawnAt && now >= t.respawnAt){

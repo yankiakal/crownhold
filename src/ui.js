@@ -7,12 +7,14 @@ import {
   WAVE_MS, FIRST_WAVE_MS, SHIELD_MS, SECOND_QUEUE_TH, COURT_PER_TH, COURT_MAX,
   MARCH_HEROES, CLASS_AFFINITY, CAP_PER_HERO, CAP_PER_LEVEL,
   ARENA_HEROES, STAR_POWER, starNeed, TEMPERS, temperFor,
+  BEASTS, BEAST_ROAM_MS, PET_POOL, PET_MAX_LVL, petXpNeed, petBondNeed,
 } from './defs.js';
 import { TIERS } from './defs.js';
 import {
   TILE_TYPES, MAP_W, MAP_H, CX, CY, TRAVEL_MS_PER_TILE, GATHER_MS,
   tileDist, marchSlots, tileBusy, marchPower, campPower, gatherYield, startMarch,
   heroCanLead, marchCapacity, fitColumn, bestLeaders, marchParty as partyOf,
+  beastPower, beastBusy, marchSpeed,
   LONG_HAUL_WORK, LONG_HAUL_YIELD,
 } from './world.js';
 import {
@@ -24,7 +26,7 @@ import {
   maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost,
   wavePower, streakMult, finishCost, xpNeed,
   courtSeats, courtSeated, heroAway, leadBonus, leadTotal, heroSeasonOpen,
-  effLvl, heroStarCap, arenaTeam, setArenaTeam, gearBlockedBy,
+  effLvl, heroStarCap, arenaTeam, setArenaTeam, gearBlockedBy, petBonus,
 } from './logic.js';
 import { applyAction, isGameAction } from './actions.js';
 import { CHRONICLE, SEASON_LORE } from './lore.js';
@@ -94,12 +96,15 @@ function renderThreat(S){
   const total = S.wavesWon===0 && S.wave===1 ? FIRST_WAVE_MS : WAVE_MS;
   const pct = Math.max(0, Math.min(100, 100*left/total));
   const isWB = S.wave % 5 === 0;
-  const scouted = S.b.watchtower >= 1;
+  // a raven at your side sees them form early enough to matter without a tower
+  const raven = petBonus(S, 'warn') > 0;
+  const scouted = S.b.watchtower >= 1 || raven;
   const wt = WAVE_TYPES[S.waveType||'rabble'];
   const est = scouted
     ? wt.icon+' '+wt.name+' · ≈'+Math.round(wavePower(S.wave)*(isWB?1.6:1)*streakMult(S))+' strength'
       +(S.streak>0?' (bloodied)':'')
       +(wt.weakTo?' · weak to '+STANCES[wt.weakTo].name+' &amp; '+TROOPS[wt.counter].name+'s':'')
+      +(!S.b.watchtower && raven ? ' <span style="opacity:.7">(your raven brought word)</span>' : '')
     : 'an unknown band — a Watchtower would name it';
   let h = '<div class="threat"><div class="row">';
   if(shielded){
@@ -351,6 +356,35 @@ function renderHeroes(S){
       + 'and the roster grows every season. Heroes are drafted, never pulled and never sold.</div>';
   h += '</section>';
   return h;
+}
+
+/* The kennel. One companion walks at your side; the rest wait their turn. */
+function renderPets(S){
+  const own = Object.entries(S.pets||{}).filter(([k]) => PET_POOL[k]);
+  const slain = S.beastsSlain||0;
+  if(!own.length && !slain) return '';
+  const need = petBondNeed(own.length);
+  const maxed = own.length >= Object.keys(PET_POOL).length;
+  let h = '<section class="panel"><h2>The Kennel <span style="letter-spacing:.05em">'
+    + own.length+'/'+Object.keys(PET_POOL).length+' · '+slain+' beast'+(slain===1?'':'s')+' taken</span></h2>'
+    + '<div class="stat-note">Companions come off the frontier and nowhere else — hunt beasts, earn bond, and three '
+    + 'are offered for you to keep one. <b>Only one walks at your side.</b> The rest wait, so a full kennel is more '
+    + 'choices and never more power.</div>';
+  if(!maxed)
+    h += '<div class="stat-note">Bond <b>'+(S.bond||0)+'/'+need+'</b> toward the next'
+      + '<div class="xpbar" style="margin-top:.3rem"><i style="width:'+Math.min(100,100*(S.bond||0)/need)+'%;background:var(--gold)"></i></div></div>';
+  for(const [k,p] of own){
+    const d = PET_POOL[k], out = S.petOut===k;
+    const xn = petXpNeed(p.lvl);
+    h += '<div class="hero'+(out?'':' locked')+'"><span class="hname">'+(out?'🐾 ':'')+d.icon+' '+d.name+'</span>'
+      + '<div class="order-row"><span class="hmeta">L'+p.lvl+'/'+PET_MAX_LVL+' · '+d.fx(p.lvl)
+      + (p.lvl<PET_MAX_LVL?' · '+fmt(p.xp||0)+'/'+fmt(xn)+' xp':' · fully grown')+'</span>'
+      + '<button class="order-btn" data-act="petOut" data-key="'+k+'">'+(out?'Leave at home':'Take along')+'</button></div>'
+      + '</div>';
+  }
+  if(!own.length)
+    h += '<div class="stat-note" style="font-style:italic">Nothing has followed you home yet. Hunt the frontier.</div>';
+  return h + '</section>';
 }
 
 /* One forgeable piece — used for both the Regalia and a hero's kit. */
@@ -1055,6 +1089,31 @@ function renderDetail(S){
     }
   }
 
+  else if(detail.type==='beast'){
+    const b = (S.world.beasts||[])[k]; if(!b) return '';
+    const d = BEASTS[b.species];
+    const fit = fitColumn(S, marchWant, marchParty);
+    const mine = Math.round(marchPower(S, fit.troops, marchParty) * (1 + petBonus(S,'hunt')));
+    const enemy = beastPower(S, b);
+    title = d.icon+' '+d.name+' '+TIERS[b.lvl-1];
+    body += '<p class="d-row" style="font-style:italic;opacity:.8">'+d.blurb+'</p>'
+      + '<p class="d-row">Distance '+tileDist(b)+' — '+ftime(tileDist(b)*TRAVEL_MS_PER_TILE*marchSpeed(S))+' each way. '
+      + 'The herds move every '+ftime(BEAST_ROAM_MS)+', but one you are already hunting will stand.</p>'
+      + '<p class="d-delta">Strength ≈<b>'+enemy+'</b>. Brings <b>'+(d.valor+4*b.lvl)+' Valor</b>, '
+      + (d.mxp+8*b.lvl)+' Mastery, meat and hides — and <b>'+(d.pet*b.lvl)+' bond</b> toward your next companion.</p>'
+      + '<p class="d-row" style="opacity:.75">A hunt only ever <b>wounds</b>. Nothing you send here dies.</p>';
+    if(beastBusy(S,k)) body += '<p class="d-warn">A column is already out after this one.</p>';
+    else if(S.marches.length >= marchSlots(S)) body += '<p class="d-warn">Every column is in the field.</p>';
+    else{
+      body += renderColumnComposer(S);
+      if(fit.total)
+        body += '<p class="d-delta">Your party hunts at <b'+(mine>=enemy?'':' style="color:var(--bad)"')+'>'+mine+'</b>'
+          + ' against ≈'+enemy+(mine<enemy?' — they will be driven off':'')+'.</p>';
+      body += '<button class="primary" data-act="hunt" data-idx="'+k+'" '+columnAttrs()
+        + (fit.total?'':' disabled')+'>'+(fit.total?'🏹 Hunt — '+fit.total+' troops':'Choose troops to send')+'</button>';
+    }
+  }
+
   else if(detail.type==='arena'){
     const a = net.arenaData();
     const o = a && a.opponents.find(x => x.key === k);
@@ -1278,6 +1337,15 @@ function renderCodex(S){
     + '<li>Tap a map tile to inspect and <b>march</b> on it: resource nodes (worked for a large haul), Bandit Camps (burned for loot, Valor and Mastery), Ancient Ruins (Valor, Mastery, 20% Writ).</li>'
     + '<li>Travel costs 12s per tile each way; gathering takes 60s. Marching troops carry their own rations and <b>do not defend the wall</b> until they return.</li>'
     + '<li><b>Long haul</b>: work a resource node for '+ftime(LONG_HAUL_WORK)+' instead of a minute and bring back '+LONG_HAUL_YIELD+'× the haul — the thing to set going before you close the game, at the price of an undefended wall until they are home.</li>'
+    + '<li><b>Beasts roam.</b> Camps sit still; the herds move every '+ftime(BEAST_ROAM_MS)+' across open ground between the nodes, '
+    + 'so a hunt is something you have to catch. Five species — '+Object.values(BEASTS).map(d=>d.icon+' '+d.name).join(', ')
+    + ' — unlock by Town Hall. A hunt <b>only ever wounds</b>: nothing you send after a beast dies. '
+    + 'A beast you are already hunting will stand and wait rather than lead you on a chase.</li>'
+    + '<li><b>Companions come off the hunt and nowhere else.</b> Beasts pay <i>bond</i>; at each threshold three companions are '
+    + 'offered and you keep one, the same draft as heroes. <b>Only one walks at your side</b>, so a full kennel of '
+    + Object.keys(PET_POOL).length+' is more choices and never more power. Their bonuses sit in corners no hero touches — '
+    + 'refining, expeditions, storage, infirmary beds, scouting, travel — so a companion changes the hold&#39;s texture rather than its strength. '
+    + 'They level from hunting alongside you.</li>'
     + '<li>Camp battles use your march&#39;s power — the hold&#39;s bonuses, plus whatever the hero leading it is worth (no wall, no stance). Defeat costs a third of the marchers, wounded not dead.</li>'
     + '<li>You field '+marchSlots(S)+' columns: one, plus another every 5 Command Center levels and one more at Town Hall 10. Each can be given its own hero to lead. Worked tiles regrow in ~4 minutes, sometimes richer.</li>'
     + '</ul>'
@@ -1377,10 +1445,19 @@ function renderFx(S){
 function renderChoice(S){
   const c = S.choice;
   if(!c) return '';
-  const isHero = c.type==='hero';
+  const isHero = c.type==='hero', isPet = c.type==='pet';
   let cards = '';
   c.options.forEach((id, i) => {
-    if(isHero){
+    if(isPet){
+      const d = PET_POOL[id];
+      cards += '<button class="choice-card" data-act="choose" data-i="'+i+'">'
+        + '<span class="cicon">'+d.icon+'</span>'
+        + '<span class="rar" style="color:var(--ink-dim)">Companion</span>'
+        + '<span class="cname">'+d.name+'</span>'
+        + '<span class="cfx">'+d.fx(1)+' per level</span>'
+        + '<span class="cfx" style="opacity:.7;font-style:italic">'+d.blurb+'</span>'
+        + '</button>';
+    }else if(isHero){
       const d = HERO_POOL[id];
       cards += '<button class="choice-card" data-act="choose" data-i="'+i+'">'
         + '<span class="cicon">'+d.icon+'</span>'
@@ -1399,9 +1476,11 @@ function renderChoice(S){
     }
   });
   return '<div class="overlay"><div class="card" style="max-width:42rem">'
-    + '<h1 style="font-size:1.5rem">'+(isHero?'A DRAFT OF CHAMPIONS':'SPOILS OF WAR')+'</h1>'
+    + '<h1 style="font-size:1.5rem">'+(isHero?'A DRAFT OF CHAMPIONS':isPet?'SOMETHING FOLLOWED YOU HOME':'SPOILS OF WAR')+'</h1>'
     + '<div class="rule"></div>'
-    + '<p class="sub">'+(isHero?'Three answer the call. One may stay.':'Claim one prize from the routed warband.')+'</p>'
+    + '<p class="sub">'+(isHero?'Three answer the call. One may stay.'
+        :isPet?'Three came in behind the hunting party. One may stay.'
+        :'Claim one prize from the routed warband.')+'</p>'
     + '<div class="choice-grid">'+cards+'</div>'
     + (c.reroll>0 ? '<button data-act="rerollChoice" '+(S.valor<5?'disabled':'')+'>Redraw the offer · 5 ⚜ Valor</button>' : '')
     + '</div></div>';
@@ -1413,12 +1492,20 @@ function renderWorld(S){
   h += '<canvas id="worldmap" width="'+(MAP_W*56)+'" height="'+(MAP_H*56)+'"></canvas>';
   const now = Date.now();
   for(const m of S.marches){
-    const tile = S.world.tiles[m.tile], tt = TILE_TYPES[tile.type];
+    // a column is out after a tile or after a beast; a slain beast leaves neither
+    let icon = '🏹', name = 'the hunt';
+    if(m.beast == null){
+      const tile = S.world.tiles[m.tile], tt = TILE_TYPES[tile.type];
+      icon = tt.icon; name = tt.name;
+    }else{
+      const b = (S.world.beasts||[])[m.beast], d = b && BEASTS[b.species];
+      if(d){ icon = d.icon; name = d.name; }
+    }
     const n = Object.values(m.troops).reduce((a,b)=>a+b,0);
     const phase = !m.resolved ? 'outbound · arrives '+ftime(m.arriveAt-now)
                               : 'returning · home '+ftime(m.homeAt-now);
     const party = partyOf(m).filter(id => HERO_POOL[id]);
-    h += '<div class="stat-note">🚩 '+n+' troops → '+tt.icon+' '+tt.name+' — '+phase
+    h += '<div class="stat-note">'+(m.beast==null?'🚩 ':'🏹 ')+n+' troops → '+icon+' '+name+' — '+phase
       + (party.length ? ' <span style="color:var(--gold)">· '
           + party.map(id => HERO_POOL[id].icon+' '+HERO_POOL[id].name.split(',')[0]).join(', ')+'</span>' : '')+'</div>';
   }
@@ -1456,6 +1543,20 @@ function drawMap(S){
       ctx.strokeRect(t.x*C+3, t.y*C+3, C-6, C-6);
     }
   });
+  // the herds, on open ground between the nodes
+  const hunted = new Set(S.marches.filter(m => m.beast != null && m.beast >= 0).map(m => m.beast));
+  (S.world.beasts || []).forEach((b,i) => {
+    const d = BEASTS[b.species];
+    if(!d) return;
+    const cx = b.x*C+C/2, cy = b.y*C+C/2;
+    ctx.font = '24px serif';
+    ctx.fillText(d.icon, cx, cy-4);
+    ctx.fillStyle = '#c25a45'; ctx.font = '9px sans-serif';
+    ctx.fillText('I'.repeat(b.lvl), cx, cy+18);
+    ctx.strokeStyle = hunted.has(i) ? '#d9a441' : 'rgba(194,90,69,.55)';
+    ctx.lineWidth = hunted.has(i) ? 2 : 1;
+    ctx.strokeRect(b.x*C+3, b.y*C+3, C-6, C-6);
+  });
   ctx.font = '28px serif';
   ctx.fillText('🏰', CX*C+C/2, CY*C+C/2);
 }
@@ -1464,7 +1565,7 @@ export function render(){
   const S = store.s;
   app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
-    + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderRegalia(S) + renderSpoils(S)
+    + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderPets(S) + renderRegalia(S) + renderSpoils(S)
       + renderDaily(S) + renderEvent(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
       + renderAchievements(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
@@ -1782,7 +1883,10 @@ export function wire(){
       const x = Math.floor((e.clientX-rect.left)/rect.width*MAP_W);
       const y = Math.floor((e.clientY-rect.top)/rect.height*MAP_H);
       const idx = store.s.world.tiles.findIndex(t => t.x===x && t.y===y);
-      if(idx >= 0){ detail = {type:'tile', key:idx}; render(); }
+      if(idx >= 0){ detail = {type:'tile', key:idx}; render(); return; }
+      // nothing built there — a beast may be standing on it
+      const bi = (store.s.world.beasts||[]).findIndex(b => b.x===x && b.y===y);
+      if(bi >= 0){ detail = {type:'beast', key:bi}; render(); }
       return;
     }
     const btn = e.target.closest('button[data-act]');

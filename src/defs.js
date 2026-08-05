@@ -243,6 +243,33 @@ export const HERO_POOL = {
    three level-10s command 108, three level-20s command 198. It binds hard while
    your heroes are green and stops binding once they are veterans, which makes it
    a gate on the *journey* rather than a permanent tax. */
+/* ── beasts of the frontier ──
+   Camps sit still and wait to be burned. Beasts roam, which is the whole point
+   of them: a hunt is a thing you have to catch, and the map is never the same
+   twice. Hunting only ever WOUNDS your troops (it is daily content, and the game
+   should not ask you to weigh veterans against it) — the risk is the time and
+   the column you tie up, not the muster.
+
+   Beasts are also the only source of pets. A companion comes off the frontier
+   with a hunting party; there is no other door, and certainly no purchasable
+   one. `pet` is the weight this species carries toward the next companion. */
+export const BEAST_ROAM_MS = 5 * 60000;      // how often the herds move
+/* A slain beast is not replaced instantly — the herds have to wander back in.
+   Without this the frontier became a conveyor belt: a bot farmed 281 of them in
+   eight hours, which is not a hunt, it is a queue. */
+export const BEAST_RESPAWN_MS = 6 * 60000;
+export const BEAST_COUNT = 5;
+export const BEASTS = {
+  boar:  {name:'Tusked Boar',      icon:'🐗', power:0.45, valor:8,  mxp:18, pet:1, blurb:'Bad-tempered and everywhere.'},
+  wolf:  {name:'Ridgeback Wolf',   icon:'🐺', power:0.75, valor:12, mxp:26, pet:2, blurb:'Hunts in a pack; so should you.'},
+  elk:   {name:'Greathorn Elk',    icon:'🦌', power:1.00, valor:16, mxp:34, pet:3, blurb:'Will not be driven. Must be met.'},
+  bear:  {name:'Hallowmere Bear',  icon:'🐻', power:1.45, valor:24, mxp:52, pet:4, blurb:'Older than the Breaking, and it remembers.'},
+  wyrm:  {name:'Ash Wyrm',         icon:'🐉', power:2.20, valor:40, mxp:90, pet:7, blurb:'Comes down out of the burned country to feed.'},
+};
+/* which species can appear, by how much hold you have — a wyrm on day one
+   would simply be a wall you cannot pass */
+export const BEAST_UNLOCK = { boar:1, wolf:4, elk:7, bear:11, wyrm:16 };
+
 /* ── the season's temper ──
    The strongest way to make a season matter without making anyone's hero
    obsolete: change what is COMING AT YOU, not what you own.
@@ -275,6 +302,40 @@ export const TEMPERS = [
    waves:{rabble:0.55, riders:0.15, skirmishers:0.15, brutes:0.15}, favours:'spearman'},
 ];
 export function temperFor(now){ return TEMPERS[(seasonNo(now) - 1) % TEMPERS.length]; }
+
+/* ── companions ──
+   Kingshot's pets are a second gacha with a second currency. Here they come off
+   the frontier: hunt beasts, earn bond, and at each threshold three companions
+   are offered and you keep one. Same draft, same rule — never sold.
+
+   Only ONE walks at your side at a time. That is what keeps a menagerie from
+   becoming a stacked stat block: collecting more pets widens what you can
+   choose to be good at this week, it never widens your total. Their bonuses are
+   deliberately in corners no hero touches — refining, scouting, the infirmary,
+   the fog on the wave timer — so a companion changes the texture of the hold
+   rather than adding to its power. */
+export const PET_BOND = [40, 110, 230, 420, 700, 1100, 1700, 2600];
+export function petBondNeed(owned){ return PET_BOND[Math.min(owned, PET_BOND.length - 1)]; }
+export const PET_POOL = {
+  hound:   {name:'Greyfell, the Hound',   icon:'🐕', key:'scout',   per:0.05,
+            fx:l=>'+'+(5*l)+'% expedition yield',        blurb:'Knows every trail within a day’s ride.'},
+  raven:   {name:'Ash, the Raven',        icon:'🐦‍⬛', key:'warn',    per:0.04,
+            fx:l=>'raids scouted '+(4*l)+'% earlier',    blurb:'Sees them form before they march.'},
+  ox:      {name:'Boulder, the Ox',       icon:'🐂', key:'haul',    per:0.05,
+            fx:l=>'+'+(5*l)+'% hauled home',             blurb:'Slow. Utterly immovable. Carries anything.'},
+  ferret:  {name:'Pip, the Ferret',       icon:'🦦', key:'refine',  per:0.06,
+            fx:l=>'+'+(6*l)+'% refining speed',          blurb:'Fits where a smith’s hand will not.'},
+  goat:    {name:'Nan, the Crag Goat',    icon:'🐐', key:'mend',    per:0.08,
+            fx:l=>'+'+(8*l)+'% infirmary beds',          blurb:'Eats anything; somehow heals everyone.'},
+  falcon:  {name:'Stoop, the Falcon',     icon:'🦅', key:'speed',   per:0.03,
+            fx:l=>'−'+(3*l)+'% march travel time',       blurb:'Rides ahead and comes back knowing.'},
+  mastiff: {name:'Siege, the Mastiff',    icon:'🐕‍🦺', key:'hunt',    per:0.06,
+            fx:l=>'+'+(6*l)+'% power against beasts',    blurb:'Was bred for exactly one thing.'},
+  cat:     {name:'The Granary Cat',       icon:'🐈', key:'store',   per:0.04,
+            fx:l=>'+'+(4*l)+'% storage',                 blurb:'Nobody decided to keep her. She simply stayed.'},
+};
+export const PET_MAX_LVL = 10;
+export function petXpNeed(lvl){ return Math.round(60 * Math.pow(lvl, 1.45)); }
 
 /* ── stars: the ladder that never ends ──
    XP alone is too shallow a track for a hero you keep for a year, so heroes

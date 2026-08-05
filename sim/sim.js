@@ -89,11 +89,12 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
        a comfortable margin over the next wave) but it does go out. */
     if(skilled && s.marches.length < W.marchSlots(s)){
       const nextEnemy = L.wavePower(s.wave)*(s.wave%5===0?1.6:1)*1.12;
-      if(L.armyPower(s) > 1.4*nextEnemy){
+      if(L.armyPower(s) > 1.15*nextEnemy){
         let target = -1;
         // three leaders per column now, and they cap how many troops fit
         const party = skilled ? W.bestLeaders(s, 3) : [];
-        const want = {}; for(const k of Object.keys(TROOPS)) want[k] = Math.floor(s.t[k]*0.25);
+        // PvE only wounds, so a real player commits a proper column, not a token quarter
+        const want = {}; for(const k of Object.keys(TROOPS)) want[k] = Math.floor(s.t[k]*0.6);
         const q = W.fitColumn(s, want, party).troops;
         for(let i=0;i<s.world.tiles.length;i++){
           const tl = s.world.tiles[i];
@@ -109,8 +110,25 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
             if(tt.kind==='gather' && tt.res===scarce){ target=i; break; }
           }
         }
-        if(target>=0) W.startMarch(s, target, want, ms, false, party);
+        let beast = -1;
+        for(let i=0;i<(s.world.beasts||[]).length;i++){
+          if(W.beastBusy(s,i)) continue;
+          if(W.marchPower(s,q,party) > 1.4*W.beastPower(s, s.world.beasts[i])){ beast=i; break; }
+        }
+        /* Camps pay nearly twice the loot; beasts pay bond, and bond is the only
+           road to a companion. So the errand is chosen by what the hold is short
+           of — which is also the decision a real player is making here. */
+        const poor = s.res.food + s.res.wood < L.storageCap(s) * 0.5;
+        const preferCamp = poor && target >= 0;
+        if(!preferCamp && beast>=0) W.startHunt(s, beast, want, ms, party);
+        else if(target>=0) W.startMarch(s, target, want, ms, false, party);
+        else if(beast>=0) W.startHunt(s, beast, want, ms, party);
       }
+    }
+    // a companion left in the kennel is a bonus left on the floor
+    if(!s.petOut){
+      const first = Object.keys(s.pets||{})[0];
+      if(first) L.setPetOut(s, first, ms);
     }
     // expeditions: the skilled bot dispatches by hand; the lazy one sets a caravan and forgets
     if(skilled){
@@ -246,6 +264,9 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
     +' | army '+L.armyPower(s)+' (upkeep '+L.upkeepPerSec(s).toFixed(1)+'/s, food prod '+L.prodPerSec(s,'food').toFixed(1)+'/s)'
     +' | mastery '+L.masteryLvl(s)+' | quests '+s.questIdx+'/24');
   console.log('-- buildings: '+Object.entries(s.b).map(([k,v])=>k+':'+v).join(' '));
+  console.log('-- frontier: '+(s.beastsSlain||0)+' beasts slain, bond '+(s.bond||0)
+    +' | pets: '+(Object.entries(s.pets||{}).map(([k,p])=>k+' L'+p.lvl).join(', ')||'none')
+    +(s.petOut?' (out: '+s.petOut+')':''));
   console.log('-- troops: '+Object.entries(s.t).map(([k,v])=>k+':'+v).join(' ')
     +' (total '+Object.values(s.t).reduce((a,b)=>a+b,0)+')'
     +' | column capacity '+W.marchCapacity(s, W.bestLeaders(s, 3)));

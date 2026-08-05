@@ -8,6 +8,7 @@ import {
   HERO_POOL, HERO_SLOTS, SPOILS, RARITY,
   COURT_BASE, COURT_PER_TH, COURT_MAX, seasonNo, CLASS_AFFINITY, MARCH_HEROES,
   ARENA_HEROES, STAR_POWER, starCap, starNeed, DEEDS, temperFor,
+  PET_POOL, PET_MAX_LVL, petXpNeed, petBondNeed,
   WAVE_TYPES, STANCES, COUNTER_BONUS, COUNTER_PENALTY, COUNTER_CASUALTY, SCREEN,
   EXPEDITIONS, EXPEDITION_CD,
   COST_EXP, TIME_EXP, TIERS, TIER_POWER, TIER_UPKEEP, TIER_COST,
@@ -62,6 +63,61 @@ export function addDeeds(s, ids, kind, now){
       showBanner(s, '✦ '+d.name.split(',')[0]+' — '+h.stars+'★', 'win', now);
     }
   }
+}
+
+/* ── companions ──
+   One pet walks at your side; the rest wait in the kennel. That single-slot rule
+   is what keeps a collection from becoming a stat stack — more companions means
+   more things you can choose to be good at, never more total. Bond comes only
+   from hunting beasts, and companions are drafted three-at-a-time like heroes. */
+export function petBonus(s, key){
+  const id = s.petOut;
+  if(!id) return 0;
+  const d = PET_POOL[id], p = (s.pets || {})[id];
+  if(!d || !p || d.key !== key) return 0;
+  return d.per * p.lvl;
+}
+export function setPetOut(s, id, now){
+  if(id && !(s.pets || {})[id]) return false;
+  s.now = now;
+  s.petOut = (s.petOut === id) ? null : id;
+  return true;
+}
+export function gainBond(s, n, now){
+  s.bond = (s.bond || 0) + n;
+  const owned = Object.keys(s.pets || {}).length;
+  const queued = (s.choiceQueue || []).filter(c => c.type === 'pet').length;
+  if(owned + queued >= Object.keys(PET_POOL).length) return;      // the whole kennel is yours
+  const need = petBondNeed(owned + queued);
+  if(s.bond >= need){
+    s.bond -= need;
+    const opts = rollPetOffer(s, Math.random);
+    if(opts.length){
+      s.choiceQueue.push({ type:'pet', options:opts, reroll:1 });
+      pushLog(s, '🐾 Something has been following the hunting party home — choose which.', 'gold');
+    }else s.bond += need;
+  }
+}
+export function gainPetXp(s, n){
+  const id = s.petOut;
+  const p = id && (s.pets || {})[id];
+  if(!p || p.lvl >= PET_MAX_LVL) return;
+  p.xp = (p.xp || 0) + n;
+  while(p.lvl < PET_MAX_LVL && p.xp >= petXpNeed(p.lvl)){
+    p.xp -= petXpNeed(p.lvl);
+    p.lvl++;
+    const d = PET_POOL[id];
+    pushLog(s, d.icon+' '+d.name+' grows into it — level '+p.lvl+' ('+d.fx(p.lvl)+').', 'gold');
+  }
+}
+export function rollPetOffer(s, rand){
+  const owned = new Set(Object.keys(s.pets || {}));
+  const queued = new Set((s.choiceQueue||[]).flatMap(c => c.type==='pet' ? c.options : []));
+  const avail = Object.keys(PET_POOL).filter(id => !owned.has(id) && !queued.has(id));
+  const picks = [];
+  for(let i=0; i<3 && avail.length; i++)
+    picks.push(avail.splice(Math.floor(rand()*avail.length), 1)[0]);
+  return picks;
 }
 
 /* ── the court ──
@@ -169,7 +225,7 @@ export function perk(s,n){ return masteryLvl(s)>=n; }
 export function shieldCap(s){ return 2 + (perk(s,7)?1:0) + (perk(s,14)?1:0) + spoilBonus(s,'shieldCap'); }
 export function storageCapFor(s, thLvl){
   return Math.round(800 * Math.pow(thLvl,1.7)
-    * (1 + 0.03*(s.b.granary||0) + techBonus(s,'logistics'))
+    * (1 + 0.03*(s.b.granary||0) + techBonus(s,'logistics') + petBonus(s,'store'))
     * (perk(s,4)?1.15:1) * (perk(s,13)?1.10:1));
 }
 export function storageCap(s){ return storageCapFor(s, s.b.townhall); }
@@ -237,7 +293,7 @@ export function promote(s, k, now){
 export function woundShare(s){ return Math.min(0.75, 0.30 + 0.045 * (s.b.hospital || 0)); }
 export function woundedCap(s){
   const l = s.b.hospital || 0;
-  return Math.round(30 + 40 * l * (1 + 0.08 * l));   // a few beds even with no Infirmary
+  return Math.round((30 + 40 * l * (1 + 0.08 * l)) * (1 + petBonus(s,'mend')));
 }
 export function woundedTotal(s){
   return Object.values(s.wounded || {}).reduce((a,b) => a + (b||0), 0);
@@ -397,7 +453,7 @@ export function refineStep(s, dt){
   for(const [b, def] of Object.entries(REFINE)){
     const lvl = s.b[b] || 0;
     if(lvl <= 0) continue;
-    let want = def.rate * lvl * dt * (1 + techBonus(s,'smelting') + (perk(s,25)?0.20:0));
+    let want = def.rate * lvl * dt * (1 + techBonus(s,'smelting') + petBonus(s,'refine') + (perk(s,25)?0.20:0));
     const room = capFor(s, def.out) - (s.res[def.out] || 0);
     if(room <= 0) continue;
     want = Math.min(want, room);
@@ -513,6 +569,13 @@ export function chooseOption(s, idx, now){
     pushLog(s, d.icon+' '+d.name+' pledges service to the hold'
       + (seated ? ' and takes a seat in your court!' : ' — no chair is free, so they await a command.'), 'gold');
     showBanner(s, d.icon+' Hero drafted: '+d.name, 'win', now);
+  }else if(c.type==='pet'){
+    s.pets = s.pets || {};
+    s.pets[id] = { lvl:1, xp:0 };
+    const d = PET_POOL[id];
+    if(!s.petOut) s.petOut = id;            // the first one simply stays at your side
+    pushLog(s, d.icon+' '+d.name+' has decided to stay — '+d.fx(1)+'.', 'gold');
+    showBanner(s, d.icon+' A companion: '+d.name, 'win', now);
   }else{
     s.spoils[id] = (s.spoils[id]||0)+1;
     const d = SPOILS[id];
@@ -526,7 +589,8 @@ export function rerollChoice(s, now, rand=Math.random){
   s.now = now;
   const c = s.choice;
   if(!c || c.reroll < 1 || s.valor < 5) return false;
-  const fresh = c.type==='hero' ? rollHeroOffer(s, rand) : rollSpoilOffer(s, rand);
+  const fresh = c.type==='hero' ? rollHeroOffer(s, rand)
+    : c.type==='pet' ? rollPetOffer(s, rand) : rollSpoilOffer(s, rand);
   if(!fresh.length) return false;
   s.valor -= 5; c.reroll--;
   c.options = fresh;
@@ -659,7 +723,8 @@ export function expedCdMs(s){
   return Math.max(15000, EXPEDITION_CD - (perk(s,3)?12000:0) - 1000*(s.b.tavern||0));
 }
 export function expedMult(s){
-  return (perk(s,9)?2:1) * (1 + heroBonus(s,'patrolYield') + spoilBonus(s,'patrolYield') + 0.03*(s.b.tavern||0));
+  return (perk(s,9)?2:1) * (1 + heroBonus(s,'patrolYield') + spoilBonus(s,'patrolYield')
+    + petBonus(s,'scout') + 0.03*(s.b.tavern||0));
 }
 /* the standing caravan: set-and-forget half-yield runs — resources only, no
    Valor, no Mastery, no ambush. Presence stays strictly better. */

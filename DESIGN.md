@@ -250,6 +250,62 @@ Regalia and all 32 heroes. Measured: a full Regalia is ~10 hours of exclusive
 forge time; kitting an entire roster is several hundred. Runestone enters at
 tier 6, so early gear never blocks on the Runeworks (TH22).
 
+### Beasts and companions (v1.24)
+
+**Beasts roam.** Camps sit on a node and wait; the herds move every five minutes
+across the open ground between nodes, so a hunt is something you have to catch.
+Five species (boar → wolf → elk → bear → wyrm) unlock by Town Hall. A hunt
+**only ever wounds** — verified in isolation: 400 troops out, 396 home, 4 wounded,
+nobody dead. The wager is the column's time and a thinner wall, never veterans.
+A beast you are already committed to stands and waits rather than leading you on a
+chase; that is interface cruelty, not difficulty.
+
+Camps and beasts now split cleanly: camps pay nearly double the loot, beasts pay
+**bond**. So the errand you pick is decided by what the hold is short of.
+
+**Companions come off the hunt and nowhere else.** Bond accumulates, and at each
+threshold three companions are offered and you keep one — the hero draft again.
+**Only one walks at your side**, which is what stops a kennel of eight becoming a
+stacked stat block: more companions is more things you can choose to be good at
+this week, never more total. Their effects sit deliberately in corners no hero
+touches — refining speed, expedition yield, storage, infirmary beds, scouting
+without a Watchtower, travel time — so a companion changes the hold's *texture*
+rather than its strength. They level by hunting alongside you.
+
+Measured over 8 hours of active play: ~91 beasts taken, 2–3 companions drafted,
+one of them level 2. A full kennel is days of hunting, and levelling it out is
+much longer.
+
+### The frontier was broken, and beasts found it (v1.24)
+
+Adding beasts surfaced a serious regression **I introduced in v1.19**. Camp and
+beast strength scaled on `wavePower(s.wave)`, which grows without bound — but the
+same commit hard-capped a column at ~198 troops via `marchCapacity`. From roughly
+wave 20 the entire frontier became mathematically unwinnable, and nothing said so:
+the simulator recorded **zero camp fights across every scenario** and I read that
+as the bot being cautious.
+
+The fix re-anchors frontier difficulty on a **reference column** — what your three
+best captains could command, times a soldier of your current tier — instead of the
+raid clock. Both terms are bounded (capacity 198, tiers ten), so difficulty
+converges while stars, gear and class affinity keep adding column power on top.
+It also reads your best three heroes regardless of availability, or camp strength
+would lurch every time a column rode out.
+
+| Stage | Column | Camp I | Camp III | Wyrm |
+|---|---|---|---|---|
+| TH3, heroes L3 | 252 | 140 ✓ | 239 ✓ | 363 ✗ |
+| TH8, heroes L10 | 1,227 | 1,010 ✓ | 1,723 ✗ | 2,614 ✗ |
+| TH10, heroes L20 | 3,658 | 1,178 ✓ | 2,010 ✓ | 3,049 ✓ |
+| TH30, heroes L20 | 6,793 | 2,188 ✓ | 3,732 ✓ | 5,663 ✓ |
+
+Early on, easy camps and small beasts are winnable while bears and wyrms are
+walls to grow toward. Late, everything is takeable and the wyrm is still the
+tightest fight in the game. **Lesson recorded:** a system that silently becomes
+impossible produces no error and no log line — only an absence in the data, which
+is the hardest thing to notice. The sim now reports beasts slain, bond and pets so
+an absence here would be visible.
+
 ### The hold that grows (v1.21)
 
 Buildings you cannot yet raise are no longer shown at all. A new hold displays

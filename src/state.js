@@ -26,6 +26,7 @@ export function freshState(now, seed){
     tier:{spearman:1,archer:1,knight:1,ballista:1},
     heroes:{}, spoils:{}, court:[], arenaTeam:[], marchBoost:false, formations:[],
     regalia:{}, gq:null,
+    pets:{}, petOut:null, bond:0, beastsSlain:0,
     choice:null, choiceQueue:[], offersDone:0,
     stance:'balanced', captain:null, orderCd:{}, mods:null,
     laurels:1000, defStance:'shieldwall', arenaWins:0, arenaLosses:0,
@@ -146,6 +147,14 @@ export function migrate(s, now){
     if(s.regalia==null) s.regalia = {};
     if(s.gq===undefined) s.gq = null;
     for(const h of Object.values(s.heroes)) if(h.gear==null) h.gear = {};
+    // v1.24: beasts roam the frontier, and companions come off the hunt
+    if(s.pets==null) s.pets = {};
+    if(s.petOut===undefined) s.petOut = null;
+    if(s.bond==null) s.bond = 0;
+    if(s.beastsSlain==null) s.beastsSlain = 0;
+    if(!Array.isArray(s.world.beasts)) s.world.beasts = [];
+    if(s.world.roamAt==null) s.world.roamAt = 0;
+    if(s.world.spawnAt==null) s.world.spawnAt = 0;
     // v1.15: one training queue became one per yard
     if(!s.tq || typeof s.tq !== 'object' || s.tq.key){
       const old = s.tq && s.tq.key ? s.tq : null;
