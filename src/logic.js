@@ -310,7 +310,8 @@ export function capFor(s, res){
 }
 export function isUnlocked(s, res){
   const m = RES_META[res];
-  if(!m || !m.refined) return true;
+  if(!m || (!m.refined && !m.carried)) return true;
+  if(m.carried) return (s.res[res] || 0) > 0 || (s.b.crucible || 0) > 0;
   return (s.b[m.from] || 0) > 0 || (s.res[res] || 0) > 0;
 }
 export function prodMult(s, res){

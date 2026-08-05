@@ -183,7 +183,10 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
         const req = L.townhallReq(s);
         if(!req.ok) for(const k of req.short) if(eligible(k)){ pick=k; break; }
         const prodOf = {food:'farm',wood:'lumberyard',stone:'quarry',iron:'ironmine'};
-        const order = Object.keys(RES_META).filter(r=>!RES_META[r].refined).sort((a,b)=>s.res[a]-s.res[b]);
+        // only resources a building actually produces — Isle Ore has none
+        const order = Object.keys(RES_META)
+          .filter(r => !RES_META[r].refined && !RES_META[r].carried && prodOf[r])
+          .sort((a,b)=>s.res[a]-s.res[b]);
         if(!pick) for(const r of order){ const k=prodOf[r]; if(eligible(k)){ pick=k; break; } }
         if(!pick && s.b.wall<s.b.townhall && eligible('wall')) pick='wall';
         if(!pick && s.b.barracks<s.b.townhall && eligible('barracks')) pick='barracks';

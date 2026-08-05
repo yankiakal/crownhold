@@ -40,6 +40,14 @@ export const BUILDINGS = {
               cost:{stone:300,iron:180}, time:40, max:25, th:12},
   runeworks: {name:'Runeworks',  icon:'🔮', fx:'Binds stone and steel into Runestone.',
               cost:{stone:700,steel:25}, time:60, max:20, th:22},
+  /* The two Kingshot buildings Crownhold skipped, given jobs that matter here
+     rather than jobs that merely match. Together they are the chain that makes
+     the Salt Isle possible: the Kitchen victuals a voyage, the voyage brings
+     back ore, the Crucible turns ore into the finest metal in the Reach. */
+  kitchen:   {name:'Victualler', icon:'🍲', fx:'Salts and packs Rations — what a voyage eats.',
+              cost:{wood:220,food:260}, time:30, max:25, th:10},
+  crucible:  {name:'Truegold Crucible', icon:'🏵️', fx:'Renders Isle ore into Truegold.',
+              cost:{stone:900,steel:60}, time:70, max:20, th:18},
 };
 // polynomial curves: early levels are quick, late levels are the long road
 export const COST_EXP = 2.0, TIME_EXP = 1.6;
@@ -534,6 +542,14 @@ export const RES_META = {
   iron:     {lbl:'Iron',     icon:'⚒️'},
   steel:    {lbl:'Steel',    icon:'🔩', refined:true, capMult:0.10, from:'forge'},
   runestone:{lbl:'Runestone',icon:'💠', refined:true, capMult:0.035, from:'runeworks'},
+  rations:  {lbl:'Rations',  icon:'🥘', refined:true, capMult:0.08,  from:'kitchen'},
+  /* Isle ore is neither gathered nor refined — it is CARRIED HOME, the only
+     resource in the game with no building behind it at all. `carried` exists so
+     that code can ask "does this have a producer?" instead of inferring it from
+     "is it refined?", which is what several loops did: adding a resource that was
+     neither immediately crashed them looking up a farm that does not exist. */
+  trueore:  {lbl:'Isle Ore', icon:'🪨', carried:true, capMult:0.05},
+  truegold: {lbl:'Truegold', icon:'🏵️', refined:true, capMult:0.02, from:'crucible'},
 };
 // levels at which every building starts demanding the next currency
 export const STEEL_FROM = 15, RUNE_FROM = 24;
@@ -541,6 +557,10 @@ export const STEEL_FROM = 15, RUNE_FROM = 24;
 export const REFINE = {
   forge:     { out:'steel',     rate:0.030, in:{iron:6, wood:4} },
   runeworks: { out:'runestone', rate:0.018, in:{stone:14, steel:3} },
+  kitchen:   { out:'rations',   rate:0.055, in:{food:8, wood:3} },
+  // the Crucible eats ore nothing else in the game can make, so it idles until
+  // a voyage comes home — deliberately: it is a reason to sail, not a treadmill
+  crucible:  { out:'truegold',  rate:0.012, in:{trueore:4, steel:2} },
 };
 export const WAVE_MS = 75000, FIRST_WAVE_MS = 120000, PATROL_MS = 25000, SHIELD_MS = 180000;
 
