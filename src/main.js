@@ -20,6 +20,7 @@ net.resume().then(s => {
     store.s = s; render();
     net.refreshLeaderboard().then(render);
     net.refreshArena().then(render);
+    net.refreshAlliance().then(render);
   }
 }).catch(()=>{});
 
@@ -43,6 +44,7 @@ setInterval(() => {
       lastBoard = now;
       net.refreshLeaderboard();
       net.refreshArena();
+      net.refreshAlliance();
     }
   }else if(now - lastSave > 5000){
     save(store.s, now); lastSave = now;

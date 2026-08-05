@@ -119,6 +119,7 @@ function simulate(minutes, enemyLuck, skilled, label){
         if(lvl >= d.max) return false;
         if(k!=='townhall' && lvl >= s.b.townhall) return false;
         if(d.th && s.b.townhall < d.th) return false;
+        if(k==='townhall' && !L.townhallReq(s).ok) return false;   // the hold must keep pace
         return L.canAfford(s, L.buildCost(s,k));
       };
       let pick = null;
@@ -127,9 +128,12 @@ function simulate(minutes, enemyLuck, skilled, label){
       else if(s.b.barracks===0 && eligible('barracks')) pick = 'barracks';
       else if(s.b.academy < 6 && eligible('academy')) pick = 'academy';
       else {
+        // clear the Town Hall's prerequisites first — that is what the gate is for
+        const req = L.townhallReq(s);
+        if(!req.ok) for(const k of req.short) if(eligible(k)){ pick=k; break; }
         const prodOf = {food:'farm',wood:'lumberyard',stone:'quarry',iron:'ironmine'};
         const order = Object.keys(RES_META).filter(r=>!RES_META[r].refined).sort((a,b)=>s.res[a]-s.res[b]);
-        for(const r of order){ const k=prodOf[r]; if(eligible(k)){ pick=k; break; } }
+        if(!pick) for(const r of order){ const k=prodOf[r]; if(eligible(k)){ pick=k; break; } }
         if(!pick && s.b.wall<s.b.townhall && eligible('wall')) pick='wall';
         if(!pick && s.b.barracks<s.b.townhall && eligible('barracks')) pick='barracks';
         if(!pick && s.b.watchtower<3 && eligible('watchtower')) pick='watchtower';

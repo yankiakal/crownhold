@@ -37,11 +37,12 @@ const MAX_BODY = 64 * 1024;
 
 /* ── storage ── */
 
-let db = { users: {} };
+let db = { users: {}, alliances: {} };
 if(existsSync(DATA_FILE)){
   try{ db = JSON.parse(readFileSync(DATA_FILE, 'utf8')); }
   catch(e){ console.error('could not read save file, starting empty:', e.message); }
 }
+if(!db.alliances) db.alliances = {};
 let dirty = false;
 const markDirty = () => { dirty = true; };
 function flush(){
@@ -64,7 +65,44 @@ function userByToken(token){
   for(const u of Object.values(db.users)) if(u.token === token) return u;
   return null;
 }
-function publicState(u){ return { name: u.name, state: u.state }; }
+function publicState(u){ return { name: u.name, state: u.state, alliance: u.alliance || null }; }
+
+/* ── alliances ── */
+
+// Help is proportional on purpose: 1.5% of a day-long keep is ~20 minutes and
+// feels like a gift; 1.5% of a two-minute hut is nothing, and needs to be —
+// a flat minimum let two friends erase a short build entirely.
+const HELP_CAP = 20;                 // so a full alliance can cut ~30% off a build
+const HELP_FRACTION = 0.015;
+const HELP_MIN_MS = 5000;
+
+function allianceView(tag, now){
+  const a = db.alliances[tag];
+  if(!a) return null;
+  const members = a.members.map(n => {
+    const m = db.users[n.toLowerCase()];
+    if(!m) return null;
+    const builds = ['bq','bq2'].map(q => m.state[q]).filter(b => b && b.end > now).map(b => ({
+      key: b.key, endsIn: b.end - now,
+      helps: b.helps || 0, cap: HELP_CAP,
+      helped: (b.helpers || []).length,
+    }));
+    return {
+      name: m.name,
+      townhall: m.state.b.townhall,
+      power: armyPower(m.state),
+      waves: m.state.wavesWon || 0,
+      leader: a.leader === m.name,
+      builds,
+    };
+  }).filter(Boolean).sort((x,y) => y.power - x.power);
+  return {
+    tag: a.tag, name: a.name, leader: a.leader,
+    members,
+    power: members.reduce((t,m) => t + m.power, 0),
+    helpAvailable: members.reduce((t,m) => t + m.builds.length, 0),
+  };
+}
 
 /* ── the fast-forward: bring a hold from its last save to now ── */
 
@@ -177,7 +215,7 @@ async function api(req, res, url){
       const salt = randomBytes(16).toString('hex');
       const u = {
         name, salt, hash: hash(pw, salt), token: newToken(),
-        state: freshState(now), created: now,
+        state: freshState(now), created: now, alliance: null,
       };
       u.state.seenIntro = true;
       db.users[key] = u; markDirty(); flush();
@@ -252,6 +290,82 @@ async function api(req, res, url){
     if(report.error) return send(res, 400, { error: report.error });
     markDirty(); flush();
     return send(res, 200, { report, ...publicState(u) });
+  }
+
+  /* ── alliances ──
+     The Help mechanic is the point: in Kingshot you buy speedups, here your
+     alliance is your speedup. Every help is free, comes from a person, and is
+     capped per build so a big alliance is an advantage, not an exploit. */
+
+  if(path === '/api/alliance/create'){
+    const name = String(body.name || '').trim().slice(0, 24);
+    const tag = String(body.tag || '').trim().toUpperCase().slice(0, 4);
+    if(!/^[\w '-]{3,24}$/.test(name)) return send(res, 400, { error:'Name must be 3–24 characters.' });
+    if(!/^[A-Z0-9]{2,4}$/.test(tag)) return send(res, 400, { error:'Tag must be 2–4 letters or digits.' });
+    if(u.alliance) return send(res, 400, { error:'Leave your current alliance first.' });
+    if(db.alliances[tag]) return send(res, 409, { error:'That tag is taken.' });
+    db.alliances[tag] = { name, tag, leader: u.name, members: [u.name], created: now };
+    u.alliance = tag; markDirty(); flush();
+    return send(res, 200, { alliance: allianceView(tag, now) });
+  }
+
+  if(path === '/api/alliance/join'){
+    const tag = String(body.tag || '').trim().toUpperCase();
+    const a = db.alliances[tag];
+    if(!a) return send(res, 404, { error:'No alliance with that tag.' });
+    if(u.alliance === tag) return send(res, 200, { alliance: allianceView(tag, now) });
+    if(u.alliance) return send(res, 400, { error:'Leave your current alliance first.' });
+    if(a.members.length >= 30) return send(res, 400, { error:'That alliance is full (30).' });
+    a.members.push(u.name); u.alliance = tag; markDirty(); flush();
+    return send(res, 200, { alliance: allianceView(tag, now) });
+  }
+
+  if(path === '/api/alliance/leave'){
+    const a = db.alliances[u.alliance];
+    if(a){
+      a.members = a.members.filter(n => n !== u.name);
+      if(!a.members.length) delete db.alliances[u.alliance];
+      else if(a.leader === u.name) a.leader = a.members[0];
+    }
+    u.alliance = null; markDirty(); flush();
+    return send(res, 200, { alliance: null });
+  }
+
+  if(path === '/api/alliance/info'){
+    advance(u, now);
+    return send(res, 200, {
+      alliance: u.alliance ? allianceView(u.alliance, now) : null,
+      directory: Object.values(db.alliances)
+        .map(a => ({ tag:a.tag, name:a.name, members:a.members.length }))
+        .sort((x,y) => y.members - x.members).slice(0, 20),
+    });
+  }
+
+  if(path === '/api/alliance/help'){
+    const a = db.alliances[u.alliance];
+    if(!a) return send(res, 400, { error:'You are in no alliance.' });
+    const targets = body.target ? [String(body.target)] : a.members;
+    let helped = 0;
+    for(const nameRaw of targets){
+      const key = String(nameRaw).toLowerCase();
+      const m = db.users[key];
+      if(!m || m === u || m.alliance !== u.alliance) continue;
+      advance(m, now);
+      for(const q of ['bq','bq2']){
+        const b = m.state[q];
+        if(!b || b.end <= now) continue;
+        b.helps = b.helps || 0;
+        if(b.helps >= HELP_CAP) continue;
+        if((b.helpers||[]).includes(u.name)) continue;   // one help per hold per build
+        const total = Math.max(1, b.end - b.start);
+        b.end = Math.max(now, b.end - Math.max(HELP_MIN_MS, total * HELP_FRACTION));
+        b.helps++;
+        b.helpers = (b.helpers || []).concat(u.name);
+        helped++;
+      }
+    }
+    if(helped) markDirty();
+    return send(res, 200, { helped, alliance: allianceView(u.alliance, now) });
   }
 
   if(path === '/api/reset'){

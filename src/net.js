@@ -71,7 +71,7 @@ export async function login(name, password){
 }
 
 export function logout(){
-  session = null; online = false; board = null; arena = null; persist();
+  session = null; online = false; board = null; arena = null; ally = null; persist();
 }
 
 /* Resume a stored session on boot. Returns the authoritative state, or null to
@@ -106,6 +106,37 @@ export async function resetHold(){
 
 let arena = null;
 export function arenaData(){ return arena; }
+
+let ally = null;
+export function allianceData(){ return ally; }
+
+export async function refreshAlliance(){
+  if(!isOnline()) return null;
+  try{
+    ally = await post('/api/alliance/info', { token: session.token });
+    return ally;
+  }catch(e){ return null; }
+}
+export async function allianceCreate(name, tag){
+  const d = await post('/api/alliance/create', { token: session.token, name, tag });
+  await refreshAlliance();
+  return d;
+}
+export async function allianceJoin(tag){
+  const d = await post('/api/alliance/join', { token: session.token, tag });
+  await refreshAlliance();
+  return d;
+}
+export async function allianceLeave(){
+  const d = await post('/api/alliance/leave', { token: session.token });
+  await refreshAlliance();
+  return d;
+}
+export async function allianceHelp(target){
+  const d = await post('/api/alliance/help', { token: session.token, target });
+  ally = ally ? { ...ally, alliance: d.alliance } : ally;
+  return d;
+}
 
 export async function refreshArena(){
   if(!isOnline()) return null;

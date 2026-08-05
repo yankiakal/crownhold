@@ -119,6 +119,24 @@ export function buildTime(s,k){
     * (perk(s,5)?0.88:1) * (perk(s,18)?0.9:1) * spoilMult) * 1000 * TIME_SCALE;
 }
 
+/* ── the Town Hall cannot outpace its hold ──
+   Without this you could rush the keep and leave a village of huts behind it.
+   Raising the Town Hall to level L needs a growing number of other buildings
+   already standing at L−1 — so the whole hold climbs together. */
+export function townhallNeedCount(toLvl){ return Math.min(6, 1 + Math.floor(toLvl/4)); }
+export function townhallReq(s){
+  const toLvl = s.b.townhall + 1;
+  const need = townhallNeedCount(toLvl);
+  const others = Object.keys(BUILDINGS).filter(k => k !== 'townhall');
+  const ready = others.filter(k => s.b[k] >= toLvl - 1);
+  // the closest candidates, so the UI can say what to raise next
+  const short = others
+    .filter(k => s.b[k] < toLvl - 1 && !(BUILDINGS[k].th && s.b.townhall < BUILDINGS[k].th))
+    .sort((a,b) => s.b[b] - s.b[a])
+    .slice(0, 4);
+  return { toLvl, need, have: ready.length, ok: ready.length >= need, ready, short };
+}
+
 /* ── the build crews ── */
 export const QUEUE_KEYS = ['bq', 'bq2'];
 export function buildSlots(s){ return s.b.townhall >= SECOND_QUEUE_TH ? 2 : 1; }
@@ -305,6 +323,7 @@ export function startUpgrade(s, key, now){
   const d = BUILDINGS[key], lvl = s.b[key];
   if(lvl >= d.max) return false;
   if(key!=='townhall' && lvl >= s.b.townhall) return false;
+  if(key==='townhall' && !townhallReq(s).ok) return false;
   if(d.th && s.b.townhall < d.th) return false;
   const cost = buildCost(s, key);
   if(!canAfford(s, cost)) return false;

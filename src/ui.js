@@ -15,7 +15,7 @@ import {
   fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor, capFor, isUnlocked,
   prodPerSec, prodMult, upkeepPerSec, buildCost, buildTime, canAfford, armyPower,
   armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
-  valorQuota, valorToday, isRested, QUEUE_KEYS, buildSlots, activeQueues, freeSlot,
+  valorQuota, valorToday, isRested, QUEUE_KEYS, buildSlots, activeQueues, freeSlot, townhallReq,
   maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost,
   wavePower, streakMult, finishCost, xpNeed,
 } from './logic.js';
@@ -324,6 +324,48 @@ function renderChronicle(S){
   return h;
 }
 
+function renderAlliance(S){
+  if(!net.isOnline())
+    return '<section class="panel"><h2>Alliance</h2>'
+      + '<p style="font-size:.85rem;color:var(--ink-dim);font-style:italic">Sign in (☁ below) to found or join one. '
+      + 'Alliance members shave real time off each other&#39;s builds — in this game your allies are the speedups.</p></section>';
+  const d = net.allianceData();
+  const a = d && d.alliance;
+  let h = '<section class="panel"><h2>Alliance'
+    + (a ? ' <span style="letter-spacing:.05em">['+a.tag+'] '+a.members.length+' holds · '+fmt(a.power)+' power</span>' : '')
+    + '<button class="info-btn" data-act="allianceOpen">'+(a?'manage':'join')+'</button></h2>';
+  if(!a){
+    h += '<div class="stat-note">You stand alone. Found an alliance or join one — members cut real time off each other&#39;s construction.</div>';
+    if(d && d.directory && d.directory.length){
+      for(const x of d.directory.slice(0,5))
+        h += '<div class="trow"><span class="tname">['+x.tag+'] '+x.name+'</span><span class="spacer"></span>'
+          + '<span class="tmeta">'+x.members+' holds</span>'
+          + '<button data-act="allianceJoin" data-key="'+x.tag+'">Join</button></div>';
+    }
+  }else{
+    const pending = a.members.reduce((t,m)=>t+(m.name===net.accountName()?0:m.builds.length),0);
+    h += '<div style="display:flex;gap:.6rem;align-items:center;margin-bottom:.5rem">'
+      + '<button class="primary" data-act="allianceHelpAll" '+(pending?'':'disabled')+'>🤝 Help all'
+      + (pending?' ('+pending+')':'')+'</button>'
+      + '<span class="tmeta" style="font-family:var(--sans);font-size:.65rem;color:var(--ink-dim)">'
+      + 'each help cuts 1.5% (min 1m) off a build · 20 helps max per build</span></div>';
+    for(const m of a.members){
+      const mine = m.name === net.accountName();
+      h += '<div class="trow'+(mine?' mine':'')+'"><span class="tname">'+(m.leader?'👑 ':'')+m.name+'</span>'
+        + '<span class="tmeta">TH'+m.townhall+' · '+fmt(m.power)+'</span><span class="spacer"></span>';
+      if(m.builds.length){
+        h += '<span class="tmeta">'+m.builds.map(b =>
+          (BUILDINGS[b.key]?BUILDINGS[b.key].icon:'') + ' ' + ftime(b.endsIn) + ' (' + b.helps + '/' + b.cap + ')'
+        ).join(' · ')+'</span>';
+        if(!mine) h += '<button data-act="allianceHelp" data-key="'+m.name+'">🤝 Help</button>';
+      }else h += '<span class="tmeta">idle</span>';
+      h += '</div>';
+    }
+  }
+  h += '</section>';
+  return h;
+}
+
 function renderArena(S){
   if(!net.isOnline())
     return '<section class="panel"><h2>The Arena</h2>'
@@ -429,8 +471,16 @@ function renderDetail(S){
       body += '<p class="d-row">Cost: '+costHtml(S, buildCost(S,k))+' · ⏱ '+ftime(buildTime(S,k))+'</p>';
       const capped = k!=='townhall' && lvl >= S.b.townhall;
       if(capped) body += '<p class="d-warn">Town Hall must lead — raise it first.</p>';
+      let reqBlocked = false;
+      if(k==='townhall'){
+        const r = townhallReq(S);
+        reqBlocked = !r.ok;
+        body += '<p class="'+(r.ok?'d-delta':'d-warn')+'">The hold must keep pace: '
+          + r.have+' of '+r.need+' buildings at level '+(r.toLvl-1)+'.'
+          + (r.ok ? ' Ready.' : ' Raise '+r.short.map(x=>BUILDINGS[x].name+' ('+S.b[x]+')').join(', ')+'.')+'</p>';
+      }
       body += '<button class="primary" data-act="upgrade" data-key="'+k+'" '
-        + ((!freeSlot(S)||!canAfford(S,buildCost(S,k))||capped||(d.th&&S.b.townhall<d.th))?'disabled':'')+'>'
+        + ((!freeSlot(S)||!canAfford(S,buildCost(S,k))||capped||reqBlocked||(d.th&&S.b.townhall<d.th))?'disabled':'')+'>'
         + (lvl===0?'Build':'Upgrade to '+(lvl+1))+'</button>';
     } else body += '<p class="d-delta" style="color:var(--gold)">Fully raised.</p>';
   }
@@ -601,6 +651,12 @@ function renderCodex(S){
     + '<li><b>Standing caravan</b>: assign a road and it auto-runs 15s after each cooldown at half yield — resources only, no Valor, no Mastery, no ambush, and it keeps running while you are away (2h cap). Dispatching by hand always pays roughly 2.7× more.</li>'
     + '</ul>'
 
+    + '<h3>Alliances (online)</h3>'
+    + '<ul>'
+    + '<li>Up to 30 holds under one banner. Members <b>Help</b> each other&#39;s construction: each help cuts 1.5% of a build (at least a minute), up to 20 helps per build, one per hold per build.</li>'
+    + '<li>That is the whole anti-P2W thesis in one mechanic — Kingshot sells speedups, here your alliance <i>is</i> the speedup, and it costs nothing but showing up for each other.</li>'
+    + '</ul>'
+
     + '<h3>The Frontier</h3>'
     + '<ul>'
     + '<li>Tap a map tile to inspect and <b>march</b> on it: resource nodes (worked for a large haul), Bandit Camps (burned for loot, Valor and Mastery), Ancient Ruins (Valor, Mastery, 20% Writ).</li>'
@@ -747,7 +803,7 @@ export function render(){
   app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
     + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderSpoils(S)
-      + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
+      + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
       + renderAchievements(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
   fx.innerHTML = renderFx(S) + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
@@ -779,6 +835,27 @@ const VIEW_ACTIONS = {
       .then(d => { store.s = d.state; net.refreshArena().then(render); net.refreshLeaderboard().then(render); render(); })
       .catch(err => { acctMsg = err.message; acctOpen = true; renderAccount(); });
   },
+  allianceOpen:  () => { allyOpen = true; allyMsg = ''; renderAllySheet(); },
+  allianceClose: () => { allyOpen = false; renderAllySheet(); },
+  allianceMake:  () => {
+    const name = (document.getElementById('ally-name')||{}).value || '';
+    const tag  = (document.getElementById('ally-tag')||{}).value || '';
+    allyMsg = 'Raising the banner…'; renderAllySheet();
+    net.allianceCreate(name, tag)
+      .then(() => { allyOpen = false; allyMsg=''; renderAllySheet(); render(); })
+      .catch(e => { allyMsg = e.message; renderAllySheet(); });
+  },
+  allianceJoin: b => {
+    const tag = b.dataset.key || (document.getElementById('ally-join')||{}).value || '';
+    net.allianceJoin(tag)
+      .then(() => { allyOpen = false; allyMsg=''; renderAllySheet(); render(); })
+      .catch(e => { allyMsg = e.message; allyOpen = true; renderAllySheet(); });
+  },
+  allianceLeave: () => {
+    net.allianceLeave().then(() => { allyOpen = false; renderAllySheet(); render(); }).catch(()=>{});
+  },
+  allianceHelp:    b => { net.allianceHelp(b.dataset.key).then(render).catch(()=>{}); },
+  allianceHelpAll: () => { net.allianceHelp(null).then(render).catch(()=>{}); },
   account: () => { acctOpen = true; acctMsg = ''; renderAccount(); },
   accountClose: () => { acctOpen = false; renderAccount(); },
   signIn: b => submitAccount(b.dataset.mode),
@@ -824,6 +901,33 @@ function runAction(btn){
 const acctBox = document.createElement('div');
 document.body.appendChild(acctBox);
 let acctOpen = false, acctMsg = '';
+
+/* the alliance sheet lives outside the tick loop too, for the same reason */
+const allyBox = document.createElement('div');
+document.body.appendChild(allyBox);
+let allyOpen = false, allyMsg = '';
+
+export function renderAllySheet(){
+  if(!allyOpen){ allyBox.innerHTML = ''; return; }
+  const d = net.allianceData();
+  const a = d && d.alliance;
+  allyBox.innerHTML = '<div class="overlay"><div class="card dsheet">'
+    + '<h1 style="font-size:1.15rem">🤝 '+(a ? '['+a.tag+'] '+a.name : 'Alliance')+'</h1><div class="rule"></div>'
+    + (a
+      ? '<p class="d-row">'+a.members.length+' holds · '+fmt(a.power)+' combined power · led by <b>'+a.leader+'</b></p>'
+        + '<p class="d-row">Members cut real time off each other&#39;s construction — 1.5% (at least a minute) per help, up to 20 helps a build. Nobody pays for a speedup here; they ask.</p>'
+        + '<div style="display:flex;gap:.6rem;margin-top:.6rem"><button data-act="allianceLeave">Leave alliance</button>'
+        + '<button class="primary" data-act="allianceClose">Back to the walls</button></div>'
+      : '<p class="d-row">Found your own banner, or join one by tag. Alliance members shave real time off each other&#39;s builds — the answer to buying speedups is having friends.</p>'
+        + '<label class="d-row">Alliance name<br><input id="ally-name" maxlength="24" placeholder="The Iron Concord"></label>'
+        + '<label class="d-row">Tag (2–4 characters)<br><input id="ally-tag" maxlength="4" placeholder="IRON"></label>'
+        + '<button class="primary" data-act="allianceMake">Raise the banner</button>'
+        + '<label class="d-row" style="margin-top:1rem">…or join by tag<br><input id="ally-join" maxlength="4" placeholder="IRON"></label>'
+        + '<div style="display:flex;gap:.6rem"><button data-act="allianceJoin">Join</button>'
+        + '<button data-act="allianceClose">Not now</button></div>')
+    + (allyMsg ? '<p class="d-warn">'+allyMsg+'</p>' : '')
+    + '</div></div>';
+}
 
 function submitAccount(mode){
   const name = (document.getElementById('acct-name')||{}).value || '';
