@@ -519,19 +519,36 @@ a healing pack for sale. An **attacker's** losses are a risk they opted into. So
 an attacker's casualties are dead for good (35% of them on a win, 70% on a defeat), and the
 defender's are still never.
 
-The first attempt at the cost curve was also backwards. Both sides used *"a rout costs the
-loser little because there was no fight"*, which for an attacker is exactly wrong: hurling
-60 soldiers at a hold four times their strength cost **17%** of the column — a cheap probe.
-The two sides are now costed on opposite curves, and a defender who is overwhelmed still
-takes few casualties (what a rout costs them is their stores) while an attacker's losses
-*rise* as the odds worsen:
+The cost curve took two passes to get right, and both faults were the same fault.
 
-| | permanently lost |
-|---|---|
-| clean win | 3% |
-| narrow win | 5% |
-| near thing, still won | 6% |
-| hopeless charge | **42%** — 25 of 60 came home |
+**First attempt:** both sides used *"a rout costs the loser little because there was no
+fight"*, which for an attacker is exactly wrong — hurling 60 soldiers at a hold four times
+their strength cost 17% of the column, a cheap probe. Fixed by giving the attacker a curve
+that rises with the mismatch.
+
+**Second attempt** still switched on *who won*, which put a **cliff at the boundary**:
+winning 51-to-49 cost 6% of the column for good, losing 49-to-51 cost 24%. A fourfold jump
+across an infinitesimal difference in power makes a coin-flip feel arbitrary rather than
+earned — and it made the spread from best case to worst a factor of **seven**.
+
+Both curves now read a single continuous axis — `oddsOf(mine, theirs)`, how outgunned the
+column was — and **neither asks who won**:
+
+| attacker's power vs the wall | outcome | lost for good |
+|---|---|---|
+| ×4 | won | 9% |
+| ×2 | won | 11% |
+| ×1.3 | won | 14% |
+| ×1.05 | won | **17%** |
+| ×0.95 | lost | **18%** |
+| ×0.7 | lost | 24% |
+| ×0.2 | lost | 28% |
+
+Smooth through the boundary, and a factor of about three end to end instead of seven. The
+suite asserts these as *properties* rather than magic numbers — the cost rises with the
+odds, the two sides of the boundary agree within five points, and the whole range stays
+under ×4.5 — because the properties are what the design claims and the exact figures are
+tuning.
 
 #### The bug that the defender's half was hiding
 

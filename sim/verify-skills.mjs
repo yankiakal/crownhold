@@ -522,23 +522,41 @@ console.log('\n── a pre-skills save is inert, not broken ──');
      the correct play was to raid every cooldown forever. */
   ok('an attacker buries some of their own even in victory', out.attDead > 0,
      out.attDead + ' fell, ' + out.attHurt + ' wounded');
+  /* Tested as PROPERTIES of the curve rather than against magic numbers, because the
+     properties are what the design actually claims: the cost rises smoothly as the odds
+     worsen, and it does not step at the win/loss boundary. The first version switched on
+     the outcome, which put a fourfold cliff there — 6% for winning 51-49 against 24% for
+     losing 49-51 — and made a coin-flip feel arbitrary. */
   {
-    const fort = mk({ spearman: 600 }), doomed = mk({ spearman: 500 });
-    fort.name = 'Fortress'; doomed.name = 'Doomed';
-    const forlorn = { troops: { spearman: 60 }, base: 0, mult: 1 };
-    for(const [k, n] of Object.entries(forlorn.troops)) forlorn.base += L.tierPower(doomed, k) * n;
-    const o3 = R.resolveRaid(doomed, fort, forlorn, fort.now, () => 0.5);
-    ok('a hopeless charge is thrown back', o3.won === false, o3.mine + ' vs ' + o3.theirs);
-    const gone = o3.attDead / 60;
-    ok('and it ruins the column rather than costing a probe', gone > 0.3,
-       Math.round(gone * 100) + '% of the column will not be coming back');
-    ok('the worse the odds the worse the cost', o3.attDead / 60 > out.attDead / 300,
-       'hopeless ' + Math.round(100*o3.attDead/60) + '% vs won ' + Math.round(100*out.attDead/300) + '%');
-    /* But the hold that threw them back still buried nobody. */
-    const fortWounded = Object.values(fort.wounded || {}).reduce((a, b) => a + b, 0);
+    const perTroop = L.tierPower(mk({}), 'spearman');
+    const cost = mult => {
+      const d = mk({ spearman: 200 });
+      const defPower = R.defenceOf(d).total;
+      const n = Math.max(1, Math.round(defPower * mult / perTroop));
+      const a2 = mk({ spearman: 8000 });
+      a2.name = 'A'; d.name = 'D';
+      const o = R.resolveRaid(a2, d, { troops:{ spearman: n }, base: n*perTroop, mult: 1 },
+                              d.now, () => 0.5);
+      return { pct: o.attDead / n, won: o.won, n, def: d, dead: o.attDead };
+    };
+    const crush = cost(4), overWon = cost(1.05), underLost = cost(0.95), hopeless = cost(0.2);
+    ok('a crushing win still costs the column something for good', crush.pct > 0.02,
+       Math.round(crush.pct * 100) + '%');
+    ok('the cost rises as the odds worsen',
+       crush.pct < overWon.pct && overWon.pct <= hopeless.pct + 1e-9,
+       [crush, overWon, underLost, hopeless].map(c => Math.round(c.pct*100) + '%').join(' → '));
+    /* The property that matters most: no cliff where the outcome flips. */
+    ok('winning by a hair and losing by a hair cost nearly the same',
+       Math.abs(overWon.pct - underLost.pct) < 0.05 && overWon.won && !underLost.won,
+       'won ' + Math.round(overWon.pct*100) + '% vs lost ' + Math.round(underLost.pct*100) + '%');
+    ok('and the whole range is a factor of about three, not seven',
+       hopeless.pct / crush.pct < 4.5,
+       '×' + (hopeless.pct / crush.pct).toFixed(1) + ' from best case to worst');
+    /* And the hold that threw back the hopeless charge still buried nobody. */
+    const fw = Object.values(hopeless.def.wounded || {}).reduce((a, b) => a + b, 0);
     ok('while the DEFENDER still loses no one, only beds',
-       600 - fort.t.spearman === fortWounded,
-       '600 → ' + fort.t.spearman + ' with ' + fortWounded + ' wounded');
+       200 - hopeless.def.t.spearman === fw,
+       '200 → ' + hopeless.def.t.spearman + ' with ' + fw + ' wounded');
   }
 
   /* RULE 2 — the scarce spine of the economy cannot be carted off. */

@@ -44,10 +44,18 @@ export const RAID_COOLDOWN_MS = 8 * 60 * 1000;
    sale — this window is the single most monetized object in the genre. */
 export const RAID_GRACE_MS = 30 * 60 * 1000;
 export const RAID_LOOT_FRAC = 0.16;          // of what the Warehouse leaves exposed
-/* What share of an ATTACKER's casualties are dead rather than wounded. A won assault
-   still buries some; a broken one buries most of them. Nothing on the defending side
-   ever uses these. */
-export const DEATH_SHARE_WON = 0.35, DEATH_SHARE_LOST = 0.7;
+/* Both sides' casualties are CONTINUOUS in how outmatched the attacker was, and neither
+   curve looks at who won. Switching on the outcome put a cliff at the boundary: winning
+   51-to-49 cost the attacker 6% of the column permanently and losing 49-to-51 cost 24%,
+   a fourfold jump across an infinitesimal difference in power. A coin-flip should not
+   change the bill fourfold — it makes the result feel arbitrary rather than earned.
+
+   `odds` below is theirs÷mine — how badly outgunned the column was — normalised at 1.6
+   and clamped, so everything past "half again my strength" is equally hopeless. */
+export const ODDS_FLOOR = 0.16, ODDS_SPAN = 0.26;    // attacker casualty rate
+export const DEATH_FLOOR = 0.40, DEATH_SPAN = 0.22;  // and how many of those are final
+export const DEF_FLOOR = 0.12, DEF_SPAN = 0.26;      // the defender's wounded rate
+export function oddsOf(mine, theirs){ return Math.min(1, (theirs / Math.max(1, mine)) / 1.6); }
 export const CARRY_PER_TROOP = 55;           // a column can only cart off so much
 export const LOOTABLE = ['food', 'wood', 'stone', 'iron'];
 
@@ -74,24 +82,20 @@ export function resolveRaid(att, def, col, now, rand = Math.random){
   const mine = Math.max(1, Math.round((col.base || 0) * (col.mult || 1)));
   const theirs = Math.max(1, d.total);
   const won = mine > theirs;
-  const ratio = won ? theirs / mine : mine / theirs;
 
-  /* The two sides are costed on opposite curves, and that is deliberate.
-
-     A DEFENDER who is overwhelmed barely fought, so a rout costs them few casualties —
-     what it costs them is their stores. An ATTACKER who is thrown back has hurled a
-     column at a wall, and the worse the mismatch the less of it comes home. The first
-     version used the same "a rout costs the loser little" curve for both, which meant
-     a hopeless assault was a cheap probe: 17% of the column lost for throwing 60
-     soldiers at a hold four times their strength. Charging a fortress should ruin you. */
-  const attFrac = won ? 0.14 * (0.5 + ratio)          // a won fight still costs, most when close
-                      : 0.34 + 0.30 * (1 - ratio);    // a broken one costs more the worse the odds
-  const defFrac = (won ? 0.30 : 0.14) * (0.5 + ratio);
+  /* One axis: how outmatched the attacker was. Nothing here asks who won, so the bill
+     changes smoothly through the boundary instead of stepping at it. A crushing win is
+     cheap, a near thing is dear whichever way it fell, and charging a fortress is dearer
+     still — but not seven times dearer, which is what the stepped version made it. */
+  const odds = oddsOf(mine, theirs);
+  const attFrac = ODDS_FLOOR + ODDS_SPAN * odds;
+  const deathShare = DEATH_FLOOR + DEATH_SPAN * odds;
+  // the defender's wounded rise with the weight of what hit them, on the same shape
+  const defFrac = DEF_FLOOR + DEF_SPAN * Math.min(1, (mine / Math.max(1, theirs)) / 1.6);
 
   /* The attacker's casualties split. Dead are gone — no bed, no Infirmary, no healing —
      because a raid you chose has to cost something you cannot get back, or the correct
      play is to raid every cooldown forever. */
-  const deathShare = won ? DEATH_SHARE_WON : DEATH_SHARE_LOST;
   let attHurt = 0, attDead = 0;
   const survivors = {};
   for(const k of Object.keys(TROOPS)){
