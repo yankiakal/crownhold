@@ -28,6 +28,8 @@ const PLOTS = {
   tavern:     [4, 2],
   hospital:   [5, 6],
   warehouse:  [3, 6],
+  forge:      [1, 3],
+  runeworks:  [7, 1],
 };
 
 // per-building look: roof colour, body colour, and a shape hint
@@ -44,6 +46,8 @@ const LOOK = {
   tavern:     { roof:'#7a5a2e', body:'#63503b', w:1.0, h:18, kind:'hall'  },
   hospital:   { roof:'#5f6b52', body:'#5f5647', w:1.0, h:18, kind:'hall'  },
   warehouse:  { roof:'#5b4f3a', body:'#5a4f3e', w:1.2, h:18, kind:'hall'  },
+  forge:      { roof:'#6b3a2c', body:'#4f4640', w:1.0, h:22, kind:'hall'  },
+  runeworks:  { roof:'#3c4a6b', body:'#4a4658', w:1.0, h:26, kind:'tower' },
 };
 
 const iso = (x, y) => ({ sx: (x - y) * TW/2, sy: (x + y) * TH/2 });
@@ -207,6 +211,19 @@ function drawBuilding(ctx, key, lvl, t, opts){
     // crenellations
     for(let i=-1;i<=1;i+=2)
       isoBox(ctx, sx + i*10, sy + 4, 0.15, 0.15, h+5, shade(look.body,1.1));
+    if(key === 'runeworks'){
+      // a slowly turning ring of bound runes
+      for(let i=0;i<5;i++){
+        const a = t/900 + i*Math.PI*2/5;
+        ctx.globalAlpha = 0.5 + 0.4*Math.sin(t/300 + i);
+        ctx.fillStyle = '#7fa8d9';
+        ctx.beginPath();
+        ctx.arc(sx + Math.cos(a)*16, sy - h - 4 + Math.sin(a)*7, 2.2, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      return;
+    }
     flag(ctx, sx, sy, h + 8, t, '#d9a441');
     // a slow scanning lantern
     const sweep = Math.sin(t/700);
@@ -249,6 +266,15 @@ function drawBuilding(ctx, key, lvl, t, opts){
     isoBox(ctx, sx, sy, w, w*0.9, h, look.body);
     roofPitch(ctx, sx, sy, w, w*0.9, h, look.roof);
     if(key === 'tavern') smoke(ctx, sx + 8, sy, h, t, 1);
+    if(key === 'forge'){
+      smoke(ctx, sx + 6, sy, h, t, 5);
+      // forge-light pulsing in the doorway
+      const glow = 0.45 + 0.35*Math.sin(t/220);
+      ctx.globalAlpha = glow;
+      ctx.fillStyle = '#e08a3c';
+      ctx.beginPath(); ctx.ellipse(sx - 4, sy + 10, 6, 3.5, 0, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
     if(key === 'barracks') flag(ctx, sx - 12, sy + 6, h, t, '#a8443a');
     if(key === 'academy' && lvl > 0) flag(ctx, sx + 12, sy + 6, h, t, '#3f7a8c');
     if(key === 'hospital'){
@@ -451,22 +477,24 @@ function frame(now){
   ctx.restore();
 }
 
-/* click → which building? test front-to-back over generous touch boxes */
-export function pickBuilding(clientX, clientY){
-  if(!cv) return null;
+/* Tap → building, by the ground tile under the finger. Selecting by tile rather
+   than by overlapping bounding boxes means no structure can ever swallow its
+   neighbour's taps. A tap on a tall roof lands on the tile behind it, so we also
+   check the three tiles nearer the viewer — which is where that roof came from. */
+export function tileAt(clientX, clientY){
   const r = cv.getBoundingClientRect();
   const px = (clientX - r.left) / scale - originX;
-  const py = (clientY - r.top) / scale - originY;
-  const order = Object.keys(PLOTS)
-    .filter(k => PLOTS[k])
-    .sort((a,b) => (PLOTS[b][0]+PLOTS[b][1]) - (PLOTS[a][0]+PLOTS[a][1]));
-  for(const key of order){
-    const { sx, sy } = iso(PLOTS[key][0], PLOTS[key][1]);
-    const look = LOOK[key] || { h:20, w:1 };
-    const halfW = 22 * (look.w || 1);
-    if(px > sx - halfW && px < sx + halfW && py > sy - look.h - 14 && py < sy + TH + 6) return key;
-  }
-  return null;
+  const py = (clientY - r.top) / scale - originY - TH/2;
+  return {
+    x: Math.round((px/(TW/2) + py/(TH/2)) / 2),
+    y: Math.round((py/(TH/2) - px/(TW/2)) / 2),
+  };
+}
+export function pickBuilding(clientX, clientY){
+  if(!cv) return null;
+  const { x, y } = tileAt(clientX, clientY);
+  const at = (tx, ty) => Object.keys(PLOTS).find(k => PLOTS[k] && PLOTS[k][0] === tx && PLOTS[k][1] === ty);
+  return at(x, y) || at(x+1, y) || at(x, y+1) || at(x+1, y+1) || null;
 }
 
 export function unmountScene(){ cancelAnimationFrame(raf); raf = 0; }

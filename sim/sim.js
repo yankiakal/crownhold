@@ -58,7 +58,7 @@ function simulate(minutes, enemyLuck, skilled, label){
     if(s.b.townhall > prevTH){ prevTH = s.b.townhall; note(t,'Town Hall → '+prevTH); }
     const ml = L.masteryLvl(s);
     if(ml > prevML){ prevML = ml; note(t,'Mastery → '+ml); }
-    if(Object.keys(RES_META).some(r => s.res[r] >= L.storageCap(s)-1)) cappedTime++;
+    if(Object.keys(RES_META).some(r => s.res[r] >= L.capFor(s,r)-1)) cappedTime++;
 
     /* ── bot decisions ── */
     // stance: the skilled bot answers the scouted shape; the lazy bot never touches it
@@ -126,12 +126,14 @@ function simulate(minutes, enemyLuck, skilled, label){
       else if(s.b.academy < 6 && eligible('academy')) pick = 'academy';
       else {
         const prodOf = {food:'farm',wood:'lumberyard',stone:'quarry',iron:'ironmine'};
-        const order = [...Object.keys(RES_META)].sort((a,b)=>s.res[a]-s.res[b]);
+        const order = Object.keys(RES_META).filter(r=>!RES_META[r].refined).sort((a,b)=>s.res[a]-s.res[b]);
         for(const r of order){ const k=prodOf[r]; if(eligible(k)){ pick=k; break; } }
         if(!pick && s.b.wall<s.b.townhall && eligible('wall')) pick='wall';
         if(!pick && s.b.barracks<s.b.townhall && eligible('barracks')) pick='barracks';
         if(!pick && s.b.watchtower<3 && eligible('watchtower')) pick='watchtower';
-        if(!pick) for(const k of ['tavern','granary','hospital','warehouse']) if(eligible(k)){ pick=k; break; }
+        // the refineries are not optional: without them every upgrade stops at 14
+        if(!pick) for(const k of ['forge','runeworks','tavern','granary','hospital','warehouse'])
+          if(eligible(k)){ pick=k; break; }
       }
       if(pick) L.startUpgrade(s, pick, ms);
       else idleBuild++;

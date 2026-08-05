@@ -1,7 +1,7 @@
 // Crownhold state: fresh-state shape, persistence, save migration.
 
 import { RES_META, FIRST_WAVE_MS, EXPEDITIONS } from './defs.js';
-import { prodPerSec, upkeepPerSec, storageCap, pushLog, fmt,
+import { prodPerSec, upkeepPerSec, storageCap, capFor, refineStep, pushLog, fmt,
          expedCdMs, caravanYields, CARAVAN_GRACE } from './logic.js';
 import { genWorld } from './world.js';
 
@@ -14,10 +14,11 @@ export function freshState(now, seed){
   return {
     world: genWorld(seed != null ? seed : Math.floor(Math.random()*2**31)),
     marches: [],
-    res:{food:120,wood:120,stone:60,iron:0},
+    res:{food:120,wood:120,stone:60,iron:0,steel:0,runestone:0},
+    achieved:{}, campsBurned:0, ruinsRaided:0, winStreak:0, bestStreakWon:0,
     valor:0,
     b:{townhall:1,farm:1,lumberyard:1,quarry:0,ironmine:0,barracks:0,wall:0,watchtower:0,
-       tavern:0,granary:0,academy:0,hospital:0,warehouse:0},
+       tavern:0,granary:0,academy:0,hospital:0,warehouse:0,forge:0,runeworks:0},
     t:{spearman:8,archer:0,knight:0,ballista:0},
     tier:{spearman:1,archer:1,knight:1,ballista:1},
     heroes:{}, spoils:{},
@@ -44,10 +45,19 @@ export function freshState(now, seed){
 export function applyOffline(s, awayMs){
   const gained = [];
   for(const r of Object.keys(RES_META)){
+    if(RES_META[r].refined) continue;                    // made, not gathered — handled below
     let g = prodPerSec(s, r) * awayMs/1000;
     if(r==='food') g -= upkeepPerSec(s) * awayMs/1000;   // the muster ate while you were gone
-    if(g >= 1){ s.res[r] = Math.min(s.res[r]+g, storageCap(s)); gained.push('+'+fmt(g)+' '+RES_META[r].lbl.toLowerCase()); }
+    if(g >= 1){ s.res[r] = Math.min(s.res[r]+g, capFor(s, r)); gained.push('+'+fmt(g)+' '+RES_META[r].lbl.toLowerCase()); }
     else if(g < 0) s.res[r] = Math.max(0, s.res[r]+g); // drain, but no desertion offline
+  }
+  // the refineries never sleep either — run them in chunks so their inputs deplete honestly
+  const before = { steel: s.res.steel||0, runestone: s.res.runestone||0 };
+  const steps = Math.min(240, Math.ceil(awayMs/30000));
+  for(let i=0;i<steps;i++) refineStep(s, (awayMs/1000)/steps);
+  for(const r of ['steel','runestone']){
+    const made = (s.res[r]||0) - before[r];
+    if(made >= 1) gained.push('+'+fmt(made)+' '+RES_META[r].lbl.toLowerCase());
   }
   if(gained.length) pushLog(s, 'While you were away, the hold produced '+gained.join(', ')+' (after feeding the muster).', 'gold');
   if(s.caravan){
@@ -103,6 +113,14 @@ export function load(now){
     // v1.0 the Frontier
     if(!s.world) s.world = genWorld(Math.floor(Math.random()*2**31));
     if(!s.marches) s.marches = [];
+    // v1.4 the deep economy
+    for(const r of ['steel','runestone']) if(s.res[r]==null) s.res[r] = 0;
+    for(const k of ['forge','runeworks']) if(s.b[k]==null) s.b[k] = 0;
+    if(s.achieved==null) s.achieved = {};
+    if(s.campsBurned==null) s.campsBurned = 0;
+    if(s.ruinsRaided==null) s.ruinsRaided = 0;
+    if(s.winStreak==null) s.winStreak = 0;
+    if(s.bestStreakWon==null) s.bestStreakWon = 0;
     // v1.2 the Arena
     if(s.laurels==null) s.laurels = 1000;
     if(s.defStance==null) s.defStance = 'shieldwall';

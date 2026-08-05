@@ -1,7 +1,7 @@
 // Crownhold UI: renders state to DOM, wires input to logic actions.
 
 import {
-  BUILDINGS, TROOPS, MASTERY, QUESTS, RES_META,
+  BUILDINGS, TROOPS, MASTERY, QUESTS, ACHIEVEMENTS, RES_META, REFINE,
   HERO_POOL, HERO_SLOTS, SPOILS, RARITY,
   WAVE_TYPES, STANCES, EXPEDITIONS,
   WAVE_MS, FIRST_WAVE_MS, SHIELD_MS,
@@ -12,7 +12,7 @@ import {
   tileDist, marchSlots, tileBusy, marchPower, campPower, gatherYield, startMarch,
 } from './world.js';
 import {
-  fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor,
+  fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor, capFor, isUnlocked,
   prodPerSec, prodMult, upkeepPerSec, buildCost, buildTime, canAfford, armyPower,
   armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
   maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost,
@@ -42,12 +42,18 @@ function renderHeader(S){
   const cap = storageCap(S);
   let h = '<header><div class="brand"><h1>CROWNHOLD</h1><span>hold the frontier</span></div><div class="res-row">';
   for(const [r,m] of Object.entries(RES_META)){
-    let rate = prodPerSec(S,r);
-    if(r==='food') rate -= upkeepPerSec(S);           // net of army upkeep
-    const rateTxt = (rate<0?'−':'+')+Math.abs(rate).toFixed(1);
-    const warn = rate<0 ? 'color:var(--bad)' : '';
-    h += '<span class="res"><span class="lbl">'+m.lbl+'</span> '+fmt(S.res[r])
-       + '<span class="rate" style="'+warn+'">/'+fmt(cap)+' · '+rateTxt+'/s</span></span>';
+    if(!isUnlocked(S, r)) continue;                   // refined goods appear once you can make them
+    let rate, rateTxt;
+    if(m.refined){
+      rate = REFINE[m.from].rate * (S.b[m.from]||0);
+      rateTxt = '+'+rate.toFixed(2);
+    }else{
+      rate = prodPerSec(S,r) - (r==='food' ? upkeepPerSec(S) : 0);
+      rateTxt = (rate<0?'−':'+')+Math.abs(rate).toFixed(1);
+    }
+    const warn = rate<0 ? 'color:var(--bad)' : m.refined ? 'color:var(--info)' : '';
+    h += '<span class="res"><span class="lbl">'+m.lbl+'</span> '+fmt(S.res[r]||0)
+       + '<span class="rate" style="'+warn+'">/'+fmt(capFor(S,r))+' · '+rateTxt+'/s</span></span>';
   }
   h += '<span class="res valor"><span class="lbl">Valor</span> '+fmt(S.valor)+'</span>';
   h += '</div></header>';
@@ -269,6 +275,17 @@ function renderMastery(S){
     h += '<div style="font-family:var(--sans);font-size:.7rem;color:var(--gold);margin-top:.3rem">High Sovereign — the track is complete.</div>';
   h += '<div class="xpbar" style="margin-top:.4rem"><i style="width:'+pct+'%;background:var(--gold)"></i></div>';
   h += '<p style="font-size:.72rem;font-family:var(--sans);color:var(--ink-dim);margin-top:.45rem">Earned from raids, quests, building, drilling, patrols. This replaces VIP — it cannot be bought.</p>';
+  h += '</section>';
+  return h;
+}
+
+function renderAchievements(S){
+  const got = Object.keys(S.achieved||{}).length;
+  const next = ACHIEVEMENTS.filter(a => !S.achieved[a.id]).slice(0, 4);
+  let h = '<section class="panel"><h2>Achievements <span style="letter-spacing:.05em">'+got+'/'+ACHIEVEMENTS.length+'</span></h2>';
+  for(const a of next)
+    h += '<div class="m-row">· <span>'+a.txt+'</span><span style="margin-left:auto">+'+a.valor+' ⚜</span></div>';
+  if(!next.length) h += '<div class="m-row got">✦ <span>Every deed is done. The chronicle is complete.</span></div>';
   h += '</section>';
   return h;
 }
@@ -537,6 +554,8 @@ function renderCodex(S){
     + '<li>Storage cap: 800 × Town&nbsp;Hall<sup>1.7</sup>, +3% per Granary level — currently <b>'+fmt(storageCap(S))+'</b>. Production beyond it is wasted.</li>'
     + '<li>Offline: the hold produces (and the muster eats) for up to 2 hours while you are away. No raids strike while you are gone.</li>'
     + '<li>Build costs scale with level² — early levels are quick, the late road is long. One build queue, one training queue.</li>'
+    + '<li><b>Refined goods</b>: the Forge (Town Hall 12) smelts iron and wood into <b>Steel</b> without pause; the Runeworks (Town Hall 22) binds stone and steel into <b>Runestone</b>. Their vaults are small — 10% and 3.5% of your raw storage.</li>'
+    + '<li>From level '+15+' every upgrade also costs Steel; from level '+24+', Runestone too. That is what makes the last third of the game long — and why food, wood, stone and iron never stop mattering: they are the fuel.</li>'
     + '</ul>'
 
     + '<h3>The Muster</h3>'
@@ -712,7 +731,8 @@ export function render(){
   app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
     + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderSpoils(S)
-      + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S) + renderChronicle(S) + '</div>'
+      + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
+      + renderAchievements(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
   fx.innerHTML = renderFx(S) + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
   drawMap(S);

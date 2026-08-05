@@ -92,6 +92,47 @@ This is the anti-gacha: same excitement of the roll, none of the wallet.
   rosters and meaningfully different end states (power, upkeep profile), while
   overall pacing stays inside the v0.3 targets.
 
+## The deep economy (v1.4 — refined goods and the long climb)
+
+Kingshot introduces new currencies deep into the curve; Crownhold does the same,
+with one rule that makes it better: **refined goods are made from raw ones**, so
+food, wood, stone and iron never stop mattering. A Town Hall 25 upgrade is really
+an enormous pile of iron and wood, laundered through a Forge.
+
+- **Steel** — the Forge (Town Hall 12) smelts iron + wood into it, continuously.
+- **Runestone** — the Runeworks (Town Hall 22) binds stone + steel into it.
+- Every building costs Steel from level **15**, and Runestone from level **24**.
+- Refined vaults are deliberately tiny: 10% and 3.5% of raw storage.
+- The refineries are **exempt from the surcharge on their own upgrades** — a
+  Runeworks gated behind runestone deadlocks the economy it exists to feed.
+  (The simulator found exactly that deadlock before ship.)
+
+Everything now runs to **Town Hall 30**, Mastery **30**, and a 30-step charter,
+with a 24-entry permanent achievement list underneath.
+
+### How long to max, measured
+
+| Milestone | Perfect always-online play |
+|---|---|
+| Town Hall 10 | 2.7 h |
+| Town Hall 15 | 5.4 h |
+| Town Hall 20 | ~10 h |
+| Town Hall 24 | ~18 h |
+| Town Hall 28 | ~35 h |
+| Everything capped | 40 h+ — no naive strategy finished it in 200 simulated hours |
+
+Before v1.4 the entire game capped out in **7.7 hours**. The late game is now
+also an *allocation* problem: two different greedy bots both stalled near the top
+because they spent refined goods badly. Watch this in playtesting — a wall that
+punishes bad allocation is good; one that punishes not knowing the rules is not.
+
+**Scaling to the live target (6–12 months).** These are prototype timers, where
+a build takes seconds and a raid comes every 75 s. A human playing ~1 h/day, not
+perfectly, is already looking at many months. Multiply build/training times and
+late-game costs by 3–10× at launch and the cap lands in the intended window —
+still an order of magnitude short of Kingshot's multi-year VIP grind, which is
+the point.
+
 ## The Arena (v1.2 — fair PvP, finally)
 
 This is the system Kingshot gets worst, so ours inverts its incentives.

@@ -3,27 +3,31 @@
 
 export const BUILDINGS = {
   townhall:  {name:'Town Hall',  icon:'🏰', fx:'Raises storage caps; gates every other building.',
-              cost:{wood:200,stone:150}, time:20, max:20},
-  farm:      {name:'Farm',       icon:'🌾', prod:'food', rate:2.0, cost:{wood:30},           time:8,  max:20},
-  lumberyard:{name:'Lumberyard', icon:'🪵', prod:'wood', rate:1.6, cost:{food:30},           time:8,  max:20},
-  quarry:    {name:'Quarry',     icon:'⛰️', prod:'stone',rate:1.0, cost:{wood:60,food:40},   time:12, max:20},
-  ironmine:  {name:'Iron Mine',  icon:'⚒️', prod:'iron', rate:0.7, cost:{wood:80,stone:60},  time:15, max:20, th:3},
+              cost:{wood:200,stone:150}, time:20, max:30},
+  farm:      {name:'Farm',       icon:'🌾', prod:'food', rate:2.0, cost:{wood:30},           time:8,  max:30},
+  lumberyard:{name:'Lumberyard', icon:'🪵', prod:'wood', rate:1.6, cost:{food:30},           time:8,  max:30},
+  quarry:    {name:'Quarry',     icon:'⛰️', prod:'stone',rate:1.0, cost:{wood:60,food:40},   time:12, max:30},
+  ironmine:  {name:'Iron Mine',  icon:'⚒️', prod:'iron', rate:0.7, cost:{wood:80,stone:60},  time:15, max:30, th:3},
   barracks:  {name:'Barracks',   icon:'⚔️', fx:'Trains troops; each level trains 6% faster.',
-              cost:{wood:60,stone:30},  time:15, max:20},
+              cost:{wood:60,stone:30},  time:15, max:30},
   wall:      {name:'Wall',       icon:'🧱', fx:'+18 defense power per level.',
-              cost:{stone:90,wood:40},  time:18, max:20, th:2},
+              cost:{stone:90,wood:40},  time:18, max:30, th:2},
   watchtower:{name:'Watchtower', icon:'🗼', fx:'Scouts raid shape & strength; blunts attacks 4% per level.',
-              cost:{wood:120,stone:80,iron:20}, time:20, max:10, th:3},
+              cost:{wood:120,stone:80,iron:20}, time:20, max:16, th:3},
   tavern:    {name:'Tavern',     icon:'🍺', fx:'Expeditions: −1s cooldown and +3% yield per level.',
-              cost:{wood:90,food:60},   time:14, max:15, th:2},
+              cost:{wood:90,food:60},   time:14, max:25, th:2},
   granary:   {name:'Granary',    icon:'🏺', fx:'+2% food production and +3% storage per level.',
-              cost:{wood:100,stone:40}, time:16, max:15, th:3},
+              cost:{wood:100,stone:40}, time:16, max:25, th:3},
   academy:   {name:'War Academy',icon:'🎓', fx:'Each level unlocks the next troop tier.',
               cost:{stone:150,iron:60}, time:25, max:9,  th:4},
   hospital:  {name:'Hospital',   icon:'⛑️', fx:'−4% battle casualties per level.',
-              cost:{wood:120,food:80},  time:18, max:15, th:4},
+              cost:{wood:120,food:80},  time:18, max:25, th:4},
   warehouse: {name:'Warehouse',  icon:'📦', fx:'Defeats plunder 4% less of your stores per level.',
-              cost:{stone:130,wood:80}, time:18, max:15, th:5},
+              cost:{stone:130,wood:80}, time:18, max:20, th:5},
+  forge:     {name:'Forge',      icon:'🔥', fx:'Smelts iron and wood into Steel, without pause.',
+              cost:{stone:300,iron:180}, time:40, max:25, th:12},
+  runeworks: {name:'Runeworks',  icon:'🔮', fx:'Binds stone and steel into Runestone.',
+              cost:{stone:700,steel:25}, time:60, max:20, th:22},
 };
 // polynomial curves: early levels are quick, late levels are the long road
 export const COST_EXP = 2.0, TIME_EXP = 1.6;
@@ -65,6 +69,16 @@ export const MASTERY = [
   {need:29700,fx:'−10% build & training time'},
   {need:37500,fx:'+10% Valor earned'},
   {need:47500,fx:'+20% troop power — Crown Eternal'},
+  {need:60000,  fx:'+10% production'},
+  {need:76000,  fx:'+10% troop power'},
+  {need:96000,  fx:'+15% storage'},
+  {need:121000, fx:'−10% army upkeep'},
+  {need:152000, fx:'+20% refining speed'},
+  {need:191000, fx:'Writ of Peace capacity +1'},
+  {need:240000, fx:'−12% build & training time'},
+  {need:301000, fx:'+20% raid loot'},
+  {need:378000, fx:'+15% Valor earned'},
+  {need:475000, fx:'+25% troop power — Sovereign of the Reach'},
 ];
 
 export function masteryLvl(s){
@@ -190,13 +204,64 @@ export const QUESTS = [
   {txt:'Build the War Academy',          check:s=>s.b.academy>=1,     reward:{valor:15},          rtxt:'+15 Valor'},
   {txt:'Promote a troop to Tier II',     check:s=>s.tier && Object.values(s.tier).some(t=>t>=2), reward:{valor:15}, rtxt:'+15 Valor'},
   {txt:'Reach Town Hall 12',             check:s=>s.b.townhall>=12,   reward:{valor:30,shield:1}, rtxt:'+30 Valor, +1 Writ'},
+  {txt:'Light the Forge — nothing rises past 14 without Steel',
+                                         check:s=>s.b.forge>=1,       reward:{valor:35},          rtxt:'+35 Valor'},
   {txt:'Reach Mastery 12',               check:s=>masteryLvl(s)>=12,  reward:{valor:20},          rtxt:'+20 Valor'},
   {txt:'Reach Town Hall 15',             check:s=>s.b.townhall>=15,   reward:{valor:40,shield:1}, rtxt:'+40 Valor, +1 Writ'},
   {txt:'Reach Town Hall 20',             check:s=>s.b.townhall>=20,   reward:{valor:100},         rtxt:'+100 Valor'},
+  {txt:'Smelt 500 Steel',                check:s=>(s.res.steel||0)>=500, reward:{valor:50},       rtxt:'+50 Valor'},
+  {txt:'Reach Town Hall 24',             check:s=>s.b.townhall>=24,   reward:{valor:80,shield:1}, rtxt:'+80 Valor, +1 Writ'},
+  {txt:'Build the Runeworks',            check:s=>s.b.runeworks>=1,   reward:{valor:80},          rtxt:'+80 Valor'},
+  {txt:'Reach Mastery 25',               check:s=>masteryLvl(s)>=25,  reward:{valor:120},         rtxt:'+120 Valor'},
+  {txt:'Reach Town Hall 30',             check:s=>s.b.townhall>=30,   reward:{valor:300},         rtxt:'+300 Valor'},
 ];
 
+/* ── Achievements: permanent, one-time, and they never expire. Unlike quests
+   (a guided chain), these are the long tail — reasons to keep pushing every
+   system rather than the one the charter is pointing at. ── */
+export const ACHIEVEMENTS = [
+  {id:'first-blood',  txt:'Repel your first raid',            check:s=>s.wavesWon>=1,             valor:5},
+  {id:'warband-1',    txt:'Break a Warband',                  check:s=>s.warbandsWon>=1,          valor:10},
+  {id:'warband-10',   txt:'Break 10 Warbands',                check:s=>s.warbandsWon>=10,         valor:40},
+  {id:'warband-50',   txt:'Break 50 Warbands',                check:s=>s.warbandsWon>=50,         valor:150},
+  {id:'hold-50',      txt:'Hold the frontier 50 waves',       check:s=>s.wavesWon>=50,            valor:30},
+  {id:'hold-200',     txt:'Hold the frontier 200 waves',      check:s=>s.wavesWon>=200,           valor:100},
+  {id:'hold-500',     txt:'Hold the frontier 500 waves',      check:s=>s.wavesWon>=500,           valor:250},
+  {id:'unbroken',     txt:'Win 10 raids without a single defeat', check:s=>(s.bestStreakWon||0)>=10, valor:60},
+  {id:'muster-100',   txt:'Muster 100 troops at once',        check:s=>Object.values(s.t).reduce((a,b)=>a+b,0)>=100, valor:20},
+  {id:'muster-1000',  txt:'Muster 1,000 troops at once',      check:s=>Object.values(s.t).reduce((a,b)=>a+b,0)>=1000, valor:120},
+  {id:'tier-5',       txt:'Forge a troop to Tier V',          check:s=>Object.values(s.tier||{}).some(t=>t>=5), valor:50},
+  {id:'tier-10',      txt:'Forge a troop to Tier X',          check:s=>Object.values(s.tier||{}).some(t=>t>=10), valor:200},
+  {id:'full-court',   txt:'Seat eight champions',             check:s=>Object.keys(s.heroes||{}).length>=8, valor:80},
+  {id:'hero-20',      txt:'Raise a hero to level 20',         check:s=>Object.values(s.heroes||{}).some(h=>h.lvl>=20), valor:100},
+  {id:'spoils-10',    txt:'Claim 10 Spoils of War',           check:s=>Object.values(s.spoils||{}).reduce((a,b)=>a+b,0)>=10, valor:60},
+  {id:'frontier-10',  txt:'Burn 10 bandit camps',             check:s=>(s.campsBurned||0)>=10,    valor:60},
+  {id:'ruins-5',      txt:'Plunder 5 ancient ruins',          check:s=>(s.ruinsRaided||0)>=5,     valor:50},
+  {id:'smith',        txt:'Light the Forge',                  check:s=>s.b.forge>=1,              valor:40},
+  {id:'runebinder',   txt:'Raise the Runeworks',              check:s=>s.b.runeworks>=1,          valor:80},
+  {id:'arena-1',      txt:'Win your first arena battle',      check:s=>(s.arenaWins||0)>=1,       valor:20},
+  {id:'arena-25',     txt:'Win 25 arena battles',             check:s=>(s.arenaWins||0)>=25,      valor:120},
+  {id:'laurels-1200', txt:'Reach 1,200 Laurels',              check:s=>(s.laurels||0)>=1200,      valor:100},
+  {id:'sovereign',    txt:'Reach Mastery 20',                 check:s=>masteryLvl(s)>=20,         valor:150},
+  {id:'crown',        txt:'Raise Town Hall 30',               check:s=>s.b.townhall>=30,          valor:400},
+];
+
+/* Raw resources you gather; refined ones you MAKE from them. Refining is what
+   keeps early resources valuable forever — a Town Hall 25 upgrade is really an
+   enormous pile of iron and wood, laundered through a Forge. */
 export const RES_META = {
-  food:{lbl:'Food',icon:'🌾'}, wood:{lbl:'Wood',icon:'🪵'},
-  stone:{lbl:'Stone',icon:'⛰️'}, iron:{lbl:'Iron',icon:'⚒️'},
+  food:     {lbl:'Food',     icon:'🌾'},
+  wood:     {lbl:'Wood',     icon:'🪵'},
+  stone:    {lbl:'Stone',    icon:'⛰️'},
+  iron:     {lbl:'Iron',     icon:'⚒️'},
+  steel:    {lbl:'Steel',    icon:'🔩', refined:true, capMult:0.10, from:'forge'},
+  runestone:{lbl:'Runestone',icon:'💠', refined:true, capMult:0.035, from:'runeworks'},
+};
+// levels at which every building starts demanding the next currency
+export const STEEL_FROM = 15, RUNE_FROM = 24;
+// what a refinery eats per unit it produces
+export const REFINE = {
+  forge:     { out:'steel',     rate:0.030, in:{iron:6, wood:4} },
+  runeworks: { out:'runestone', rate:0.018, in:{stone:14, steel:3} },
 };
 export const WAVE_MS = 75000, FIRST_WAVE_MS = 120000, PATROL_MS = 25000, SHIELD_MS = 180000;

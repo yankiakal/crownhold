@@ -110,6 +110,7 @@ function resolveArrival(s, m, now, rand){
       m.loot = {food:Math.round(L*0.4), wood:Math.round(L*0.4), stone:Math.round(L*0.15), iron:Math.round(L*0.08)};
       m.valor = 10+5*tile.lvl; m.mxp = 20+10*tile.lvl;
       m.report = '⚔️ The camp is burned ('+mine+' vs '+Math.round(enemy)+')';
+      s.campsBurned = (s.campsBurned||0) + 1;
       tile.respawnAt = now + RESPAWN_MS;
     }else{
       for(const k of Object.keys(m.troops)) m.troops[k] = Math.floor(m.troops[k]*0.65);
@@ -127,6 +128,7 @@ function resolveArrival(s, m, now, rand){
     m.valor = 12; m.mxp = 20+8*tile.lvl;
     m.writ = rand() < 0.20;
     m.report = '🏛️ The ruin gives up its secrets';
+    s.ruinsRaided = (s.ruinsRaided||0) + 1;
     tile.respawnAt = now + RESPAWN_MS;
   }
 }

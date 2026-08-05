@@ -4,11 +4,12 @@
 // run this exact module.
 
 import {
-  BUILDINGS, TROOPS, MASTERY, QUESTS, RES_META,
+  BUILDINGS, TROOPS, MASTERY, QUESTS, ACHIEVEMENTS, RES_META,
   HERO_POOL, HERO_SLOTS, SPOILS, RARITY,
   WAVE_TYPES, STANCES, COUNTER_BONUS, COUNTER_PENALTY, COUNTER_CASUALTY, SCREEN,
   EXPEDITIONS, EXPEDITION_CD,
   COST_EXP, TIME_EXP, TIERS, TIER_POWER, TIER_UPKEEP, TIER_COST,
+  REFINE, STEEL_FROM, RUNE_FROM,
   WAVE_MS, FIRST_WAVE_MS, masteryLvl,
 } from './defs.js';
 
@@ -46,6 +47,16 @@ export function storageCapFor(s, thLvl){
     * (perk(s,4)?1.15:1) * (perk(s,13)?1.10:1));
 }
 export function storageCap(s){ return storageCapFor(s, s.b.townhall); }
+/* refined goods are scarce by design: their vaults hold a fraction of the raw ones */
+export function capFor(s, res){
+  const m = RES_META[res];
+  return Math.round(storageCap(s) * (m && m.capMult ? m.capMult : 1));
+}
+export function isUnlocked(s, res){
+  const m = RES_META[res];
+  if(!m || !m.refined) return true;
+  return (s.b[m.from] || 0) > 0 || (s.res[res] || 0) > 0;
+}
 export function prodMult(s, res){
   const resKey = {food:'foodProd',wood:'woodProd',stone:'stoneProd',iron:'ironProd'}[res];
   return 1 + heroBonus(s,'production') + (perk(s,1)?0.06:0) + (perk(s,8)?0.08:0) + (perk(s,11)?0.08:0)
@@ -90,6 +101,13 @@ export function buildCost(s,k){
   const d=BUILDINGS[k], lvl=s.b[k], c={};
   const mult = Math.max(1, Math.pow(lvl, COST_EXP));
   for(const [r,v] of Object.entries(d.cost)) c[r] = Math.round(v * mult);
+  // Past a threshold every building demands refined goods — the late-game gate.
+  // The refineries themselves are exempt: a Runeworks gated behind runestone
+  // would deadlock the very economy it exists to feed.
+  if(REFINE[k]) return c;
+  const next = lvl + 1;
+  if(next >= STEEL_FROM) c.steel = (c.steel||0) + Math.round(10 * Math.pow(next - STEEL_FROM + 1, 1.7));
+  if(next >= RUNE_FROM)  c.runestone = (c.runestone||0) + Math.round(5 * Math.pow(next - RUNE_FROM + 1, 1.6));
   return c;
 }
 export function buildTime(s,k){
@@ -131,7 +149,25 @@ export function pushLog(s, txt, cls){
   if(s.log.length > 40) s.log.length = 40;
 }
 export function showBanner(s, txt, cls, now){ s.banner = {txt, cls:cls||'', until:now+4000}; }
-export function gainRes(s, r, amt){ s.res[r] = Math.min(s.res[r]+amt, storageCap(s)); }
+export function gainRes(s, r, amt){ s.res[r] = Math.min((s.res[r]||0)+amt, capFor(s, r)); }
+
+/* The refineries: they run without pause, eating raw goods to make refined ones.
+   This is what stops food/wood/stone/iron from ever becoming worthless. */
+export function refineStep(s, dt){
+  for(const [b, def] of Object.entries(REFINE)){
+    const lvl = s.b[b] || 0;
+    if(lvl <= 0) continue;
+    let want = def.rate * lvl * dt;
+    const room = capFor(s, def.out) - (s.res[def.out] || 0);
+    if(room <= 0) continue;
+    want = Math.min(want, room);
+    // only smelt what the stores can actually feed
+    for(const [r, per] of Object.entries(def.in)) want = Math.min(want, (s.res[r] || 0) / per);
+    if(want <= 0) continue;
+    for(const [r, per] of Object.entries(def.in)) s.res[r] -= want * per;
+    s.res[def.out] = (s.res[def.out] || 0) + want;
+  }
+}
 export function gainValor(s, v){ s.valor += Math.round(v * (1 + heroBonus(s,'valor') + (perk(s,19)?0.10:0))); }
 export function gainShield(s, n){ s.shields = Math.min(shieldCap(s), s.shields + (n||1)); }
 export function gainMastery(s, amt, now){
@@ -448,6 +484,8 @@ export function resolveWave(s, now, rand=Math.random){
     for(const h of Object.values(s.heroes)) h.xp += (12+3*w)*(isWB?2:1);
     gainMastery(s, (8+2*w)*(isWB?2:1), now);
     s.wavesWon++; s.wave++; s.streak = 0;
+    s.winStreak = (s.winStreak||0) + 1;
+    s.bestStreakWon = Math.max(s.bestStreakWon||0, s.winStreak);
     if(isWB){
       s.warbandsWon++; gainShield(s,1);
       s.choiceQueue.push({type:'spoil', options: rollSpoilOffer(s, rand), reroll:1});
@@ -457,11 +495,12 @@ export function resolveWave(s, now, rand=Math.random){
     showBanner(s, '⚔️ '+label+' repelled — +'+valor+' Valor'+(lost?', '+lost+' fallen':''), 'win', now);
   }else{
     s.streak++;
+    s.winStreak = 0;
     s.wavesLost = (s.wavesLost||0)+1;
     s.nextWave = now + WAVE_MS*2; // a loss buys a longer breather
     const protect = Math.min(0.6, 0.04*(s.b.warehouse||0)); // the Warehouse hides part of your stores
     for(const k of Object.keys(TROOPS)) s.t[k] = Math.floor(s.t[k]*(1 - Math.min(0.5, 0.2*SCREEN[k])));
-    for(const r of Object.keys(RES_META)) s.res[r] = Math.floor(s.res[r]*(1 - 0.15*(1-protect)));
+    for(const r of Object.keys(RES_META)) s.res[r] = Math.floor((s.res[r]||0)*(1 - 0.15*(1-protect)));
     gainValor(s, 2);
     gainMastery(s, 3, now);
     gainShield(s, 1);
@@ -487,6 +526,7 @@ export function tick(s, now, dt, rand=Math.random){
   if(!s.seenIntro) s.nextWave = Math.max(s.nextWave, now + FIRST_WAVE_MS);
 
   for(const r of Object.keys(RES_META)) gainRes(s, r, prodPerSec(s,r)*dt);
+  refineStep(s, dt);
 
   // armies eat: upkeep drains food; an unfed muster deserts
   if(!(s.upkeepPauseUntil > now)) s.res.food -= upkeepPerSec(s)*dt;
@@ -532,6 +572,18 @@ export function tick(s, now, dt, rand=Math.random){
     s.questIdx++;
     if(s.questIdx >= QUESTS.length)
       pushLog(s, 'The charter is fulfilled. The hold — and its numbers — are yours to tune.', 'gold');
+  }
+
+  // achievements: permanent, one-time, checked quietly in the background
+  for(const a of ACHIEVEMENTS){
+    if(s.achieved[a.id]) continue;
+    if(a.check(s)){
+      s.achieved[a.id] = now;
+      gainValor(s, a.valor);
+      gainMastery(s, a.valor, now);
+      pushLog(s, '🏅 Achievement — '+a.txt+' (+'+a.valor+' Valor).', 'gold');
+      showBanner(s, '🏅 '+a.txt, 'win', now);
+    }
   }
 
   // hero drafts: milestones unlock slots; each grants a choice of three
