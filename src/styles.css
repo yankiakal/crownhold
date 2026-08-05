@@ -151,6 +151,14 @@ section.panel{
 .hero .hname{font-size:.92rem}
 .hero .hmeta{font-family:var(--sans);font-size:.7rem;color:var(--ink-dim);font-variant-numeric:tabular-nums}
 .hero.locked{opacity:.55;font-style:italic}
+.hero.away{opacity:.8}
+.hero.away .hname{color:var(--info)}
+/* choosing who leads a column: a stack of taps, mobile-first */
+.leadpick{display:flex;flex-direction:column;gap:.3rem;margin:.35rem 0 .2rem}
+.leadpick .lead{display:block;width:100%;text-align:left;padding:.45rem .6rem;font-size:.85rem}
+.leadpick .lead .hmeta{display:block;font-family:var(--sans);font-size:.68rem;color:var(--ink-dim)}
+.leadpick .lead.on{border-color:var(--gold);color:var(--gold)}
+.leadpick .lead.on .hmeta{color:var(--gold);opacity:.8}
 .xpbar{height:3px;background:#151009;border-radius:2px;margin-top:.3rem;overflow:hidden}
 .xpbar i{display:block;height:100%;background:var(--info)}
 .quest-txt{font-size:.95rem}

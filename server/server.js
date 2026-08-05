@@ -19,6 +19,8 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
 import { tick, armyPower, masteryLvl, upkeepPerSec, gainValor, gainMastery, pushLog } from '../src/logic.js';
+import { SEASON_MS as DEFAULT_SEASON_MS, SEASON_EPOCH, SEASON_ARCS,
+         seasonNo as defSeasonNo, seasonEndsIn as defSeasonEndsIn } from '../src/defs.js';
 import { tickWorld } from '../src/world.js';
 import { freshState, applyOffline } from '../src/state.js';
 import { applyAction, isGameAction } from '../src/actions.js';
@@ -294,11 +296,16 @@ function bossFor(tag, now){
    A fortnight. At rollover the standings are frozen, titles are handed out, and
    Laurels drift halfway back to 1000 — a soft reset, so a season's champion
    starts the next one ahead but not untouchable, and nobody is ever locked out
-   of climbing. Nothing here is purchasable. */
-const SEASON_MS = Number(process.env.SEASON_MS) || 14 * 24 * 3600 * 1000;
-const SEASON_EPOCH = Date.UTC(2026, 7, 1);      // season 1 opened here
-const seasonNo = now => Math.max(1, Math.floor((now - SEASON_EPOCH) / SEASON_MS) + 1);
-const seasonEndsIn = now => SEASON_MS - ((now - SEASON_EPOCH) % SEASON_MS);
+   of climbing. Nothing here is purchasable.
+
+   The clock itself lives in src/defs.js, because the hero pool reads it too:
+   each season opens four more heroes to the draft, and client and server must
+   never disagree about which ones have arrived. */
+const SEASON_MS = Number(process.env.SEASON_MS) || DEFAULT_SEASON_MS;
+const seasonNo = now => SEASON_MS === DEFAULT_SEASON_MS ? defSeasonNo(now)
+  : Math.max(1, Math.floor((now - SEASON_EPOCH) / SEASON_MS) + 1);
+const seasonEndsIn = now => SEASON_MS === DEFAULT_SEASON_MS ? defSeasonEndsIn(now)
+  : SEASON_MS - ((now - SEASON_EPOCH) % SEASON_MS);
 
 const SEASON_TITLES = ['Sovereign of the Realm', 'Warden of the Realm', 'Bannerlord'];
 
@@ -755,6 +762,8 @@ async function api(req, res, url){
       boss: bossFor(u.alliance, now),
       season: {
         no: seasonNo(now), endsIn: seasonEndsIn(now),
+        arc: SEASON_ARCS[seasonNo(now)] || null,
+        next: SEASON_ARCS[seasonNo(now) + 1] || null,
         realmDay: realmDay(now),
         titles: u.titles || [],
         history: (db.season && db.season.history || []).slice(-3).reverse(),

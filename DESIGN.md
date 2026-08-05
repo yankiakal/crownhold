@@ -27,7 +27,8 @@ What makes it pay-to-win (replace all of this):
 | Kingshot mechanic | Why it's P2W | Crownhold replacement |
 |---|---|---|
 | Paid speedups & gems | Wallet converts directly to progression speed | **Valor**: a speedup currency earned only by playing — winning defenses, finishing quests, active patrols. Spend it to instantly finish any timer. Not purchasable, ever. |
-| Hero gacha banners | Best heroes locked behind lottery spend | Heroes unlock at **milestones** (Town Hall levels, waves survived, quests). Paid hero content is cosmetic skins only. |
+| Hero gacha banners | Best heroes locked behind lottery spend | Heroes unlock at **milestones** (Town Hall levels, waves survived, quests) and are drafted three-at-a-time, pick one. Paid hero content is cosmetic skins only. |
+| Seasonal hero power creep | Each new season's hero outclasses the last, so the roster is a subscription | **Seasons add heroes, never stronger ones.** Four join the pool each fortnight at the same power band as the founding twelve, they never expire, and the full cast is listed openly. Cadence without the ratchet. |
 | VIP levels | Permanent stat buffs scale with lifetime spend | No VIP. Permanent account buffs come from a free **Mastery track** driven by play. |
 | Resource/pack sales | Buy the economy directly | Resources are never sold. Shop is cosmetic-only. |
 | Paid peace shields | Safety becomes a subscription | Shields earned via gameplay (post-defeat grace, quest rewards) and capped for everyone equally. |
@@ -78,11 +79,10 @@ Design rule: **randomness proposes, the player disposes.** RNG creates different
 account paths — it never sits behind a purchase or decides an outcome you paid for.
 This is the anti-gacha: same excitement of the roll, none of the wallet.
 
-- **Hero drafts**: a pool of 12 heroes (6 common / 4 rare / 2 epic, weight 62/28/10).
-  Milestones unlock 8 slots; each slot offers a rarity-weighted draft of **three
-  random champions — pick one**, with one 5-Valor redraw. No banners, no pity
-  timers, no duplicates. Every account ends up a different subset in a different
-  order.
+- **Hero drafts**: a pool of **32 heroes**, rarity-weighted 62 common / 28 rare /
+  10 epic. **30 milestones** unlock slots; each offers a draft of **three random
+  champions — pick one**, with one 5-Valor redraw. No banners, no pity timers, no
+  duplicates. Every account ends up a different subset in a different order.
 - **Spoils of war**: every Warband win offers **three random permanent relics —
   pick one** (production charters, drill manuals, war trophies, upkeep larders,
   writ capacity…). Most stack, so builds compound differently run to run.
@@ -91,6 +91,57 @@ This is the anti-gacha: same excitement of the roll, none of the wallet.
 - Sim-verified: identical bot policies under different rolls produce different
   rosters and meaningfully different end states (power, upkeep profile), while
   overall pacing stays inside the v0.3 targets.
+
+## Heroes: the court, the column, and the season (v1.18)
+
+Kingshot brings heroes in through seasons, and each new cohort is stronger than
+the last — that is the engine of its spend, because the only fast way to a new
+season's hero is shards. Crownhold takes the *cadence* and refuses the *ratchet*.
+
+**Two jobs, never both at once.** A hero either sits in your **court**, where
+their passive lifts the whole hold, or **leads a column**, where a smaller trait
+applies to that march alone. Riding out gives up the chair for the whole trip.
+
+**Chairs are the cap.** `courtSeats = min(8, 4 + ⌊TownHall/3⌋)` — four to start,
+eight by Town Hall 12. That ceiling is deliberately set where the old eight-hero
+roster already sat, so widening the pool from 12 to 32 changes *what you can do*
+and not *how hard you hit*. Without a cap, tripling the roster would have tripled
+the passive stack: the sim measured the uncapped version at TH12 army 10,344 and
+the capped one at 12,156 with the same loss rate, so the cap holds the line while
+the march traits add the new value.
+
+**Why this is the answer to more march slots.** A maxed Command Center fields
+eight columns. Eight columns want eight leaders, plus eight in court — sixteen
+heroes in active use. That is the honest reason the roster needed to grow, and it
+is a reason that resolves into *decisions* rather than *power*: with 32 heroes and
+16 jobs, every account runs a different assignment.
+
+**Lead traits** are one of: column power, resources hauled, travel speed, losses
+on the road, Valor, or Mastery — all scaled by hero level, all smaller than a
+court passive. A hero who actually rides earns far more XP than one who sits.
+
+**Seasons open doors and never close them.** Four heroes join the draft pool
+every fortnight, across five arcs (The Iron Winter, The Salt Road, The Ashen Vale,
+The Hollow Crown, The Long Thaw). Two rules make this the opposite of a banner:
+
+1. *No power creep.* Season 5's epic is the same strength as Season 0's epic. A
+   new season widens the cast; it never raises the ceiling. Nobody is punished
+   for starting early, and nobody is bought an advantage for starting late.
+2. *Nothing expires.* A player who begins in Season 9 can still draft the entire
+   roster. There is no limited-time window, so there is no FOMO to sell against.
+
+The whole cast — arrived and still riding — is listed openly in the Calendar. A
+season's heroes are never a mystery box.
+
+**The slot-preservation rule.** If a draft milestone comes due when the season
+has nobody left unclaimed, the slot is *not* spent — it waits for the next season
+to bring more names. Earning a draft you cannot use would be the one way this
+system could quietly cheat a player, so it is explicitly prevented in `tick()`.
+
+The season clock itself lives in `defs.js` (`seasonNo`, `SEASON_EPOCH`,
+`SEASON_MS`) and is imported by both the browser and the server, so the two can
+never disagree about which heroes have arrived. Offline play uses the same
+calendar as online play.
 
 ## The deep economy (v1.4 — refined goods and the long climb)
 

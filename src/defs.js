@@ -110,32 +110,131 @@ export const RARITY = {
   epic:  {w:10, tag:'Epic'},
 };
 
-export const HERO_POOL = {
-  marshal:      {name:'Ser Alden, the Marshal',  icon:'⚜️', rarity:'common', fx:l=>'+'+(3*l)+'% troop power',            bonus:{troopPower:0.03},
-                 order:{name:'Rally',           desc:'Next battle: +20% army power.',           cd:4, key:'rally'}},
-  steward:      {name:'Maren, High Steward',     icon:'📜', rarity:'common', fx:l=>'+'+(5*l)+'% production',             bonus:{production:0.05},
-                 order:{name:'Requisition',     desc:'Instantly gain food & wood (60 × Town Hall).', cd:5, key:'requisition'}},
-  warden:       {name:'Odo, the Night Warden',   icon:'🦉', rarity:'common', fx:l=>'−'+(3*l)+'% training time',          bonus:{trainTime:0.03},
-                 order:{name:'Forced March',    desc:'Current training completes instantly.',   cd:5, key:'forcedmarch'}},
-  quartermaster:{name:'Petra, Quartermaster',    icon:'⚖️', rarity:'common', fx:l=>'+'+(3*l)+'% raid loot',              bonus:{loot:0.03},
-                 order:{name:'Plunder Wagons',  desc:'Next win: loot ×2.',                      cd:4, key:'plunder'}},
-  gatekeeper:   {name:'Bram, Gatekeeper',        icon:'🚪', rarity:'common', fx:l=>'+'+(6*l)+' wall power',              bonus:{wallPower:6},
-                 order:{name:'Brace the Gates', desc:'Next battle: wall counts double.',        cd:4, key:'brace'}},
-  forager:      {name:'Isolde, Forager',         icon:'🧺', rarity:'common', fx:l=>'+'+(4*l)+'% expedition yield',       bonus:{patrolYield:0.04},
-                 order:{name:'Rich Trails',     desc:'Next expedition: double yield, no ambush.', cd:3, key:'richtrails'}},
-  drillmaster:  {name:'Corin, Drillmaster',      icon:'🥁', rarity:'rare',   fx:l=>'+'+(2*l)+'% troop power, −'+(2*l)+'% training time', bonus:{troopPower:0.02, trainTime:0.02},
-                 order:{name:'Crash Course',    desc:'Next training batch: −75% time.',         cd:4, key:'crashcourse'}},
-  spymaster:    {name:'Sable, Spymaster',        icon:'🗝️', rarity:'rare',   fx:l=>'+'+(1*l)+'% raid blunting',          bonus:{blunt:0.01},
-                 order:{name:'Expose the Camp', desc:'Next wave arrives 15% weaker.',           cd:4, key:'expose'}},
-  medic:        {name:'Wren, Field Medic',       icon:'🌿', rarity:'rare',   fx:l=>'−'+(3*l)+'% casualties',             bonus:{casualties:0.03},
-                 order:{name:'Triage',          desc:'Next battle: no casualties on a win.',    cd:5, key:'triage'}},
-  provisioner:  {name:'Tobias, Provisioner',     icon:'🫙', rarity:'rare',   fx:l=>'−'+(2.5*l)+'% army upkeep',          bonus:{upkeep:0.025},
-                 order:{name:'Ration Stores',   desc:'Upkeep paused for 60s.',                  cd:5, key:'ration'}},
-  exile:        {name:'Queen Yara, the Exile',   icon:'👑', rarity:'epic',   fx:l=>'+'+(5*l)+'% troop power',            bonus:{troopPower:0.05},
-                 order:{name:'Royal Decree',    desc:'Next battle: +30% army power.',           cd:5, key:'decree'}},
-  treasurer:    {name:'Aldric, Crown Treasurer', icon:'🪙', rarity:'epic',   fx:l=>'+'+(5*l)+'% Valor earned',           bonus:{valor:0.05},
-                 order:{name:'Tithe of War',    desc:'Next battle: Valor ×2.',                  cd:4, key:'tithe'}},
+/* ── the season clock ──
+   Shared by the browser and the server so both agree on which heroes have
+   arrived. Offline play uses the same calendar, so a solo hold and an online
+   one unlock the same cast on the same day. */
+export const SEASON_MS = 14 * 24 * 3600 * 1000;
+export const SEASON_EPOCH = Date.UTC(2026, 7, 1);   // Season 1 opened here
+export function seasonNo(now){ return Math.max(1, Math.floor((now - SEASON_EPOCH) / SEASON_MS) + 1); }
+export function seasonEndsIn(now){ return SEASON_MS - ((now - SEASON_EPOCH) % SEASON_MS); }
+
+/* Each season names itself and brings four more heroes into the draft pool.
+   Two rules keep this from becoming Kingshot's shard shop:
+     1. Seasonal heroes are never stronger than the founding twelve. A new
+        season widens the cast; it does not raise the ceiling. Nobody is ever
+        obsolete for having started early.
+     2. Nothing expires. Season 5's arrivals stay draftable forever, so a
+        player who begins in Season 9 can still draft the whole roster. */
+export const SEASON_ARCS = {
+  0: {name:'The Founding',    blurb:'The twelve who answered the first horn.'},
+  1: {name:'The Iron Winter', blurb:'Hard frost, hard people — those who kept the walls standing.'},
+  2: {name:'The Salt Road',   blurb:'Traders, smugglers and pilots off the long coast.'},
+  3: {name:'The Ashen Vale',  blurb:'Beast-hunters and fire-tenders from the burned country.'},
+  4: {name:'The Hollow Crown', blurb:'Exiles of a court that ate itself.'},
+  5: {name:'The Long Thaw',   blurb:'Builders and healers, come to make something last.'},
 };
+
+/* A hero does one of two jobs and cannot do both at once:
+     · seated in COURT  → their `bonus` applies to the whole hold
+     · LEADING a march  → their `lead` trait applies to that column alone
+   That is the whole design. More heroes means more columns you can lead well,
+   not a taller stack of passives — the court has a fixed number of chairs. */
+export const LEAD_FX = {
+  power: l=>'+'+(2*l)+'% column power',
+  haul:  l=>'+'+(3*l)+'% resources hauled home',
+  speed: l=>'−'+(1.5*l)+'% travel time',
+  guard: l=>'−'+(3*l)+'% losses on the road',
+  valor: l=>'+'+(4*l)+'% Valor from this march',
+  lore:  l=>'+'+(4*l)+'% Mastery from this march',
+};
+
+export const HERO_POOL = {
+  /* ── Season 0 · The Founding ── */
+  marshal:      {name:'Ser Alden, the Marshal',  icon:'⚜️', rarity:'common', season:0, fx:l=>'+'+(3*l)+'% troop power',            bonus:{troopPower:0.03}, lead:{key:'power', val:0.02},
+                 order:{name:'Rally',           desc:'Next battle: +20% army power.',           cd:4, key:'rally'}},
+  steward:      {name:'Maren, High Steward',     icon:'📜', rarity:'common', season:0, fx:l=>'+'+(5*l)+'% production',             bonus:{production:0.05}, lead:{key:'haul',  val:0.03},
+                 order:{name:'Requisition',     desc:'Instantly gain food & wood (60 × Town Hall).', cd:5, key:'requisition'}},
+  warden:       {name:'Odo, the Night Warden',   icon:'🦉', rarity:'common', season:0, fx:l=>'−'+(3*l)+'% training time',          bonus:{trainTime:0.03}, lead:{key:'speed', val:0.015},
+                 order:{name:'Forced March',    desc:'Current training completes instantly.',   cd:5, key:'forcedmarch'}},
+  quartermaster:{name:'Petra, Quartermaster',    icon:'⚖️', rarity:'common', season:0, fx:l=>'+'+(3*l)+'% raid loot',              bonus:{loot:0.03}, lead:{key:'haul', val:0.03},
+                 order:{name:'Plunder Wagons',  desc:'Next win: loot ×2.',                      cd:4, key:'plunder'}},
+  gatekeeper:   {name:'Bram, Gatekeeper',        icon:'🚪', rarity:'common', season:0, fx:l=>'+'+(6*l)+' wall power',              bonus:{wallPower:6}, lead:{key:'guard', val:0.03},
+                 order:{name:'Brace the Gates', desc:'Next battle: wall counts double.',        cd:4, key:'brace'}},
+  forager:      {name:'Isolde, Forager',         icon:'🧺', rarity:'common', season:0, fx:l=>'+'+(4*l)+'% expedition yield',       bonus:{patrolYield:0.04}, lead:{key:'haul', val:0.03},
+                 order:{name:'Rich Trails',     desc:'Next expedition: double yield, no ambush.', cd:3, key:'richtrails'}},
+  drillmaster:  {name:'Corin, Drillmaster',      icon:'🥁', rarity:'rare',   season:0, fx:l=>'+'+(2*l)+'% troop power, −'+(2*l)+'% training time', bonus:{troopPower:0.02, trainTime:0.02}, lead:{key:'power', val:0.02},
+                 order:{name:'Crash Course',    desc:'Next training batch: −75% time.',         cd:4, key:'crashcourse'}},
+  spymaster:    {name:'Sable, Spymaster',        icon:'🗝️', rarity:'rare',   season:0, fx:l=>'+'+(1*l)+'% raid blunting',          bonus:{blunt:0.01}, lead:{key:'speed', val:0.015},
+                 order:{name:'Expose the Camp', desc:'Next wave arrives 15% weaker.',           cd:4, key:'expose'}},
+  medic:        {name:'Wren, Field Medic',       icon:'🌿', rarity:'rare',   season:0, fx:l=>'−'+(3*l)+'% casualties',             bonus:{casualties:0.03}, lead:{key:'guard', val:0.03},
+                 order:{name:'Triage',          desc:'Next battle: no casualties on a win.',    cd:5, key:'triage'}},
+  provisioner:  {name:'Tobias, Provisioner',     icon:'🫙', rarity:'rare',   season:0, fx:l=>'−'+(2.5*l)+'% army upkeep',          bonus:{upkeep:0.025}, lead:{key:'haul', val:0.03},
+                 order:{name:'Ration Stores',   desc:'Upkeep paused for 60s.',                  cd:5, key:'ration'}},
+  exile:        {name:'Queen Yara, the Exile',   icon:'👑', rarity:'epic',   season:0, fx:l=>'+'+(5*l)+'% troop power',            bonus:{troopPower:0.05}, lead:{key:'power', val:0.02},
+                 order:{name:'Royal Decree',    desc:'Next battle: +30% army power.',           cd:5, key:'decree'}},
+  treasurer:    {name:'Aldric, Crown Treasurer', icon:'🪙', rarity:'epic',   season:0, fx:l=>'+'+(5*l)+'% Valor earned',           bonus:{valor:0.05}, lead:{key:'valor', val:0.04},
+                 order:{name:'Tithe of War',    desc:'Next battle: Valor ×2.',                  cd:4, key:'tithe'}},
+
+  /* ── Season 1 · The Iron Winter ── */
+  icewright:    {name:'Halla Icewright',         icon:'❄️', rarity:'common', season:1, fx:l=>'+'+(6*l)+' wall power',              bonus:{wallPower:6}, lead:{key:'guard', val:0.03},
+                 order:{name:'Frozen Ground',   desc:'Next battle: wall counts double.',        cd:4, key:'brace'}},
+  hearthkeep:   {name:'Ulf Hearthkeeper',        icon:'🔥', rarity:'common', season:1, fx:l=>'−'+(2.5*l)+'% army upkeep',          bonus:{upkeep:0.025}, lead:{key:'guard', val:0.03},
+                 order:{name:'Bank the Fires',  desc:'Upkeep paused for 60s.',                  cd:5, key:'ration'}},
+  snowrunner:   {name:'Ylva Snowrunner',         icon:'🐺', rarity:'rare',   season:1, fx:l=>'+'+(4*l)+'% expedition yield',       bonus:{patrolYield:0.04}, lead:{key:'speed', val:0.015},
+                 order:{name:'Call Them Home',  desc:'Every march on the road turns for home at once.', cd:5, key:'recall'}},
+  ironjaw:      {name:'Torvald Ironjaw',         icon:'🪓', rarity:'epic',   season:1, fx:l=>'+'+(5*l)+'% troop power',            bonus:{troopPower:0.05}, lead:{key:'power', val:0.02},
+                 order:{name:'Winter Oath',     desc:'Next battle: +30% army power.',           cd:5, key:'decree'}},
+
+  /* ── Season 2 · The Salt Road ── */
+  pilot:        {name:'Nessa the Pilot',         icon:'🧭', rarity:'common', season:2, fx:l=>'+'+(5*l)+'% production',             bonus:{production:0.05}, lead:{key:'speed', val:0.015},
+                 order:{name:'Fair Winds',      desc:'Next march sets out with +50% haul.',     cd:4, key:'fairwinds'}},
+  saltfactor:   {name:'Dorin, Salt Factor',      icon:'🧂', rarity:'common', season:2, fx:l=>'+'+(3*l)+'% raid loot',              bonus:{loot:0.03}, lead:{key:'haul', val:0.03},
+                 order:{name:'Open the Ledger', desc:'Instantly gain stone & iron (40 × Town Hall).', cd:5, key:'stockpile'}},
+  smuggler:     {name:'Kip, the Smuggler',       icon:'🪝', rarity:'rare',   season:2, fx:l=>'+'+(3*l)+'% raid loot',              bonus:{loot:0.03}, lead:{key:'haul', val:0.03},
+                 order:{name:'Cut of the Take', desc:'Next win: loot ×2.',                      cd:4, key:'plunder'}},
+  harbourlord:  {name:'Lady Ines, Harbourlord',  icon:'⚓', rarity:'epic',   season:2, fx:l=>'+'+(5*l)+'% Valor earned',           bonus:{valor:0.05}, lead:{key:'valor', val:0.04},
+                 order:{name:'Harbour Levy',    desc:'Next battle: Valor ×2.',                  cd:4, key:'tithe'}},
+
+  /* ── Season 3 · The Ashen Vale ── */
+  houndmaster:  {name:'Garrick Houndmaster',     icon:'🐕', rarity:'common', season:3, fx:l=>'+'+(3*l)+'% troop power',            bonus:{troopPower:0.03}, lead:{key:'speed', val:0.015},
+                 order:{name:'Loose the Pack',  desc:'Next battle: +20% army power.',           cd:4, key:'rally'}},
+  cinderwright: {name:'Mira Cinderwright',       icon:'🕯️', rarity:'common', season:3, fx:l=>'−'+(3*l)+'% training time',          bonus:{trainTime:0.03}, lead:{key:'lore', val:0.04},
+                 order:{name:'Green Again',     desc:'Every worked-out tile on the frontier regrows at once.', cd:5, key:'regrow'}},
+  beastcaller:  {name:'Ren the Beastcaller',     icon:'🦌', rarity:'rare',   season:3, fx:l=>'−'+(3*l)+'% casualties',             bonus:{casualties:0.03}, lead:{key:'guard', val:0.03},
+                 order:{name:'Set the Bones',   desc:'Every wounded soldier is healed at once.', cd:6, key:'mend'}},
+  ashwalker:    {name:'The Ashwalker',           icon:'🌋', rarity:'epic',   season:3, fx:l=>'+'+(1.5*l)+'% raid blunting',        bonus:{blunt:0.015}, lead:{key:'power', val:0.02},
+                 order:{name:'Walk Ahead',      desc:'Next wave arrives 15% weaker.',           cd:4, key:'expose'}},
+
+  /* ── Season 4 · The Hollow Crown ── */
+  pretender:    {name:'Casimir the Pretender',   icon:'🗡️', rarity:'common', season:4, fx:l=>'+'+(3*l)+'% troop power',            bonus:{troopPower:0.03}, lead:{key:'power', val:0.02},
+                 order:{name:'False Banners',   desc:'Next wave arrives 15% weaker.',           cd:4, key:'expose'}},
+  chancellor:   {name:'Vesna, Lord Chancellor',  icon:'🖋️', rarity:'common', season:4, fx:l=>'+'+(5*l)+'% production',             bonus:{production:0.05}, lead:{key:'lore', val:0.04},
+                 order:{name:'Writ of Levy',    desc:'Instantly gain food & wood (60 × Town Hall).', cd:5, key:'requisition'}},
+  poisoner:     {name:'Anselm, the King’s Cup', icon:'🍷', rarity:'rare', season:4, fx:l=>'+'+(1*l)+'% raid blunting',        bonus:{blunt:0.01}, lead:{key:'valor', val:0.04},
+                 order:{name:'A Quiet Word',    desc:'Next battle: no casualties on a win.',    cd:5, key:'triage'}},
+  kingmaker:    {name:'Dowager Sethe, Kingmaker',icon:'♟️', rarity:'epic',   season:4, fx:l=>'+'+(5*l)+'% Valor earned',           bonus:{valor:0.05}, lead:{key:'lore', val:0.04},
+                 order:{name:'Move the Board',  desc:'Every march on the road turns for home at once.', cd:5, key:'recall'}},
+
+  /* ── Season 5 · The Long Thaw ── */
+  masonwright:  {name:'Old Jorem, Master Mason', icon:'🧱', rarity:'common', season:5, fx:l=>'+'+(6*l)+' wall power',              bonus:{wallPower:6}, lead:{key:'haul', val:0.03},
+                 order:{name:'Quarry Rights',   desc:'Instantly gain stone & iron (40 × Town Hall).', cd:5, key:'stockpile'}},
+  seedkeeper:   {name:'Aine Seedkeeper',         icon:'🌱', rarity:'common', season:5, fx:l=>'+'+(4*l)+'% expedition yield',       bonus:{patrolYield:0.04}, lead:{key:'haul', val:0.03},
+                 order:{name:'Sow Behind Us',   desc:'Every worked-out tile on the frontier regrows at once.', cd:5, key:'regrow'}},
+  bonesetter:   {name:'Sister Ilva, Bonesetter', icon:'⚕️', rarity:'rare',   season:5, fx:l=>'−'+(3*l)+'% casualties',             bonus:{casualties:0.03}, lead:{key:'guard', val:0.03},
+                 order:{name:'Long Vigil',      desc:'Every wounded soldier is healed at once.', cd:6, key:'mend'}},
+  roadwarden:   {name:'Cassia, Warden of Roads', icon:'🛤️', rarity:'epic',   season:5, fx:l=>'−'+(2*l)+'% training time, +'+(2*l)+'% production', bonus:{trainTime:0.02, production:0.02}, lead:{key:'speed', val:0.015},
+                 order:{name:'Clear the Way',   desc:'Next march sets out with +50% haul.',     cd:4, key:'fairwinds'}},
+};
+
+/* The court has a fixed number of chairs — this is the cap that keeps a wide
+   roster from becoming a tall stack of passives.
+
+   The ceiling is deliberately set where the old eight-hero roster already sat,
+   so widening the pool to thirty-two changes what you can *do* and not how
+   hard you hit. A hall reaches its full eight chairs around Town Hall 12,
+   which is about where a player used to have drafted eight heroes anyway. */
+export const COURT_BASE = 4, COURT_PER_TH = 3, COURT_MAX = 8;
 
 /* ── Command layer: raids have a shape, you choose the answer ── */
 export const WAVE_TYPES = {
@@ -162,16 +261,41 @@ export const EXPEDITIONS = {
   barrows:   {name:'Barrow Hills', icon:'⚱️', desc:'Strange: +6 Valor, Mastery — rarely a Writ'},
 };
 
-// hero slots unlock at these milestones; each grants a draft of three
+/* Hero slots unlock at these milestones; each grants a draft of three.
+   There are enough of them to staff both a full court and every march slot a
+   maxed Command Center fields — heroes are the answer to "who leads column
+   six?", and that answer must never be "open your wallet". */
 export const HERO_SLOTS = [
-  {hint:'Reach Town Hall 2', check:s=>s.b.townhall>=2},
-  {hint:'Reach Town Hall 3', check:s=>s.b.townhall>=3},
-  {hint:'Repel 7 raids',     check:s=>s.wavesWon>=7},
-  {hint:'Reach Mastery 6',   check:s=>masteryLvl(s)>=6},
-  {hint:'Reach Town Hall 5', check:s=>s.b.townhall>=5},
-  {hint:'Repel 20 raids',    check:s=>s.wavesWon>=20},
-  {hint:'Reach Town Hall 7', check:s=>s.b.townhall>=7},
-  {hint:'Reach Mastery 8',   check:s=>masteryLvl(s)>=8},
+  {hint:'Reach Town Hall 2',      check:s=>s.b.townhall>=2},
+  {hint:'Reach Town Hall 3',      check:s=>s.b.townhall>=3},
+  {hint:'Repel 7 raids',          check:s=>s.wavesWon>=7},
+  {hint:'Reach Mastery 6',        check:s=>masteryLvl(s)>=6},
+  {hint:'Reach Town Hall 5',      check:s=>s.b.townhall>=5},
+  {hint:'Repel 20 raids',         check:s=>s.wavesWon>=20},
+  {hint:'Reach Town Hall 7',      check:s=>s.b.townhall>=7},
+  {hint:'Reach Mastery 8',        check:s=>masteryLvl(s)>=8},
+  {hint:'Burn 10 bandit camps',   check:s=>(s.campsBurned||0)>=10},
+  {hint:'Reach Town Hall 9',      check:s=>s.b.townhall>=9},
+  {hint:'Raise the Tavern to 6',  check:s=>(s.b.tavern||0)>=6},
+  {hint:'Reach Mastery 11',       check:s=>masteryLvl(s)>=11},
+  {hint:'Reach Town Hall 12',     check:s=>s.b.townhall>=12},
+  {hint:'Raid 8 ancient ruins',   check:s=>(s.ruinsRaided||0)>=8},
+  {hint:'Repel 60 raids',         check:s=>s.wavesWon>=60},
+  {hint:'Reach Town Hall 15',     check:s=>s.b.townhall>=15},
+  {hint:'Build the Command Center to 10', check:s=>(s.b.command||0)>=10},
+  {hint:'Reach Mastery 15',       check:s=>masteryLvl(s)>=15},
+  {hint:'Reach Town Hall 18',     check:s=>s.b.townhall>=18},
+  {hint:'Raise the Tavern to 15', check:s=>(s.b.tavern||0)>=15},
+  {hint:'Repel 150 raids',        check:s=>s.wavesWon>=150},
+  {hint:'Reach Town Hall 21',     check:s=>s.b.townhall>=21},
+  {hint:'Reach Mastery 20',       check:s=>masteryLvl(s)>=20},
+  {hint:'Build the Command Center to 20', check:s=>(s.b.command||0)>=20},
+  {hint:'Reach Town Hall 24',     check:s=>s.b.townhall>=24},
+  {hint:'Burn 60 bandit camps',   check:s=>(s.campsBurned||0)>=60},
+  {hint:'Reach Mastery 25',       check:s=>masteryLvl(s)>=25},
+  {hint:'Reach Town Hall 27',     check:s=>s.b.townhall>=27},
+  {hint:'Build the Command Center to 30', check:s=>(s.b.command||0)>=30},
+  {hint:'Reach Town Hall 30',     check:s=>s.b.townhall>=30},
 ];
 
 // permanent relics offered (3, pick 1) after every Warband win
@@ -244,8 +368,11 @@ export const ACHIEVEMENTS = [
   {id:'muster-1000',  txt:'Muster 1,000 troops at once',      check:s=>Object.values(s.t).reduce((a,b)=>a+b,0)>=1000, valor:120},
   {id:'tier-5',       txt:'Forge a troop to Tier V',          check:s=>Object.values(s.tier||{}).some(t=>t>=5), valor:50},
   {id:'tier-10',      txt:'Forge a troop to Tier X',          check:s=>Object.values(s.tier||{}).some(t=>t>=10), valor:200},
-  {id:'full-court',   txt:'Seat eight champions',             check:s=>Object.keys(s.heroes||{}).length>=8, valor:80},
+  {id:'full-court',   txt:'Fill every chair in your court',   check:s=>(s.court||[]).length>=8,   valor:80},
   {id:'hero-20',      txt:'Raise a hero to level 20',         check:s=>Object.values(s.heroes||{}).some(h=>h.lvl>=20), valor:100},
+  {id:'roster-20',    txt:'Draft 20 heroes to the hold',      check:s=>Object.keys(s.heroes||{}).length>=20, valor:150},
+  {id:'six-columns',  txt:'Have six columns on the road at once', check:s=>(s.marches||[]).length>=6, valor:120},
+  {id:'led-out',      txt:'Send a hero out at the head of a column', check:s=>(s.marches||[]).some(m=>m.hero), valor:30},
   {id:'spoils-10',    txt:'Claim 10 Spoils of War',           check:s=>Object.values(s.spoils||{}).reduce((a,b)=>a+b,0)>=10, valor:60},
   {id:'frontier-10',  txt:'Burn 10 bandit camps',             check:s=>(s.campsBurned||0)>=10,    valor:60},
   {id:'ruins-5',      txt:'Plunder 5 ancient ruins',          check:s=>(s.ruinsRaided||0)>=5,     valor:50},

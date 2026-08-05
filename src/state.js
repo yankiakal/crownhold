@@ -2,7 +2,7 @@
 
 import { RES_META, FIRST_WAVE_MS, EXPEDITIONS } from './defs.js';
 import { prodPerSec, upkeepPerSec, storageCap, capFor, refineStep, bankRest, pushLog, fmt,
-         expedCdMs, caravanYields, CARAVAN_GRACE } from './logic.js';
+         courtSeats, expedCdMs, caravanYields, CARAVAN_GRACE } from './logic.js';
 import { genWorld } from './world.js';
 
 export const SAVE_KEY = 'crownhold-save-v1';
@@ -24,7 +24,7 @@ export function freshState(now, seed){
        range:0,stable:0,siegeyard:0,embassy:0,command:0},
     t:{spearman:8,archer:0,knight:0,ballista:0},
     tier:{spearman:1,archer:1,knight:1,ballista:1},
-    heroes:{}, spoils:{},
+    heroes:{}, spoils:{}, court:[], marchBoost:false,
     choice:null, choiceQueue:[], offersDone:0,
     stance:'balanced', captain:null, orderCd:{}, mods:null,
     laurels:1000, defStance:'shieldwall', arenaWins:0, arenaLosses:0,
@@ -121,6 +121,17 @@ export function load(now){
     for(const k of ['forge','runeworks','library','range','stable','siegeyard','embassy','command']) if(s.b[k]==null) s.b[k] = 0;
     if(s.wounded==null) s.wounded = {};   // v1.16 the wounded
     if(s.hq===undefined) s.hq = null;
+    // v1.18: heroes split into a seated court and march leaders. An old save's
+    // whole roster was passive, so seat as many as there are chairs — the
+    // Captain first, since that was the hero the player already chose.
+    if(!Array.isArray(s.court)){
+      const own = Object.keys(s.heroes);
+      if(s.captain && own.includes(s.captain)) own.unshift(own.splice(own.indexOf(s.captain),1)[0]);
+      s.court = own.slice(0, courtSeats(s));
+      if(s.captain && !s.court.includes(s.captain)) s.captain = null;
+    }
+    if(s.marchBoost==null) s.marchBoost = false;
+    for(const m of s.marches) if(m.hero===undefined) m.hero = null;
     // v1.15: one training queue became one per yard
     if(!s.tq || typeof s.tq !== 'object' || s.tq.key){
       const old = s.tq && s.tq.key ? s.tq : null;

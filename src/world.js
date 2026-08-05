@@ -2,11 +2,11 @@
 // Same contract as logic.js — pure state functions, injectable time and rng.
 // tickWorld() is called from the main loop and the sim alongside logic.tick().
 
-import { TROOPS, TIME_SCALE } from './defs.js';
+import { TROOPS, TIME_SCALE, HERO_POOL } from './defs.js';
 import { scoreDeed } from './events.js';
 import { takeCasualties } from './logic.js';
 import {
-  tierPower, heroBonus, spoilBonus, perk, wavePower,
+  tierPower, heroBonus, spoilBonus, perk, wavePower, leadBonus, heroAway,
   gainRes, gainValor, gainShield, gainMastery, pushLog, showBanner, fmt, ftime,
 } from './logic.js';
 
@@ -64,12 +64,19 @@ export function marchSlots(s){
 export function marchSpeed(s){ return Math.max(0.5, 1 - 0.02 * (s.b.command || 0)); }
 export function tileBusy(s, idx){ return (s.marches||[]).some(m => m.tile===idx); }
 
-export function marchPower(s, troops){
+/* A column's strength: the hold's standing bonuses, plus whatever the hero at
+   its head is worth. The hero half is the only part you can aim — which is the
+   point of having more of them than you have chairs at the table. */
+export function marchPower(s, troops, hero){
   let p = 0;
   for(const k of Object.keys(TROOPS)) p += tierPower(s,k) * (troops[k]||0);
-  return Math.round(p * (1 + heroBonus(s,'troopPower') + spoilBonus(s,'troopPower'))
+  return Math.round(p * (1 + heroBonus(s,'troopPower') + spoilBonus(s,'troopPower') + leadBonus(s, hero, 'power'))
     * (1 + (perk(s,2)?0.06:0) + (perk(s,8)?0.08:0) + (perk(s,10)?0.15:0)
          + (perk(s,12)?0.08:0) + (perk(s,20)?0.20:0)));
+}
+/* Can this hero take a column out right now? */
+export function heroCanLead(s, id){
+  return !!(s.heroes[id] && HERO_POOL[id] && !heroAway(s, id));
 }
 export function campPower(s, tile){
   return Math.round(wavePower(Math.max(3, s.wave-3)) * (0.45 + 0.3*tile.lvl));
@@ -81,11 +88,12 @@ export function gatherYield(s, tile){
   return Math.round(base * scale);
 }
 
-export function startMarch(s, idx, frac, now, longHaul){
+export function startMarch(s, idx, frac, now, longHaul, hero){
   s.now = now;
   const tile = s.world.tiles[idx];
   if(!tile || tile.respawnAt || tileBusy(s, idx)) return false;
   if((s.marches||[]).length >= marchSlots(s)) return false;
+  if(hero && !heroCanLead(s, hero)) return false;
   const kind = TILE_TYPES[tile.type].kind;
   const long = !!longHaul && kind === 'gather';   // only nodes can be worked for hours
   const troops = {};
@@ -96,14 +104,25 @@ export function startMarch(s, idx, frac, now, longHaul){
   }
   if(total===0) return false;
   for(const [k,n] of Object.entries(troops)) s.t[k] -= n;
-  const travel = tileDist(tile)*TRAVEL_MS_PER_TILE*marchSpeed(s);
+  const travel = Math.round(tileDist(tile)*TRAVEL_MS_PER_TILE*marchSpeed(s)
+    * Math.max(0.4, 1 - leadBonus(s, hero, 'speed')));
   const work = kind==='gather' ? (long ? LONG_HAUL_WORK : GATHER_MS) : kind==='ruin' ? RUIN_MS : 0;
+  const boost = !!s.marchBoost;                   // Fair Winds, spent on this column
+  s.marchBoost = false;
   s.marches.push({
-    tile:idx, troops, long,
+    tile:idx, troops, long, hero: hero || null, boost, out: travel,
     arriveAt: now+travel, homeAt: now+travel+work+travel,
     resolved:false,
   });
+  // a seated hero who rides out gives the chair up — someone else can fill it
+  if(hero && s.court){
+    const at = s.court.indexOf(hero);
+    if(at >= 0) s.court.splice(at, 1);
+    if(s.captain === hero) s.captain = null;
+  }
+  const hd = hero && HERO_POOL[hero];
   pushLog(s, '🚩 '+total+' troops march on the '+TILE_TYPES[tile.type].name
+    + (hd ? ', led by '+hd.icon+' '+hd.name.split(',')[0] : '')
     + (long ? ' to work it through the night ('+ftime(travel+work+travel)+' round trip).'
             : ' ('+ftime(travel)+' out).'));
   return true;
@@ -113,12 +132,14 @@ function resolveArrival(s, m, now, rand){
   const tile = s.world.tiles[m.tile];
   const tt = TILE_TYPES[tile.type];
   m.resolved = true;
+  const haul = 1 + leadBonus(s, m.hero, 'haul') + (m.boost ? 0.5 : 0);
+  const guard = Math.max(0.25, 1 - leadBonus(s, m.hero, 'guard'));
   if(tt.kind==='camp'){
     const enemy = campPower(s, tile) * (0.88 + rand()*0.24);
-    const mine = marchPower(s, m.troops);
+    const mine = marchPower(s, m.troops, m.hero);
     if(mine >= enemy){
       const ratio = enemy/Math.max(mine,1);
-      const lf = 0.25*ratio*ratio;
+      const lf = 0.25*ratio*ratio*guard;
       // the fallen from a march are counted when the column gets home
       m.hurt = 0;
       for(const k of Object.keys(m.troops)){
@@ -127,7 +148,7 @@ function resolveArrival(s, m, now, rand){
         m.woundedBack = m.woundedBack || {};
         m.woundedBack[k] = (m.woundedBack[k]||0) + l;
       }
-      const L = Math.round(enemy*1.1);
+      const L = Math.round(enemy*1.1*haul);
       m.loot = {food:Math.round(L*0.4), wood:Math.round(L*0.4), stone:Math.round(L*0.15), iron:Math.round(L*0.08)};
       m.valor = 10+5*tile.lvl; m.mxp = 20+10*tile.lvl;
       m.report = '⚔️ The camp is burned ('+mine+' vs '+Math.round(enemy)+')';
@@ -136,24 +157,25 @@ function resolveArrival(s, m, now, rand){
       tile.respawnAt = now + RESPAWN_MS;
     }else{
       m.woundedBack = {};
+      const keep = 1 - 0.35*guard;
       for(const k of Object.keys(m.troops)){
-        const l = m.troops[k] - Math.floor(m.troops[k]*0.65);
-        m.troops[k] = Math.floor(m.troops[k]*0.65);
+        const l = m.troops[k] - Math.floor(m.troops[k]*keep);
+        m.troops[k] = Math.floor(m.troops[k]*keep);
         m.woundedBack[k] = (m.woundedBack[k]||0) + l;
       }
       m.loot = null; m.valor = 2; m.mxp = 8;
       m.report = '🔥 The camp held ('+mine+' vs '+Math.round(enemy)+') — the survivors fall back';
-      m.homeAt = now + tileDist(tile)*TRAVEL_MS_PER_TILE;
+      m.homeAt = now + (m.out || tileDist(tile)*TRAVEL_MS_PER_TILE);
     }
   }else if(tt.kind==='gather'){
-    const mult = m.long ? LONG_HAUL_YIELD : 1;
+    const mult = (m.long ? LONG_HAUL_YIELD : 1) * haul;
     m.loot = {[tt.res]: Math.round(gatherYield(s, tile) * mult)};
     m.valor = m.long ? 8 : 0; m.mxp = m.long ? 30 : 6;
     m.report = m.long ? '⛏ The '+tt.name+' is stripped to the bedrock' : '⛏ The '+tt.name+' is worked clean';
     scoreDeed(s, m.long ? 'longHaul' : 'gathered', 1, now);
     tile.respawnAt = now + RESPAWN_MS;
   }else{ // ruin
-    m.loot = {food: 10*tile.lvl*s.b.townhall};
+    m.loot = {food: Math.round(10*tile.lvl*s.b.townhall*haul)};
     m.valor = 12; m.mxp = 20+8*tile.lvl;
     m.writ = rand() < 0.20;
     m.report = '🏛️ The ruin gives up its secrets';
@@ -173,13 +195,18 @@ function resolveReturn(s, m, now){
     const r = takeCasualties(s, k, n, true);   // the frontier wounds, it does not kill
     dead += r.dead; hurt += r.hurt;
   }
-  let txt = m.report+'. '+home+' return'+(dead||hurt ? ' ('+dead+' fell'+(hurt?', '+hurt+' wounded':'')+')' : '');
+  const hd = m.hero && HERO_POOL[m.hero];
+  let txt = m.report+'. '+home+' return'+(hd ? ' under '+hd.icon+' '+hd.name.split(',')[0] : '')
+    + (dead||hurt ? ' ('+dead+' fell'+(hurt?', '+hurt+' wounded':'')+')' : '');
   if(m.loot){
     for(const [r,v] of Object.entries(m.loot)) gainRes(s, r, v);
     txt += ' with '+Object.entries(m.loot).map(([r,v])=>'+'+fmt(v)+' '+r).join(', ');
   }
-  if(m.valor){ gainValor(s, m.valor); txt += ', +'+m.valor+' Valor'; }
-  if(m.mxp) gainMastery(s, m.mxp, now);
+  const v = Math.round((m.valor||0) * (1 + leadBonus(s, m.hero, 'valor')));
+  if(v){ gainValor(s, v); txt += ', +'+v+' Valor'; }
+  if(m.mxp) gainMastery(s, Math.round(m.mxp * (1 + leadBonus(s, m.hero, 'lore'))), now);
+  // a hero who actually rode learns more than one who sat at the table
+  if(hd && s.heroes[m.hero]) s.heroes[m.hero].xp += 40 + (m.long ? 120 : 0);
   if(m.writ){ gainShield(s, 1); txt += ', and a sealed Writ of Peace'; }
   pushLog(s, txt+'.', m.loot ? 'win' : 'loss');
   showBanner(s, '🚩 March returned — '+m.report.toLowerCase(), m.loot?'win':'loss', now);

@@ -2,15 +2,15 @@
 
 import {
   BUILDINGS, TROOPS, MASTERY, QUESTS, ACHIEVEMENTS, RES_META, REFINE,
-  HERO_POOL, HERO_SLOTS, SPOILS, RARITY,
+  HERO_POOL, HERO_SLOTS, SPOILS, RARITY, LEAD_FX, SEASON_ARCS, seasonNo, seasonEndsIn, SEASON_MS,
   WAVE_TYPES, STANCES, EXPEDITIONS,
-  WAVE_MS, FIRST_WAVE_MS, SHIELD_MS, SECOND_QUEUE_TH,
+  WAVE_MS, FIRST_WAVE_MS, SHIELD_MS, SECOND_QUEUE_TH, COURT_PER_TH, COURT_MAX,
 } from './defs.js';
 import { TIERS } from './defs.js';
 import {
   TILE_TYPES, MAP_W, MAP_H, CX, CY, TRAVEL_MS_PER_TILE, GATHER_MS,
   tileDist, marchSlots, tileBusy, marchPower, campPower, gatherYield, startMarch,
-  LONG_HAUL_WORK, LONG_HAUL_YIELD,
+  heroCanLead, LONG_HAUL_WORK, LONG_HAUL_YIELD,
 } from './world.js';
 import {
   fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor, capFor, isUnlocked,
@@ -20,6 +20,7 @@ import {
   valorQuota, valorToday, isRested, QUEUE_KEYS, buildSlots, activeQueues, freeSlot, townhallReq,
   maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost,
   wavePower, streakMult, finishCost, xpNeed,
+  courtSeats, courtSeated, heroAway, leadBonus, heroSeasonOpen,
 } from './logic.js';
 import { applyAction, isGameAction } from './actions.js';
 import {
@@ -247,26 +248,56 @@ function renderMuster(S){
   return h;
 }
 
+/* One hero row, told from wherever they happen to be standing. */
+function heroRow(S, k, where){
+  const d = HERO_POOL[k], hero = S.heroes[k];
+  if(!d || !hero) return '';
+  const isCapt = S.captain===k, cd = S.orderCd[k]||0;
+  const seated = where === 'court';
+  const fx = seated ? d.fx(hero.lvl) + (isCapt ? ' <b style="color:var(--gold)">×2</b>' : '')
+                    : LEAD_FX[d.lead.key](hero.lvl);
+  return '<div class="hero'+(where==='away'?' away':'')+'">'
+    + '<span class="hname">'+(isCapt?'★ ':'')+(where==='away'?'🚩 ':'')+d.icon+' '+d.name+'</span>'
+    + ' <span class="rar rar-'+d.rarity+'">'+RARITY[d.rarity].tag+'</span>'
+    + '<button class="info-btn" data-act="detail" data-dtype="hero" data-key="'+k+'" title="hero details">ⓘ</button>'
+    + '<div class="order-row"><span class="hmeta">L'+hero.lvl+' · '+fx+'</span>'
+    + '<button class="order-btn" data-act="order" data-key="'+k+'" '+(cd>0?'disabled':'')
+    + ' title="'+d.order.desc+'">'+d.order.name+(cd>0?' · '+cd+'w':'')+'</button></div>'
+    + '</div>';
+}
+
 function renderHeroes(S){
-  const owned = Object.entries(S.heroes);
-  let h = '<section class="panel"><h2>Heroes <span style="letter-spacing:.05em">'+owned.length+'/'+HERO_SLOTS.length+' · drafted, never pulled</span></h2>';
-  for(const [k,hero] of owned){
-    const d = HERO_POOL[k];
-    if(!d) continue;
-    const isCapt = S.captain===k;
-    const cd = S.orderCd[k]||0;
-    h += '<div class="hero"><span class="hname">'+(isCapt?'★ ':'')+d.icon+' '+d.name+'</span>'
-      + ' <span class="rar rar-'+d.rarity+'">'+RARITY[d.rarity].tag+'</span>'
-      + '<button class="info-btn" data-act="detail" data-dtype="hero" data-key="'+k+'" title="hero details">ⓘ</button>'
-      + '<div class="order-row"><span class="hmeta">L'+hero.lvl+' · '+d.fx(hero.lvl)+(isCapt?' <b style="color:var(--gold)">×2</b>':'')+'</span>'
-      + '<button class="order-btn" data-act="order" data-key="'+k+'" '+(cd>0?'disabled':'')
-      + ' title="'+d.order.desc+'">'+d.order.name+(cd>0?' · '+cd+'w':'')+'</button></div>'
-      + '</div>';
+  const owned = Object.keys(S.heroes).filter(k => HERO_POOL[k]);
+  const seats = courtSeats(S), court = courtSeated(S);
+  const away = owned.filter(k => heroAway(S,k));
+  const idle = owned.filter(k => !court.includes(k) && !away.includes(k));
+  const arcs = Object.keys(HERO_POOL).filter(k => heroSeasonOpen(S,k)).length;
+
+  let h = '<section class="panel"><h2>The Court <span style="letter-spacing:.05em">'
+    + court.length+'/'+seats+' chairs · '+owned.length+' of '+arcs+' heroes drafted</span></h2>'
+    + '<div class="stat-note">A hero either advises here or rides at the head of a column — never both. '
+    + 'Chairs are the cap: another with every '+COURT_PER_TH+' levels of Town Hall, to '+COURT_MAX+'. '
+    + 'Everyone else is free to lead a column.</div>';
+  for(const k of court) h += heroRow(S, k, 'court');
+  for(let i = court.length; i < seats; i++)
+    h += '<div class="hero locked"><span class="hname">🪑 An empty chair</span>'
+      + '<div class="hmeta">Seat a hero to make their counsel count for the whole hold</div></div>';
+
+  if(away.length){
+    h += '<div class="stat-note" style="margin-top:.7rem">On the road — their counsel is with the column, not the hall</div>';
+    for(const k of away) h += heroRow(S, k, 'away');
   }
-  for(let i = S.offersDone; i < HERO_SLOTS.length; i++){
-    h += '<div class="hero locked"><span class="hname">❔ An empty seat at the table</span>'
+  if(idle.length){
+    h += '<div class="stat-note" style="margin-top:.7rem">Awaiting a command — seat them, or send them out with a march</div>';
+    for(const k of idle) h += heroRow(S, k, 'idle');
+  }
+  for(let i = S.offersDone; i < Math.min(HERO_SLOTS.length, S.offersDone + 3); i++){
+    h += '<div class="hero locked"><span class="hname">❔ A rider not yet sent for</span>'
       + '<div class="hmeta">'+HERO_SLOTS[i].hint+' — a draft of three will answer</div></div>';
   }
+  if(S.offersDone < HERO_SLOTS.length)
+    h += '<div class="stat-note">'+(HERO_SLOTS.length - S.offersDone)+' more drafts still to earn, '
+      + 'and the roster grows every season. Heroes are drafted, never pulled and never sold.</div>';
   h += '</section>';
   return h;
 }
@@ -391,6 +422,32 @@ function renderBoss(S){
   return h;
 }
 
+/* The roster's roadmap: who has arrived, who is still riding. Shown in full and
+   up front — a season's cast is never a mystery box you pay to open. */
+function renderSeasonCast(S, now){
+  const cur = seasonNo(now);
+  const arcs = Object.keys(SEASON_ARCS).map(Number).filter(n => n > 0).sort((a,b)=>a-b);
+  let h = '<div class="stat-note" style="margin-top:.7rem">The roster — heroes arrive by season and never leave</div>';
+  for(const n of arcs){
+    const arc = SEASON_ARCS[n];
+    const cast = Object.entries(HERO_POOL).filter(([,d]) => (d.season||0) === n);
+    if(!cast.length) continue;
+    const here = n <= cur;
+    h += '<div class="trow'+(n===cur?' mine':'')+'"><span>'+(here?'✓':'🕓')+'</span>'
+      + '<span class="tname">Season '+n+' · '+arc.name+'</span>'
+      + '<span class="tmeta">'+cast.map(([k,d]) => d.icon+' '+d.name.split(',')[0]
+          + (S.heroes[k] ? '' : '')).join(' · ')+'</span>'
+      + '<span class="spacer"></span>'
+      + '<span class="tmeta">'+(here ? cast.filter(([k])=>S.heroes[k]).length+'/'+cast.length+' drafted'
+                                     : 'in '+ftime((n - cur) * SEASON_MS - (SEASON_MS - seasonEndsIn(now))))+'</span></div>';
+  }
+  const founding = Object.entries(HERO_POOL).filter(([,d]) => !d.season);
+  h += '<div class="stat-note">Season 0 · The Founding — '
+    + founding.filter(([k])=>S.heroes[k]).length+'/'+founding.length+' drafted. '
+    + 'New arrivals are never stronger than these; a season widens the cast, it does not raise the ceiling.</div>';
+  return h;
+}
+
 function renderCalendar(S){
   const now = Date.now();
   const rows = schedule(now, 5);
@@ -401,6 +458,7 @@ function renderCalendar(S){
   if(realm)
     h += '<div class="stat-note">Season ends in <b>'+ftime(realm.season.endsIn)+'</b>'
       + ' — standings freeze, titles are named, and Laurels drift halfway back to 1000.</div>';
+  h += renderSeasonCast(S, now);
   for(const r of rows){
     h += '<div class="trow'+(r.live?' mine':'')+'"><span>'+r.event.icon+'</span>'
       + '<span class="tname">'+r.event.name+'</span>'
@@ -672,6 +730,28 @@ let listView = false, sceneMounted = false;
 const sceneCanvas = document.createElement('canvas');
 sceneCanvas.id = 'holdscene';
 let detail = null; // {type:'building'|'troop'|'hero', key} — the tap-to-inspect sheet
+let marchHero = null; // hero picked to lead the next column out
+
+function leadAttr(){ return marchHero ? 'data-hero="'+marchHero+'"' : ''; }
+function heroesOpen(S){ return Object.keys(HERO_POOL).filter(k => heroSeasonOpen(S,k)).length; }
+
+/* Who rides at the head of this column. Any hero not already out can take it —
+   and a seated one gives up their chair for the trip, which is the choice. */
+function renderLeadPicker(S){
+  const free = Object.keys(S.heroes).filter(k => HERO_POOL[k] && heroCanLead(S, k));
+  if(!free.length) return '';
+  if(marchHero && !free.includes(marchHero)) marchHero = null;
+  let h = '<p class="d-row" style="margin-top:.6rem">Who leads them?</p><div class="leadpick">'
+    + '<button class="lead'+(marchHero?'':' on')+'" data-act="pickLead" data-key="">No one — send them alone</button>';
+  for(const k of free){
+    const d = HERO_POOL[k], hero = S.heroes[k];
+    const seated = (S.court||[]).includes(k);
+    h += '<button class="lead'+(marchHero===k?' on':'')+'" data-act="pickLead" data-key="'+k+'">'
+      + d.icon+' '+d.name.split(',')[0]+' <span class="hmeta">'+LEAD_FX[d.lead.key](hero.lvl)
+      + (seated ? ' · leaves the court' : '')+'</span></button>';
+  }
+  return h + '</div>';
+}
 
 function renderDetail(S){
   if(!detail) return '';
@@ -753,19 +833,21 @@ function renderDetail(S){
       else{
         const home = armyPower(S);
         body += '<p class="d-row">Your home power is <b>'+home+'</b> — troops you send stop defending until they return.</p>'
+          + renderLeadPicker(S)
           + '<div style="display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap">'
-          + '<button data-act="march" data-idx="'+k+'" data-frac="0.25">March ¼</button>'
-          + '<button data-act="march" data-idx="'+k+'" data-frac="0.5">March ½</button>'
-          + '<button class="primary" data-act="march" data-idx="'+k+'" data-frac="1">March all</button>'
+          + '<button data-act="march" data-idx="'+k+'" data-frac="0.25" '+leadAttr()+'>March ¼</button>'
+          + '<button data-act="march" data-idx="'+k+'" data-frac="0.5" '+leadAttr()+'>March ½</button>'
+          + '<button class="primary" data-act="march" data-idx="'+k+'" data-frac="1" '+leadAttr()+'>March all</button>'
           + '</div>';
         if(tt.kind === 'gather'){
+          const haul = 1 + leadBonus(S, marchHero, 'haul') + (S.marchBoost ? 0.5 : 0);
           body += '<p class="d-delta" style="margin-top:.7rem">🌙 <b>Long haul</b>: work the node for '
             + ftime(LONG_HAUL_WORK)+' instead of '+ftime(GATHER_MS)+' and bring back <b>'
-            + fmt(gatherYield(S,tile)*LONG_HAUL_YIELD)+' '+tt.res+'</b> — the thing to set going before you close the game. '
+            + fmt(gatherYield(S,tile)*LONG_HAUL_YIELD*haul)+' '+tt.res+'</b> — the thing to set going before you close the game. '
             + 'Those troops defend nothing until dawn.</p>'
             + '<div style="display:flex;gap:.5rem">'
-            + '<button data-act="march" data-idx="'+k+'" data-frac="0.5" data-long="1">Long haul ½</button>'
-            + '<button class="primary" data-act="march" data-idx="'+k+'" data-frac="1" data-long="1">Long haul, all</button>'
+            + '<button data-act="march" data-idx="'+k+'" data-frac="0.5" data-long="1" '+leadAttr()+'>Long haul ½</button>'
+            + '<button class="primary" data-act="march" data-idx="'+k+'" data-frac="1" data-long="1" '+leadAttr()+'>Long haul, all</button>'
             + '</div>';
         }
       }
@@ -831,14 +913,24 @@ function renderDetail(S){
     const d = HERO_POOL[k], hero = S.heroes[k]; if(!d||!hero) return '';
     const need = xpNeed(hero.lvl);
     const isCapt = S.captain===k, cd = S.orderCd[k]||0;
+    const seated = (S.court||[]).includes(k), away = heroAway(S,k);
+    const seats = courtSeats(S), full = (S.court||[]).length >= seats;
+    const arc = SEASON_ARCS[d.season||0];
     title = (isCapt?'★ ':'')+d.icon+' '+d.name;
     body += '<p class="d-fx"><span class="rar rar-'+d.rarity+'">'+RARITY[d.rarity].tag+'</span> · Level '+hero.lvl
-      + (hero.lvl>=20?' (max)':' · '+fmt(hero.xp)+'/'+fmt(need)+' xp from defending raids')+'</p>'
+      + (hero.lvl>=20?' (max)':' · '+fmt(hero.xp)+'/'+fmt(need)+' xp')+'</p>'
       + '<div class="xpbar"><i style="width:'+(hero.lvl>=20?100:Math.min(100,100*hero.xp/need))+'%"></i></div>'
-      + '<p class="d-row">Passive: '+d.fx(hero.lvl)+(isCapt?' — <b style="color:var(--gold)">doubled as Captain</b>':'')+'</p>'
-      + '<p class="d-row">Order — <b>'+d.order.name+'</b>: '+d.order.desc+' Cooldown '+d.order.cd+' waves.'+(cd>0?' Ready in '+cd+'.':'')+'</p>'
-      + '<div style="display:flex;gap:.6rem;margin-top:.5rem">'
-      + '<button class="primary" data-act="captain" data-key="'+k+'">'+(isCapt?'Relieve of command':'★ Appoint Captain')+'</button>'
+      + (arc ? '<p class="d-row" style="opacity:.75">Came to the hold in Season '+(d.season||0)+' — '+arc.name+'</p>' : '')
+      + '<p class="d-row">'+(seated?'<b style="color:var(--gold)">Seated.</b> ':'')+'In court: '+d.fx(hero.lvl)
+      + (isCapt?' — <b style="color:var(--gold)">doubled as Captain</b>':'')+'</p>'
+      + '<p class="d-row">'+(away?'<b style="color:var(--gold)">Riding out.</b> ':'')+'Leading a column: '+LEAD_FX[d.lead.key](hero.lvl)+'</p>'
+      + '<p class="d-row">Order — <b>'+d.order.name+'</b>: '+d.order.desc+' Cooldown '+d.order.cd+' waves.'+(cd>0?' Ready in '+cd+'.':'')+'</p>';
+    if(away) body += '<p class="d-warn">They are out with a column and cannot take a chair until it comes home.</p>';
+    else if(!seated && full) body += '<p class="d-warn">Every chair is taken ('+seats+'). Stand someone down, or raise the Tavern.</p>';
+    body += '<div style="display:flex;gap:.6rem;margin-top:.5rem;flex-wrap:wrap">'
+      + (away ? '' : '<button class="primary" data-act="seat" data-key="'+k+'" '+((!seated && full)?'disabled':'')
+          + '>'+(seated?'Stand down from the court':'🪑 Seat in the court')+'</button>')
+      + (seated ? '<button data-act="captain" data-key="'+k+'">'+(isCapt?'Relieve of command':'★ Appoint Captain')+'</button>' : '')
       + '<button data-act="order" data-key="'+k+'" '+(cd>0?'disabled':'')+'>Use '+d.order.name+'</button>'
       + '</div>';
   }
@@ -929,8 +1021,8 @@ function renderCodex(S){
     + '<li>Tap a map tile to inspect and <b>march</b> on it: resource nodes (worked for a large haul), Bandit Camps (burned for loot, Valor and Mastery), Ancient Ruins (Valor, Mastery, 20% Writ).</li>'
     + '<li>Travel costs 12s per tile each way; gathering takes 60s. Marching troops carry their own rations and <b>do not defend the wall</b> until they return.</li>'
     + '<li><b>Long haul</b>: work a resource node for '+ftime(LONG_HAUL_WORK)+' instead of a minute and bring back '+LONG_HAUL_YIELD+'× the haul — the thing to set going before you close the game, at the price of an undefended wall until they are home.</li>'
-    + '<li>Camp battles use your march&#39;s power (heroes and Mastery apply; no wall, no stance). Defeat costs a third of the marchers.</li>'
-    + '<li>One march slot; Town Hall 10 grants a second. Worked tiles regrow in ~4 minutes, sometimes richer.</li>'
+    + '<li>Camp battles use your march&#39;s power — the hold&#39;s bonuses, plus whatever the hero leading it is worth (no wall, no stance). Defeat costs a third of the marchers, wounded not dead.</li>'
+    + '<li>You field '+marchSlots(S)+' columns: one, plus another every 5 Command Center levels and one more at Town Hall 10. Each can be given its own hero to lead. Worked tiles regrow in ~4 minutes, sometimes richer.</li>'
     + '</ul>'
 
     + '<h3>The Arena (online)</h3>'
@@ -956,8 +1048,17 @@ function renderCodex(S){
 
     + '<h3>Heroes &amp; Spoils</h3>'
     + '<ul>'
-    + '<li>12 heroes in the pool: 6 common / 4 rare / 2 epic, drafted at weights 62/28/10. Milestones open 8 slots; each offers 3, you keep 1.</li>'
-    + '<li>Heroes level to 10 on raid XP. Spoils are permanent; most stack.</li>'
+    + '<li><b>'+Object.keys(HERO_POOL).length+' heroes exist; '+heroesOpen(S)+' have arrived so far.</b> Rarity is drafted at weights 62 common / 28 rare / 10 epic. '
+    + HERO_SLOTS.length+' milestones each open a draft of three — you keep one. Never pulled, never sold.</li>'
+    + '<li><b>Seasons bring the rest.</b> Every fortnight four more heroes join the pool. They arrive no stronger than the founding twelve, '
+    + 'and nothing ever leaves — start in Season 9 and the whole roster is still yours to draft. If a draft comes due with nobody left to offer, '
+    + 'the slot waits for the next season rather than being spent.</li>'
+    + '<li><b>A hero does one job at a time.</b> Seated in your court, their passive lifts the whole hold — but there are only '+courtSeats(S)
+    + ' chairs (one more every '+COURT_PER_TH+' Town Hall levels, to '+COURT_MAX+'). Leading a column, they buff that march alone and give up their chair until it comes home. '
+    + 'That is why a wide roster matters with '+marchSlots(S)+' march slots: heroes are the answer to "who leads column six?"</li>'
+    + '<li>Marching leaders bring one of: column power, resources hauled, travel speed, losses on the road, Valor, or Mastery. '
+    + 'A hero who actually rides earns far more XP than one who sits.</li>'
+    + '<li>Heroes level to 20 on raid XP. Spoils are permanent; most stack.</li>'
     + '<li>Mastery: the full 10-perk track is listed in its panel with exact XP thresholds. XP comes from every kind of play.</li>'
     + '</ul>'
 
@@ -1026,7 +1127,9 @@ function renderWorld(S){
     const n = Object.values(m.troops).reduce((a,b)=>a+b,0);
     const phase = !m.resolved ? 'outbound · arrives '+ftime(m.arriveAt-now)
                               : 'returning · home '+ftime(m.homeAt-now);
-    h += '<div class="stat-note">🚩 '+n+' troops → '+tt.icon+' '+tt.name+' — '+phase+'</div>';
+    const hd = m.hero && HERO_POOL[m.hero];
+    h += '<div class="stat-note">🚩 '+n+' troops → '+tt.icon+' '+tt.name+' — '+phase
+      + (hd ? ' <span style="color:var(--gold)">· '+hd.icon+' '+hd.name.split(',')[0]+'</span>' : '')+'</div>';
   }
   if(!S.marches.length)
     h += '<div class="stat-note">Tap a tile to inspect it and send a march.</div>';
@@ -1093,6 +1196,8 @@ const VIEW_ACTIONS = {
   codex: () => { codexOpen = !codexOpen; },
   detail: b => { detail = {type:b.dataset.dtype, key:b.dataset.key}; },
   detailClose: () => { detail = null; },
+  // who leads the next column out — a view choice, cleared once they ride
+  pickLead: b => { marchHero = (marchHero === b.dataset.key) ? null : b.dataset.key; },
   holdView:    () => { listView = !listView; sceneMounted = false; },
   arenaStance: b => { arenaStance = b.dataset.key; },
   arenaFrac:   b => { arenaFrac = Number(b.dataset.key); },
@@ -1183,7 +1288,7 @@ const VIEW_ACTIONS = {
 
 function paramsOf(btn){
   const d = btn.dataset;
-  return { key:d.key, n:d.n, i:d.i, idx:d.idx, frac:d.frac, long:d.long, mode:d.mode };
+  return { key:d.key, n:d.n, i:d.i, idx:d.idx, frac:d.frac, long:d.long, mode:d.mode, hero:d.hero };
 }
 
 function runAction(btn){
@@ -1192,7 +1297,7 @@ function runAction(btn){
   if(VIEW_ACTIONS[act]){ VIEW_ACTIONS[act](btn); render(); return; }
   if(!isGameAction(act)) return;
   const params = paramsOf(btn);
-  if(act === 'march') detail = null;
+  if(act === 'march'){ detail = null; marchHero = null; }
   if(net.isOnline()){
     // the server rules on it, then hands back the truth
     net.sendAction(act, params)

@@ -6,6 +6,7 @@
 import {
   BUILDINGS, TROOPS, MASTERY, QUESTS, ACHIEVEMENTS, RES_META,
   HERO_POOL, HERO_SLOTS, SPOILS, RARITY,
+  COURT_BASE, COURT_PER_TH, COURT_MAX, seasonNo,
   WAVE_TYPES, STANCES, COUNTER_BONUS, COUNTER_PENALTY, COUNTER_CASUALTY, SCREEN,
   EXPEDITIONS, EXPEDITION_CD,
   COST_EXP, TIME_EXP, TIERS, TIER_POWER, TIER_UPKEEP, TIER_COST,
@@ -31,14 +32,52 @@ export function fmt(n){ return n>=10000 ? (n/1000).toFixed(1)+'k' : String(Math.
 export function ftime(ms){ const s=Math.max(0,Math.ceil(ms/1000)); return s>=60 ? Math.floor(s/60)+'m '+(s%60)+'s' : s+'s'; }
 export function clock(t){ const d=new Date(t); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 
-/* ── bonus aggregation: heroes + spoils feed every stat below ── */
+/* ── the court ──
+   A hero either sits in the court or rides at the head of a column; they
+   cannot do both, and the court has only so many chairs. This is what lets the
+   roster grow to thirty-odd without the hold's power growing with it: drafting
+   a new hero widens your options, it never widens your stat block. */
+export function courtSeats(s){
+  return Math.min(COURT_MAX, COURT_BASE + Math.floor((s.b.townhall||1) / COURT_PER_TH));
+}
+export function heroAway(s, id){ return (s.marches||[]).some(m => m.hero === id); }
+export function courtSeated(s){
+  return (s.court||[]).filter(id => s.heroes[id] && HERO_POOL[id]).slice(0, courtSeats(s));
+}
+/* seated, and actually at home to do the job */
+export function courtActive(s){ return courtSeated(s).filter(id => !heroAway(s, id)); }
+
+export function seatHero(s, id, now){
+  if(!s.heroes[id] || !HERO_POOL[id]) return false;
+  s.now = now;
+  s.court = s.court || [];
+  const at = s.court.indexOf(id);
+  if(at >= 0){                                   // already seated — stand them down
+    s.court.splice(at, 1);
+    if(s.captain === id) s.captain = null;
+    return true;
+  }
+  if(heroAway(s, id)) return false;              // they are out with a column
+  if(s.court.length >= courtSeats(s)) return false;
+  s.court.push(id);
+  return true;
+}
+
+/* ── bonus aggregation: the court + spoils feed every stat below ── */
 export function heroBonus(s, key){
   let b = 0;
-  for(const [id,h] of Object.entries(s.heroes)){
-    const d = HERO_POOL[id];
+  for(const id of courtActive(s)){
+    const d = HERO_POOL[id], h = s.heroes[id];
     if(d && d.bonus[key]) b += d.bonus[key]*h.lvl * (s.captain===id ? 2 : 1); // the Captain's passive counts double
   }
   return b;
+}
+/* What a hero brings to the column they ride with. Deliberately smaller than a
+   court passive: leading is about covering many marches, not out-scaling one. */
+export function leadBonus(s, id, key){
+  const d = HERO_POOL[id], h = s.heroes[id];
+  if(!d || !h || !d.lead || d.lead.key !== key) return 0;
+  return d.lead.val * h.lvl;
 }
 export function spoilBonus(s, key){
   let b = 0;
@@ -349,11 +388,21 @@ export function gainReward(s, reward){
   }
 }
 
-/* ── drafts: random offers, player choice, never sold ── */
+/* ── drafts: random offers, player choice, never sold ──
+   The pool is filtered by the season clock, so the cast grows every fortnight.
+   Note the direction of the filter: a hero is available once their season has
+   *arrived* and stays available forever after. Seasons open doors here; they
+   never close them, which is the whole difference between this and a shard
+   shop with a countdown on it. */
+export function heroSeasonOpen(s, id){
+  const d = HERO_POOL[id];
+  return !d ? false : (d.season || 0) <= seasonNo(s.now || Date.now());
+}
 export function rollHeroOffer(s, rand){
   const owned = new Set(Object.keys(s.heroes));
   const queued = new Set((s.choiceQueue||[]).flatMap(c => c.type==='hero' ? c.options : []));
-  const avail = Object.keys(HERO_POOL).filter(id => !owned.has(id) && !queued.has(id));
+  const avail = Object.keys(HERO_POOL)
+    .filter(id => !owned.has(id) && !queued.has(id) && heroSeasonOpen(s, id));
   const picks = [];
   for(let i=0; i<3 && avail.length; i++){
     const weights = avail.map(id => RARITY[HERO_POOL[id].rarity].w);
@@ -381,7 +430,12 @@ export function chooseOption(s, idx, now){
   if(c.type==='hero'){
     s.heroes[id] = {lvl:1, xp:0};
     const d = HERO_POOL[id];
-    pushLog(s, d.icon+' '+d.name+' pledges service to the hold!', 'gold');
+    s.court = s.court || [];
+    // a free chair is filled straight away so the draft never feels inert
+    const seated = s.court.length < courtSeats(s);
+    if(seated) s.court.push(id);
+    pushLog(s, d.icon+' '+d.name+' pledges service to the hold'
+      + (seated ? ' and takes a seat in your court!' : ' — no chair is free, so they await a command.'), 'gold');
     showBanner(s, d.icon+' Hero drafted: '+d.name, 'win', now);
   }else{
     s.spoils[id] = (s.spoils[id]||0)+1;
@@ -608,6 +662,7 @@ export function setDefStance(s, stance, now){
 }
 export function setCaptain(s, id, now){
   if(!s.heroes[id]) return false;
+  if(!(s.court||[]).includes(id)) return false;   // the Captain is chosen from the court
   s.now = now;
   s.captain = (s.captain===id) ? null : id;
   return true;
@@ -640,6 +695,41 @@ export function useOrder(s, id, now){
     case 'crashcourse': s.trainFastNext = true; break;
     case 'richtrails':  s.expedBoost = true; break;
     case 'ration':      s.upkeepPauseUntil = now + 60000; break;
+    case 'stockpile':   gainRes(s,'stone',40*s.b.townhall); gainRes(s,'iron',40*s.b.townhall); break;
+    case 'fairwinds':   s.marchBoost = true; break;
+    case 'regrow': {
+      // the frontier is worked out and there is nothing to march on — fix that
+      const t = (s.world && s.world.tiles || []).filter(x => x.respawnAt);
+      if(!t.length) return false;
+      for(const x of t) x.respawnAt = 0;
+      break;
+    }
+    case 'mend': {
+      const n = woundedTotal(s);
+      if(!n && !s.hq) return false;
+      for(const [k,v] of Object.entries(s.wounded||{})) s.t[k] = (s.t[k]||0) + v;
+      if(s.hq) for(const [k,v] of Object.entries(s.hq.troops)) s.t[k] = (s.t[k]||0) + v;
+      s.wounded = {}; s.hq = null;
+      break;
+    }
+    case 'recall': {
+      // columns turn on the spot; those already at work drop it and ride home
+      const out = (s.marches||[]).filter(x => !x.recalled);
+      if(!out.length) return false;
+      for(const x of out){
+        const leg = x.out || 0;
+        if(!x.resolved){
+          const elapsed = Math.max(0, leg - Math.max(0, x.arriveAt - now));
+          x.resolved = true; x.recalled = true;
+          x.loot = null; x.valor = 0; x.mxp = 6;
+          x.report = '↩️ Recalled before they ever arrived';
+          x.homeAt = now + elapsed;
+        }else{
+          x.homeAt = Math.min(x.homeAt, now + leg);
+        }
+      }
+      break;
+    }
     default: return false;
   }
   s.orderCd[id] = d.order.cd;
@@ -856,11 +946,14 @@ export function tick(s, now, dt, rand=Math.random){
     }
   }
 
-  // hero drafts: milestones unlock slots; each grants a choice of three
+  /* Hero drafts: milestones unlock slots; each grants a choice of three.
+     If the season has nobody left unclaimed, the slot is NOT spent — it waits
+     for the next season to bring more names. Earning a draft you cannot use
+     would be the one way this system could quietly cheat a player. */
   if(unlockedSlots(s) > (s.offersDone||0)){
-    s.offersDone = (s.offersDone||0) + 1;
     const opts = rollHeroOffer(s, rand);
     if(opts.length){
+      s.offersDone = (s.offersDone||0) + 1;
       s.choiceQueue.push({type:'hero', options:opts, reroll:1});
       pushLog(s, 'Champions answer the call — choose who joins the hold.', 'gold');
     }

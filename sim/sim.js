@@ -68,6 +68,14 @@ function simulate(minutes, enemyLuck, skilled, label){
     }
     // orders: fire whatever is ready (battle mods persist until the next battle)
     for(const id of Object.keys(s.heroes)) if(!(s.orderCd[id]>0)) L.useOrder(s, id, ms);
+    // the court: a chair left empty is a passive left on the table. The Tavern
+    // opens new ones as it grows, so this has to be re-checked, not done once.
+    if(s.court.length < L.courtSeats(s)){
+      for(const id of Object.keys(s.heroes)){
+        if(s.court.includes(id) || L.heroAway(s,id)) continue;
+        if(!L.seatHero(s, id, ms)) break;
+      }
+    }
     // marches: the skilled bot raids the frontier when the wall can spare a quarter of the army
     if(skilled && s.marches.length < W.marchSlots(s)){
       const nextEnemy = L.wavePower(s.wave)*(s.wave%5===0?1.6:1)*1.12;
@@ -88,7 +96,11 @@ function simulate(minutes, enemyLuck, skilled, label){
             if(tt.kind==='gather' && tt.res===scarce){ target=i; break; }
           }
         }
-        if(target>=0) W.startMarch(s, target, 0.25, ms);
+        // give the column a leader if one can be spared — heroes idle in the
+        // hall are the commonest thing a real player leaves on the table
+        const lead = Object.keys(s.heroes).find(id => !s.court.includes(id) && W.heroCanLead(s,id))
+                  || Object.keys(s.heroes).find(id => id !== s.captain && W.heroCanLead(s,id));
+        if(target>=0) W.startMarch(s, target, 0.25, ms, false, skilled ? lead : null);
       }
     }
     // expeditions: the skilled bot dispatches by hand; the lazy one sets a caravan and forgets
