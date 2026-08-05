@@ -26,7 +26,7 @@ import {
   valorQuota, valorToday, isRested, QUEUE_KEYS, buildSlots, activeQueues, freeSlot, townhallReq,
   maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost,
   wavePower, streakMult, finishCost, xpNeed,
-  courtSeats, courtSeated, heroAway, leadBonus, leadTotal, heroSeasonOpen,
+  courtSeats, courtSeated, heroAway, leadBonus, leadTotal, heroSeasonOpen, classLift,
   effLvl, heroStarCap, arenaTeam, setArenaTeam, gearBlockedBy, petBonus,
 } from './logic.js';
 import { applyAction, isGameAction } from './actions.js';
@@ -107,7 +107,7 @@ function renderThreat(S){
   const est = scouted
     ? wt.icon+' '+wt.name+' · ≈'+Math.round(wavePower(S.wave)*(isWB?1.6:1)*streakMult(S))+' strength'
       +(S.streak>0?' (bloodied)':'')
-      +(wt.weakTo?' · weak to '+STANCES[wt.weakTo].name+' &amp; '+TROOPS[wt.counter].name+'s':'')
+      +(wt.weakTo?' · weak to '+STANCES[wt.weakTo].name+' &amp; '+TROOPS[wt.counter].plural:'')
       +(!S.b.watchtower && raven ? ' <span style="opacity:.7">(your raven brought word)</span>' : '')
     : 'an unknown band — a Watchtower would name it';
   let h = '<div class="threat"><div class="row">';
@@ -155,7 +155,7 @@ function renderTemper(S, now){
     + '<span class="meta">'+t.blurb+'</span>'
     + '<span class="meta" style="margin-left:auto">'
     + Math.round(top[1]*100)+'% '+WAVE_TYPES[top[0]].name.toLowerCase()
-    + (fav ? ' · favours <b>'+fav.icon+' '+fav.name+'s</b>'
+    + (fav ? ' · favours <b>'+fav.icon+' '+fav.plural+'</b>'
         + (cap ? ' <span style="opacity:.7">('+cap+' captain'+(cap===1?'':'s')+' drafted)</span>'
               : ' <span style="opacity:.7">(no captain of theirs yet)</span>') : '')
     + '</span></div>';
@@ -313,7 +313,7 @@ function heroRow(S, k, where){
   const eff = effLvl(S, k);
   const fx = seated ? d.fx(eff) + (isCapt ? ' <b style="color:var(--gold)">×2</b>' : '')
                     : LEAD_FX[d.lead.key](eff) + ' · +'+Math.round(CLASS_AFFINITY*eff*100)
-                      +'% to '+TROOPS[d.cls].name.toLowerCase()+'s';
+                      +'% to '+TROOPS[d.cls].plural.toLowerCase();
   const st = heroStars(S, k);
   return '<div class="hero'+(where==='away'?' away':'')+'">'
     + '<span class="hname">'+(isCapt?'★ ':'')+(where==='away'?'🚩 ':'')+d.icon+' '+d.name+'</span>'
@@ -801,7 +801,7 @@ function renderSeasonCast(S, now){
     h += '<div class="trow'+(i===0?' mine':'')+'"><span>'+t.icon+'</span>'
       + '<span class="tname">'+(i===0?'now':'Season '+n)+' · '+t.name+'</span>'
       + '<span class="tmeta">'+t.blurb+'</span><span class="spacer"></span>'
-      + '<span class="tmeta">'+(fav ? 'favours '+fav.icon+' '+fav.name+'s' : 'no favourite')
+      + '<span class="tmeta">'+(fav ? 'favours '+fav.icon+' '+fav.plural : 'no favourite')
       + (i ? ' · in '+ftime((n - cur) * SEASON_MS - (SEASON_MS - seasonEndsIn(now))) : '')+'</span></div>';
   }
 
@@ -1137,9 +1137,35 @@ function formName(S){
   const biggest = Object.keys(TROOPS)
     .filter(k => marchWant[k] > 0)
     .sort((a,b) => marchWant[b] - marchWant[a])[0];
-  const what = biggest ? TROOPS[biggest].name.toLowerCase()+'s' : 'column';
+  const what = biggest ? TROOPS[biggest].plural.toLowerCase() : 'column';
   return lead ? lead.name.split(',')[0]+"'s "+what
               : what.charAt(0).toUpperCase()+what.slice(1);
+}
+
+/* ── coverage: three captains against four kinds of soldier ──
+   Four troop types and three seats at the head of a column is a deliberate
+   shortfall — it is the whole reason class affinity is a decision rather than a
+   formality. But the shortfall was invisible: nothing in the march builder said
+   which classes had a captain, so it read as a missing feature instead of a
+   choice. These helpers exist to put the number on screen.
+
+   The figure itself comes from logic.js — the SAME classLift() that marchPower
+   and the arena fight with, so the label cannot drift from the maths. */
+function coveredBy(S, party, k){
+  return party.filter(id => HERO_POOL[id] && HERO_POOL[id].cls === k);
+}
+/* "spearmans" and "ballistas" were on screen until the smoke test printed the
+   composer as flat text. Troop names now carry their own plural. */
+function troopWord(k, n){
+  const d = TROOPS[k];
+  return (n === 1 ? d.name : d.plural).toLowerCase();
+}
+function pctLift(x){ return (x > 0 ? '+' : '') + (x*100).toFixed(x < 0.1 ? 1 : 0) + '%'; }
+/* Which classes a saved formation covers — so a loadout reads as a build. */
+function formCover(S, f){
+  return Object.keys(TROOPS)
+    .filter(k => (f.troops[k]||0) > 0 && coveredBy(S, f.heroes || [], k).length)
+    .map(k => TROOPS[k].icon).join('');
 }
 
 /* Fill the column proportionally to what the hold owns, up to capacity. The old
@@ -1167,8 +1193,10 @@ function renderColumnComposer(S){
     h += '<p class="d-row" style="margin-top:.6rem">Formations</p><div class="formrow">';
     for(const f of S.formations){
       const n = Object.values(f.troops).reduce((a,b)=>a+b,0);
+      const cov = formCover(S, f);
       h += '<button class="form" data-act="formLoad" data-key="'+esc(f.name)+'">'+esc(f.name)
-        + ' <span class="hmeta">'+f.heroes.length+' lead · '+n+'</span></button>';
+        + ' <span class="hmeta">'+f.heroes.length+' lead · '+n
+        + (cov ? ' · '+cov+' led' : '')+'</span></button>';
     }
     h += '</div>';
   }
@@ -1191,12 +1219,31 @@ function renderColumnComposer(S){
         + (st ? ' <span class="stars">'+starStr(st)+'</span>' : '')
         + ' <span class="rar rar-'+d.rarity+'">'+TROOPS[d.cls].icon+' '+TROOPS[d.cls].name+'</span>'
         + '<span class="hmeta">L'+hero.lvl+(st?'+'+st+'✦':'')+' · '+LEAD_FX[d.lead.key](eff)
-        + ' · +'+Math.round(CLASS_AFFINITY*eff*100)+'% to '+TROOPS[d.cls].name.toLowerCase()+'s'
+        + ' · '+pctLift(classLift(S, [k], d.cls))+' to '+TROOPS[d.cls].plural.toLowerCase()
         + ' · +'+(CAP_PER_HERO + CAP_PER_LEVEL*eff)+' capacity'
         + (seated ? ' · leaves the court' : '')+'</span></button>';
     }
     h += '</div>';
   }
+
+  // ── who covers what ──
+  const kinds = Object.keys(TROOPS);
+  const lift = {}; for(const k of kinds) lift[k] = classLift(S, marchParty, k);
+  const covered = kinds.filter(k => lift[k] > 0).length;
+  h += '<p class="d-row" style="margin-top:.6rem">Captains cover <b'
+    + (covered ? '' : ' style="color:var(--ink-dim)"')+'>'+covered+'/'+kinds.length+'</b>'
+    + ' <span class="hmeta">— '+MARCH_HEROES+' leaders, '+kinds.length+' kinds of soldier. '
+    + 'Which ones you cover is the column\'s shape.</span></p>'
+    + '<div class="affrow">';
+  for(const k of kinds){
+    const by = coveredBy(S, marchParty, k), sent = marchWant[k]||0;
+    h += '<div class="aff'+(lift[k]>0?' on':'')+(sent && lift[k]<=0?' bare':'')+'">'
+      + '<span class="ai">'+TROOPS[k].icon+'</span>'
+      + '<b>'+(lift[k]>0 ? pctLift(lift[k]) : '—')+'</b>'
+      + '<span class="hmeta">'+(by.length ? by.map(id => esc(HERO_POOL[id].name.split(',')[0].split(' ').pop())).join(', ')
+                                          : 'no captain')+'</span></div>';
+  }
+  h += '</div>';
 
   // ── the column itself ──
   h += '<p class="d-row" style="margin-top:.6rem">Column <b'+(over?' style="color:var(--bad)"':'')+'>'
@@ -1207,7 +1254,10 @@ function renderColumnComposer(S){
     if(!owned && !marchWant[k]) continue;
     const step = Math.max(1, Math.round(owned/10));
     h += '<div class="troopadj"><span class="tname">'+d.icon+' '+d.name+'</span>'
-      + '<span class="hmeta">'+owned+' at home</span><span class="spacer"></span>'
+      + '<span class="hmeta">'+owned+' at home'
+      + (lift[k] > 0 ? ' · <span class="led">'+pctLift(lift[k])+' led</span>'
+                     : ((marchWant[k]||0) ? ' · <span class="unled">no captain</span>' : ''))
+      + '</span><span class="spacer"></span>'
       + '<button data-act="troopAdj" data-key="'+k+'" data-n="-'+step+'" '+((marchWant[k]||0)<=0?'disabled':'')+'>−</button>'
       + '<span class="count">'+(marchWant[k]||0)+'</span>'
       + '<button data-act="troopAdj" data-key="'+k+'" data-n="'+step+'" '+((marchWant[k]||0)>=owned?'disabled':'')+'>+</button>'
@@ -1220,6 +1270,14 @@ function renderColumnComposer(S){
     + '<button data-act="fillCol" data-key="0">Clear</button>'
     + '</div>';
   if(over) h += '<p class="d-warn">Over capacity — the extra troops will stay home. Bring stronger leaders.</p>';
+  /* Stated as fact, not scolded. Riding uncovered is a legitimate call — you may
+     want the bodies more than the bonus — so this reports the cost and stops. */
+  const bare = kinds.filter(k => (marchWant[k]||0) > 0 && lift[k] <= 0);
+  if(bare.length && marchParty.length)
+    h += '<p class="d-row" style="color:var(--ink-dim)">'
+      + bare.map(k => '<b>'+marchWant[k]+'</b> '+troopWord(k, marchWant[k])).join(' and ')
+      + ' ride without a captain — no affinity. '
+      + (bare.length < kinds.length ? 'Swap a leader, or leave them home and send more of what is led.' : '')+'</p>';
   return h;
 }
 
@@ -1395,8 +1453,8 @@ function renderDetail(S){
     const answer = o.dominant ? CLASS_ANSWER[o.dominant] : null;
     const beats = Object.entries(STANCE_BEATS).find(([, loses]) => loses === o.defStance);
     body += '<p class="d-row">Defence <b>'+fmt(o.power)+'</b> (their wall included) · '+o.laurels+' Laurels · Town Hall '+o.townhall+'</p>'
-      + '<p class="d-row">Their army leans on <b>'+(o.dominant ? TROOPS[o.dominant].name+'s' : 'nothing in particular')+'</b>'
-      + (answer ? ' — '+TROOPS[answer].name+'s are the answer, and your line is '
+      + '<p class="d-row">Their army leans on <b>'+(o.dominant ? TROOPS[o.dominant].plural : 'nothing in particular')+'</b>'
+      + (answer ? ' — '+TROOPS[answer].plural+' are the answer, and your line is '
           + Math.round(100*(composition(S).parts[answer]||0)/Math.max(composition(S).total,1))+'% '+TROOPS[answer].name+'.' : '.')+'</p>'
       + '<p class="d-row">They stand in <b>'+STANCES[o.defStance].name+'</b>'
       + (beats ? ' — <b style="color:var(--gold)">'+STANCES[beats[0]].name+'</b> breaks it (+15%)' : '')+'.</p>'
@@ -1678,6 +1736,11 @@ function renderCodex(S){
     + '<li><b>Every hero knows one troop class.</b> They add +'+Math.round(CLASS_AFFINITY*100)+'% per level to that troop type in their column, '
     + 'so three cavalry heroes leading knights hit far harder than a mixed party. This is what makes a wide roster worth having — '
     + 'and with '+marchSlots(S)+' march slots and three leaders each, a full field needs '+(marchSlots(S)*MARCH_HEROES)+' heroes.</li>'
+    + '<li><b>'+MARCH_HEROES+' captains, '+Object.keys(TROOPS).length+' kinds of soldier — so a column can never cover everything.</b> That shortfall is on purpose. '
+    + 'You may still <i>send</i> all four troop types in one march; what you cannot do is have a captain for all four at once, '
+    + 'and choosing which three to cover is what gives a column its shape. The march builder shows the coverage as you build it, '
+    + 'and says plainly when troops are riding with nobody who knows how to handle them. '
+    + 'Were there four seats, the answer would be one captain of each kind, every march, forever — and there would be nothing left to decide.</li>'
     + '<li>Marching leaders also bring one of: column power, resources hauled, travel speed, losses on the road, Valor, or Mastery. '
     + 'A hero who actually rides earns far more XP than one who sits.</li>'
     + '<li><b>Formations</b> save a column — its three leaders and the exact count of each troop — for one-tap reuse. '

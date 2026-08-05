@@ -17,7 +17,7 @@
 import { TROOPS, HERO_POOL } from './defs.js';
 import {
   armyBreakdown, tierPower, gainValor, gainMastery, pushLog, showBanner, fmt,
-  arenaTeam, affinity, leadTotal, addDeeds, skillTotal, skillClass, skillCond,
+  arenaTeam, classMult, leadTotal, addDeeds, skillTotal, skillCond,
 } from './logic.js';
 import { scoreDeed } from './events.js';
 import { takeCasualties } from './logic.js';
@@ -108,7 +108,7 @@ export function forcePower(s, troops, team){
   const five = team || arenaTeam(s);
   let base = 0;
   for(const [k,n] of Object.entries(troops))
-    base += tierPower(s, k) * n * (1 + affinity(s, five, k)) * (1 + skillClass(s, five, k));
+    base += tierPower(s, k) * n * classMult(s, five, k);
   // 'host' conditional skills count in the Arena too — a sortie is a real battle.
   // Skills multiply, as they do on a march, so their stated percentages hold.
   return { base, mult: bd.mult * (1 + leadTotal(s, five, 'power'))
@@ -120,7 +120,7 @@ export function defenceWithHeroes(s){
   const five = arenaTeam(s);
   let base = 0;
   for(const k of Object.keys(TROOPS))
-    base += tierPower(s, k) * (s.t[k]||0) * (1 + affinity(s, five, k)) * (1 + skillClass(s, five, k));
+    base += tierPower(s, k) * (s.t[k]||0) * classMult(s, five, k);
   return { base, mult: bd.mult * (1 + leadTotal(s, five, 'power')) * (1 + skillTotal(s, five, 'power')),
            wall: bd.wall };
 }

@@ -225,6 +225,48 @@ what makes a *wide* roster valuable rather than a tall one, and it is why
 **formations** (saved leader+troop presets) are a real tool and not just a
 convenience.
 
+#### Three captains, four classes — the shortfall is the mechanic (v1.31)
+
+Asked whether march seats should go from 3 to 4 so a column could cover every
+troop type. No, and it is worth writing down why, because the argument generalises.
+
+The premise was slightly off: you can already **send** all four troop types in one
+march — `fitColumn` takes any mix. What is class-locked is only *affinity*. So a
+fourth seat would not unlock a four-type column; it would unlock affinity on all
+four at once.
+
+Which is the thing that must stay locked. **Three seats against four classes is
+the only reason affinity is a decision.** Make seats equal classes and the optimum
+collapses to one captain of each, every march, forever, for every player — the
+puzzle solves itself on day one and never comes up again. Kingshot has 3 heroes
+and 3 troop types, so *its* version of this is already pre-solved; the ballista is
+ours, and it is what keeps the choice live. Going to four would spend the one
+place this game is more interesting than the one it learns from.
+
+The numbers agree. A fourth captain at effective level 20 adds `4 + 3×20 = 64`
+capacity onto 198 — a **+32% larger column** before its lead trait, its skills and
+the fourth affinity; call it ~+40%. Every march gets strictly stronger and there
+are fewer worth thinking about, when eight slots was already the count that felt
+like too many. And the roster is exactly saturated at three: **8 marches × 3 = 24
+out, + 8 court seats = 32**, the whole pool. At four per march, full deployment
+empties the court and a newcomer with seven heroes drops from two columns to one.
+
+The real defect was that none of this was **visible**. Affinity was explained in
+the arena, in three places, and *nowhere in the march builder* — so a structural
+choice read as a missing feature. That is the actual lesson: when players ask for
+a system to be loosened, check first whether it is merely illegible. The fix was a
+coverage strip (four troop tiles, lit where a captain rides, with the real figure),
+the same figure on each troop row, and a plain line when troops ride uncovered —
+*"30 ballistae ride without a captain — no affinity."* Stated as a cost, not
+scolded: riding uncovered is a legitimate call when you want the bodies more than
+the bonus.
+
+`classMult()` lives in `logic.js` and is used by both the label and the battle, so
+the number on screen cannot drift from the number that fights — the failure that
+made every skill percentage a lie in v1.27. The multiplier is the primitive and
+the displayed lift is derived from it, so combat's arithmetic is untouched by a
+function added for the UI's benefit.
+
 ### Gear, both kinds (v1.23)
 
 Kingshot has hero gear and lord gear, and both are heavy spend funnels there —
@@ -365,8 +407,56 @@ One Purpose pays exactly nothing on a mixed column, that an unseated captain's
 court skill does nothing at all — and ends with a sweep that fails the run and
 **names** any skill that moves no number anywhere.
 
-`npm run check` chains build → verify → sim, so a red test stops the chain before
-the simulator runs.
+`npm run check` chains build → verify → verify:ui → sim, so a red test stops the
+chain before the simulator runs.
+
+### The simulator was lying, and that was worse than a bug (v1.31)
+
+While checking that a refactor had changed no numbers, the sim reported a
+divergence: one scenario ended a whole Town Hall level apart. I wrote a plausible
+explanation (a floating-point round trip) and started fixing it — then ran the sim
+twice on **identical code** and it disagreed with itself.
+
+`gainBond()` called `Math.random()` directly instead of the `rand` it was handed.
+Pets carry bonuses, so a different companion moved army power, which moved the
+bot's commitment threshold, which moved the entire run. The one tool whose job is
+to tell a balance change from noise **was the noise**, and it had been for as long
+as pets existed. Every "the sim says this is fine" in this document from v1.24
+onward was worth less than I thought.
+
+Three lessons, in order of how much they cost:
+
+1. **An injection point that silently isn't used is this project's oldest bug.**
+   `rand = Math.random` as a parameter default is only a promise; something has to
+   check it is kept. `verify-skills.mjs` now proves the pet offer follows the
+   injected rng — including that a *different* rng gives a *different* offer, so
+   the test cannot pass on the broken version.
+2. **Determinism is a property to test, not to assume.** A simulator that isn't
+   reproducible cannot be a regression check, and it fails silently: it just
+   returns slightly different numbers, which look like the thing you were
+   measuring.
+3. **I explained the divergence before establishing it was real.** The
+   floating-point story was coherent, specific, and wrong — and it was wrong in
+   the direction of my own recent change, which is the direction to be most
+   suspicious of. Reproduce first, theorise second. The check that settled it took
+   one command: run it twice, unchanged.
+
+### `verify-ui.mjs` — because nothing checked rendering (v1.31)
+
+`npm run build` proves the imports resolve. It does not notice a render that
+throws, prints `undefined`, or says **"spearmans"** — which the game did, in four
+places, because it pluralised troop names by appending an `s`. Correct for
+Archers; wrong for Spearmen and Ballistae. It survived every review because a
+plural is exactly the kind of thing you read past.
+
+The suite renders every panel against a stub DOM, then the march builder on its
+own, and asserts on the flat text. Troop names now carry their own `plural`.
+
+One design note: the composer is only reachable by tapping, and reads two
+module-local variables a tap sets. Rather than export test hooks from shipped
+code, the suite copies `src/` to a temp directory and appends the two exports
+there — so what runs is the real code, byte-identical, and the bundle carries
+nothing that exists for a test.
 
 ### KvK — realms and the Rift (v1.26)
 

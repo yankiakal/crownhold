@@ -168,6 +168,20 @@ section.panel{
 .troopadj .tname{font-size:.85rem}
 .troopadj .hmeta{font-family:var(--sans);font-size:.66rem;color:var(--ink-dim)}
 .troopadj .count{min-width:2.6rem;text-align:right;font-variant-numeric:tabular-nums;color:var(--gold)}
+.troopadj .led{color:var(--good)}
+.troopadj .unled{color:var(--bad)}
+/* coverage: four troop types, three captains. Lit where a captain rides. */
+.affrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(4.6rem,1fr));gap:.3rem;margin:.1rem 0 .2rem}
+.aff{background:var(--panel-2);border:1px solid var(--edge);border-radius:4px;
+  padding:.3rem .35rem;text-align:center;opacity:.5}
+.aff .ai{display:block;font-size:1rem;line-height:1.1}
+.aff b{display:block;font-variant-numeric:tabular-nums;font-size:.82rem;color:var(--ink-dim)}
+.aff .hmeta{display:block;font-family:var(--sans);font-size:.6rem;color:var(--ink-dim);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aff.on{opacity:1;border-color:var(--gold-deep)}
+.aff.on b{color:var(--gold)}
+.aff.bare{opacity:1;border-color:var(--bad)}
+.aff.bare .hmeta{color:var(--bad)}
 .troopadj button{padding:.25rem .55rem;font-size:.8rem;min-width:2rem}
 .fillrow{display:flex;gap:.4rem;margin:.4rem 0 .2rem;flex-wrap:wrap}
 .fillrow button{flex:1;min-width:3.5rem;padding:.35rem .4rem;font-size:.8rem}

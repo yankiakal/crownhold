@@ -59,11 +59,11 @@ export const TIER_POWER = 0.25, TIER_UPKEEP = 0.18, TIER_COST = 0.22;
 /* upkeep: food/sec per soldier — armies eat. This is what keeps army size in
    equilibrium with your farms instead of scaling to infinity. */
 export const TROOPS = {
-  spearman:{name:'Spearman', icon:'🛡️', power:3,  upkeep:0.06, cost:{food:25,wood:10}, time:4,  at:'barracks'},
-  archer:  {name:'Archer',   icon:'🏹', power:5,  upkeep:0.10, cost:{food:20,wood:25}, time:6,  at:'range'},
+  spearman:{name:'Spearman', plural:'Spearmen', icon:'🛡️', power:3,  upkeep:0.06, cost:{food:25,wood:10}, time:4,  at:'barracks'},
+  archer:  {name:'Archer',   plural:'Archers',  icon:'🏹', power:5,  upkeep:0.10, cost:{food:20,wood:25}, time:6,  at:'range'},
   // iron units eat less per point of power — quality is the path past the food ceiling
-  knight:  {name:'Knight',   icon:'🐎', power:11, upkeep:0.17, cost:{food:60,iron:20}, time:12, at:'stable'},
-  ballista:{name:'Ballista', icon:'⚙️', power:24, upkeep:0.38, cost:{wood:80,iron:40}, time:20, at:'siegeyard'},
+  knight:  {name:'Knight',   plural:'Knights',  icon:'🐎', power:11, upkeep:0.17, cost:{food:60,iron:20}, time:12, at:'stable'},
+  ballista:{name:'Ballista', plural:'Ballistae',icon:'⚙️', power:24, upkeep:0.38, cost:{wood:80,iron:40}, time:20, at:'siegeyard'},
 };
 
 /* The Mastery track — Crownhold's replacement for VIP levels. Earned from every

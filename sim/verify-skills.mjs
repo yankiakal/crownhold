@@ -246,6 +246,106 @@ console.log('\n── a pre-skills save is inert, not broken ──');
 
 
 
+/* ── class coverage: the figure on screen is the figure that fights ──
+   The march builder prints classLift() as "+N% led". That label is only true if
+   it is the same number marchPower multiplies by, so these tests measure it out
+   of marchPower rather than trusting the expression. Ratios between two columns
+   of equal size cancel every outer factor (hero bonuses, lead traits, perks,
+   at-cap conditionals), leaving exactly the per-class term. */
+{
+  console.log('\n── the coverage figure matches what marchPower fights with ──');
+  const s = hold();
+  const party = ['marshal','gatekeeper','forager'];         // knight, spearman, archer
+  // N is large on purpose: marchPower returns a rounded integer, and at N=20 the
+  // half-point of rounding is a tenth of a percent of the figure under test —
+  // enough to make a correct label look wrong. Tolerance is absolute for the same
+  // reason: this compares a difference of ratios, where a relative bound is noise.
+  const N = 5000;
+  const powerOf = k => W.marchPower(s, { [k]: N }, party);
+  for(const k of Object.keys(D.TROOPS)){
+    const claimed = L.classLift(s, party, k);
+    // measured: strip the flat per-soldier power out, compare against a class
+    // nobody in the party covers (ballista here), whose lift is exactly 0.
+    const bare = powerOf('ballista') / (L.tierPower(s,'ballista') * N);
+    const mine = powerOf(k) / (L.tierPower(s,k) * N);
+    const measured = mine/bare - 1;
+    ok(k + ': label ' + (claimed*100).toFixed(2) + '% = measured ' + (measured*100).toFixed(2) + '%',
+       Math.abs(measured - claimed) < 1e-3);
+  }
+  ok('an uncovered class lifts by exactly nothing', L.classLift(s, party, 'ballista') === 0);
+
+  /* The multiplier is the primitive; the label is derived. Combat must keep
+     evaluating the exact product it always did, so that a change made for the
+     UI's benefit cannot reach the battle maths. */
+  {
+    const s3 = hold();
+    equip(s3, 'steward', 'siegeTrain');                     // both terms non-zero
+    const a = L.affinity(s3, ['steward'], 'ballista'), sk = L.skillClass(s3, ['steward'], 'ballista');
+    ok('classMult is bit-identical to the product combat used before',
+       L.classMult(s3, ['steward'], 'ballista') === (1 + a) * (1 + sk));
+    ok('classLift is exactly classMult − 1',
+       L.classLift(s3, ['steward'], 'ballista') === L.classMult(s3, ['steward'], 'ballista') - 1);
+  }
+
+  console.log('\n── three captains cannot cover four classes ──');
+  ok('there are more troop types than march seats', D.MARCH_HEROES < Object.keys(D.TROOPS).length);
+  const covered = p => Object.keys(D.TROOPS).filter(k => L.classLift(s, p, k) > 0).length;
+  ok('one of each of three classes covers 3/4', covered(party) === 3, String(covered(party)));
+  ok('a party of one covers 1/4', covered(['marshal']) === 1, String(covered(['marshal'])));
+  ok('no leaders covers 0/4', covered([]) === 0, String(covered([])));
+  s.heroes.steward.skills = ['siegeTrain', null, null];      // ballista captain's class skill
+  ok('a ballista captain cannot be a 4th cover for a 3-seat party',
+     covered(['marshal','gatekeeper','forager','steward'].slice(0, D.MARCH_HEROES)) === D.MARCH_HEROES);
+
+  console.log('\n── affinity and class skills compose, they do not add ──');
+  {
+    const s2 = hold();
+    const aff = L.affinity(s2, ['steward'], 'ballista');
+    equip(s2, 'steward', 'siegeTrain');
+    const sk = L.skillClass(s2, ['steward'], 'ballista');
+    const lift = L.classLift(s2, ['steward'], 'ballista');
+    ok('both terms are actually present', aff > 0 && sk > 0, 'aff ' + aff.toFixed(3) + ', skill ' + sk.toFixed(3));
+    ok('lift = (1+aff)(1+skill)−1, not aff+skill',
+       near(lift, (1+aff)*(1+sk)-1, 1e-9) && !near(lift, aff+sk, 1e-9),
+       'composed ' + lift.toFixed(4) + ' vs summed ' + (aff+sk).toFixed(4));
+    // and the composed figure is what the column is actually paid
+    const bare = W.marchPower(s2, { ballista: 10 }, []) / 10;
+    const led  = W.marchPower(s2, { ballista: 10 }, ['steward']) / 10;
+    ok('a column of that class is paid the composed figure', led > bare,
+       (bare).toFixed(1) + ' → ' + (led).toFixed(1) + ' per ballista');
+  }
+}
+
+/* ── every roll obeys the injected rng ──
+   gainBond() called Math.random() directly, so the pet offer was the one roll the
+   simulator could not control. Pets carry bonuses, so a different companion moved
+   army power, which moved the bot's commitment threshold, which moved the entire
+   run: two sim runs of IDENTICAL code disagreed by two Town Hall levels. That made
+   the simulator useless for telling a real balance change from noise — the worst
+   possible failure in the one tool that is supposed to catch balance changes.
+   An injection point that silently isn't used is this project's oldest bug, so it
+   gets a test rather than a comment. */
+{
+  console.log('\n── the simulator can control every roll ──');
+  const fixed = () => 0;                       // always picks the first option
+  const draw = seed => {
+    const s = hold();
+    s.pets = {}; s.bond = 0; s.choiceQueue = [];
+    L.gainBond(s, 1e6, s.now, seed);
+    const c = (s.choiceQueue || []).find(x => x.type === 'pet');
+    return c ? c.options.join(',') : '';
+  };
+  ok('a pet offer is actually made', draw(fixed).length > 0, draw(fixed) || 'none');
+  ok('the same rng gives the same offer twice', draw(fixed) === draw(fixed));
+  // a different rng must give a different offer — otherwise the rng is ignored
+  // and the test above would pass just as happily on the broken version.
+  let differs = false;
+  for(const r of [() => 0.99, () => 0.5, () => 0.25])
+    if(draw(r) !== draw(fixed)) differs = true;
+  ok('a different rng gives a different offer (the rng is really used)', differs,
+     'fixed→' + draw(fixed) + '  vs  0.99→' + draw(() => 0.99));
+}
+
 /* ── the store's guardrail, asserted rather than trusted ──
    Appended here because it is the same kind of check: a claim in a design doc is
    worth nothing unless something fails when it stops being true. */

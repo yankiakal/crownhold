@@ -9,7 +9,7 @@ import { ISLE_TH, VOYAGE_MS, RATION_COST, ISLE_SITES, genIsle, cellAt, revealAro
 import { scoreDeed } from './events.js';
 import { takeCasualties } from './logic.js';
 import {
-  tierPower, heroBonus, spoilBonus, perk, wavePower, leadBonus, leadTotal, affinity, heroAway,
+  tierPower, heroBonus, spoilBonus, perk, wavePower, leadBonus, leadTotal, classMult, heroAway,
   effLvl, addDeeds, petBonus, gainBond, gainPetXp,
   skillTotal, skillClass, skillCond,
   gainRes, gainValor, gainShield, gainMastery, pushLog, showBanner, fmt, ftime,
@@ -168,7 +168,7 @@ export function tileBusy(s, idx){ return (s.marches||[]).some(m => m.tile===idx)
 export function marchPower(s, troops, heroes, against){
   let p = 0;
   for(const k of Object.keys(TROOPS))
-    p += tierPower(s,k) * (troops[k]||0) * (1 + affinity(s, heroes, k)) * (1 + skillClass(s, heroes, k));
+    p += tierPower(s,k) * (troops[k]||0) * classMult(s, heroes, k);
   const total = Object.values(troops).reduce((a,b)=>a+(b||0), 0);
   const atCap = total > 0 && total >= marchCapacity(s, heroes);
   return Math.round(p
@@ -441,7 +441,7 @@ function resolveReturn(s, m, now){
   // and the ride itself counts toward their next star
   addDeeds(s, party, m.long ? 'longHaul' : (m.report||'').startsWith('⚔️') ? 'camp' : 'march', now);
   // the hunt is what brings companions in, and what teaches the one at your side
-  if(m.bond){ gainBond(s, m.bond, now); gainPetXp(s, m.bond); }
+  if(m.bond){ gainBond(s, m.bond, now, rand); gainPetXp(s, m.bond); }
   if(m.writ){ gainShield(s, 1); txt += ', and a sealed Writ of Peace'; }
   pushLog(s, txt+'.', m.loot ? 'win' : 'loss');
   showBanner(s, '🚩 March returned — '+m.report.toLowerCase(), m.loot?'win':'loss', now);

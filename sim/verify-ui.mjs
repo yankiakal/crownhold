@@ -1,0 +1,146 @@
+// Verification for the UI layer. Run from the repo root:  npm run verify:ui
+//
+// Until this existed, nothing checked rendering at all. `npm run build` only
+// proves the imports resolve, and verify-skills.mjs deliberately never touches
+// the DOM — so a render that threw, or printed "undefined", or said "spearmans",
+// would ship silently. That last one did: it took printing the march builder as
+// flat text to notice the game had been pluralising troop names by bolting an
+// "s" on the end.
+//
+// The approach is a stub DOM just rich enough for ui.js to run against, then a
+// full render() of every panel, then the column composer on its own.
+//
+// The composer needs a wrinkle. It is only reachable in the real app by tapping
+// a map tile, and it reads two module-local variables (which leaders are picked,
+// how many of each troop) that a tap sets. Rather than export test hooks from
+// shipped code, this copies src/ to a temp directory and appends the two exports
+// THERE. The copy is byte-identical apart from those lines, so what runs is the
+// real code — and the shipped bundle carries nothing that exists for a test.
+
+import { mkdtempSync, cpSync, appendFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+let pass = 0, fail = 0;
+const ok = (name, cond, note='') => { cond ? pass++ : fail++;
+  console.log((cond ? '  ✓ ' : '  ✗ ') + name + (note ? '  — ' + note : '')); };
+
+/* ── a DOM with just enough surface for ui.js and the isometric renderer ── */
+const ctx2d = new Proxy({}, { get:(t, k) => {
+  if(k === 'canvas') return { width:360, height:360 };
+  if(k === 'measureText') return () => ({ width:10 });
+  if(k === 'createLinearGradient' || k === 'createRadialGradient') return () => ({ addColorStop(){} });
+  if(k === 'getImageData') return () => ({ data:new Uint8ClampedArray(4) });
+  return typeof k === 'string' ? (() => {}) : undefined;
+}, set: () => true });
+
+const el = () => ({ style:{}, dataset:{}, classList:{ add(){}, remove(){}, toggle(){} },
+  appendChild(){}, addEventListener(){}, removeEventListener(){}, setAttribute(){},
+  querySelectorAll: () => [], querySelector: () => null, innerHTML:'', textContent:'',
+  width:360, height:360, parentNode:null, remove(){},
+  getBoundingClientRect: () => ({ width:360, height:360, left:0, top:0 }),
+  getContext: () => ctx2d });
+
+const nodes = {};
+globalThis.document = { createElement: el, body: el(), documentElement: el(),
+  querySelector: () => el(), querySelectorAll: () => [], addEventListener(){},
+  getElementById: id => (nodes[id] = nodes[id] || el()) };
+globalThis.window = { addEventListener(){}, removeEventListener(){},
+  matchMedia: () => ({ matches:false, addEventListener(){} }),
+  location:{ href:'', search:'' }, innerWidth:390, innerHeight:844, devicePixelRatio:1,
+  localStorage:{ getItem: () => null, setItem(){}, removeItem(){} },
+  requestAnimationFrame: () => 0, cancelAnimationFrame(){} };
+globalThis.localStorage = window.localStorage;
+globalThis.requestAnimationFrame = () => 0;
+globalThis.cancelAnimationFrame = () => {};
+globalThis.matchMedia = window.matchMedia;
+globalThis.addEventListener = () => {};
+globalThis.devicePixelRatio = 1;
+globalThis.ResizeObserver = class { observe(){} unobserve(){} disconnect(){} };
+
+/* ── the temp copy, with the composer and its two locals reachable ── */
+const dir = mkdtempSync(join(tmpdir(), 'crownhold-ui-'));
+cpSync(new URL('../src', import.meta.url), join(dir, 'src'), { recursive:true });
+appendFileSync(join(dir, 'src', 'ui.js'),
+  '\nexport { renderColumnComposer as _composer };' +
+  '\nexport function _pick(ids, want){ marchParty = ids.slice(); marchWant = want; }\n');
+const from = f => import(pathToFileURL(join(dir, 'src', f)).href);
+
+try {
+  const D  = await from('defs.js');
+  const ST = await from('state.js');
+  const UI = await from('ui.js');
+
+  /* A mid-game hold with a captain of every troop class, two seasons in so the
+     seasonal systems are live. Skills are left unequipped: writing them straight
+     into the array bypasses the legality gate, and an illegal skill makes the
+     figures on screen fiction. */
+  const now = D.SEASON_EPOCH + 2 * D.SEASON_MS;
+  const s = ST.freshState(now, 42);
+  s.seenIntro = true;
+  Object.assign(s.b, { townhall:20, command:30, academy:9, barracks:10,
+    range:8, stable:8, siegeyard:8, kitchen:10, farm:25, granary:10 });
+  s.tier = { spearman:5, archer:5, knight:5, ballista:5 };
+  s.t = { spearman:400, archer:200, knight:120, ballista:60 };
+  for(const id of ['marshal','gatekeeper','forager','steward'])
+    s.heroes[id] = { lvl:20, xp:0, stars:3, deeds:0, gear:{}, skills:[null,null,null] };
+  s.court = ['steward'];
+  s.now = now;
+  ST.store.s = s;
+
+  console.log('\n── every panel renders ──');
+  UI.render();
+  const full = (nodes.app && nodes.app.innerHTML) || '';
+  ok('render() produced a hold', full.length > 5000, full.length + ' chars');
+  ok('no "undefined" reached the page', !/undefined/.test(full));
+  ok('no "NaN" reached the page', !/NaN/.test(full));
+
+  /* ── the column composer: three captains, four classes ──
+     The party covers spearman/archer/knight and leaves the ballista uncovered,
+     with ballistae committed anyway. That is the exact case this UI exists to
+     explain, and the case a fourth march seat would have deleted. */
+  console.log('\n── the march builder explains the three-of-four choice ──');
+  UI._pick(['marshal','gatekeeper','forager'],
+           { spearman:120, archer:60, knight:40, ballista:30 });
+  const h = UI._composer(s);
+  const flat = h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+  ok('a coverage strip is drawn', /class="affrow"/.test(h));
+  ok('it counts the covered classes', /Captains cover.*>3\/4</s.test(h), (flat.match(/Captains cover \S+/)||[])[0]);
+  ok('a covered class is lit', /class="aff on"/.test(h));
+  ok('an uncovered class with troops in it is flagged', /class="aff bare"/.test(h));
+  ok('the covered troop rows carry their figure', (h.match(/class="led"/g)||[]).length === 3,
+     String((h.match(/class="led"/g)||[]).length) + ' of 3');
+  ok('the uncovered row says so', /class="unled">no captain/.test(h));
+  ok('and the cost is stated in words', /ride without a captain — no affinity/.test(flat));
+  ok('no "undefined" in the composer', !/undefined/.test(h));
+  ok('no "NaN" in the composer', !/NaN/.test(h));
+
+  /* Plurals. The bug this file was written to catch — the game used to append an
+     "s" to the singular, which is right for Archers and wrong for Spearmen and
+     Ballistae. So the test is "every troop declares a plural", not "every plural
+     is irregular": demanding irregularity would fail Archers, which is correct. */
+  console.log('\n── every troop declares its own plural ──');
+  for(const [k, d] of Object.entries(D.TROOPS))
+    ok(k + ' declares a plural', typeof d.plural === 'string' && d.plural.length > d.name.length - 2,
+       d.plural);
+  ok('nothing on screen says "spearmans"', !/spearmans/i.test(flat));
+  ok('nothing on screen says "ballistas"', !/ballistas/i.test(flat));
+  ok('the composer does say "ballistae"', /ballistae/i.test(flat));
+
+  /* With nobody picked the strip must still render, and claim nothing. */
+  console.log('\n── with no leaders picked it claims nothing ──');
+  UI._pick([], {});
+  const empty = UI._composer(s);
+  ok('strip still drawn', /class="affrow"/.test(empty));
+  ok('covers 0 of 4', />0\/4</.test(empty));
+  ok('no class is lit', !/class="aff on"/.test(empty));
+  ok('and no uncovered warning, since nothing was committed',
+     !/ride without a captain/.test(empty));
+} finally {
+  rmSync(dir, { recursive:true, force:true });
+}
+
+console.log('\n' + (fail ? '✗ ' + fail + ' FAILED, ' + pass + ' passed' : '✓ all ' + pass + ' passed') + '\n');
+process.exit(fail ? 1 : 0);

@@ -8,9 +8,10 @@
     "build": "vite build && node scripts/release.js",
     "sim": "node sim/sim.js",
     "verify": "node sim/verify-skills.mjs",
-    "check": "npm run build && npm run verify && npm run sim",
+    "check": "npm run build && npm run verify && npm run verify:ui && npm run sim",
     "server": "node server/server.js",
-    "deploy": "sh scripts/deploy.sh"
+    "deploy": "sh scripts/deploy.sh",
+    "verify:ui": "node sim/verify-ui.mjs"
   },
   "devDependencies": {
     "vite": "^6.0.0",

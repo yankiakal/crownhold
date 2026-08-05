@@ -86,7 +86,16 @@ export function setPetOut(s, id, now){
   s.petOut = (s.petOut === id) ? null : id;
   return true;
 }
-export function gainBond(s, n, now){
+/* rand is threaded in rather than defaulted at the point of use. It used to call
+   Math.random() directly here, which made the pet offer the one roll in the game
+   the simulator could not control — and because pets carry bonuses, a different
+   companion changed army power, which changed the bot's commitment threshold,
+   which changed the whole run. Two sim runs of identical code disagreed by two
+   Town Hall levels, so the sim was useless as a regression check and I could not
+   tell my own refactors from noise. An injection point that silently isn't used
+   is this project's oldest failure mode; sim/verify-skills.mjs now asserts this
+   one stays used. */
+export function gainBond(s, n, now, rand = Math.random){
   s.bond = (s.bond || 0) + n;
   const owned = Object.keys(s.pets || {}).length;
   const queued = (s.choiceQueue || []).filter(c => c.type === 'pet').length;
@@ -94,7 +103,7 @@ export function gainBond(s, n, now){
   const need = petBondNeed(owned + queued);
   if(s.bond >= need){
     s.bond -= need;
-    const opts = rollPetOffer(s, Math.random);
+    const opts = rollPetOffer(s, rand);
     if(opts.length){
       s.choiceQueue.push({ type:'pet', options:opts, reroll:1 });
       pushLog(s, '🐾 Something has been following the hunting party home — choose which.', 'gold');
@@ -195,6 +204,26 @@ export function affinity(s, heroes, troopKey){
   }
   return b;
 }
+/* Everything a party is worth to one troop class. Defined here rather than in the
+   UI because the march builder shows this number and marchPower fights with it —
+   two expressions would drift.
+
+   It COMPOSES: affinity and class skills are separate factors, so summing them
+   would overstate the total. That exact mistake made every skill label in the
+   game a lie once already.
+
+   The MULTIPLIER is the primitive; the lift is derived from it. Combat therefore
+   evaluates the exact expression it always did, and the label — the only place
+   that wants a percentage — does the subtraction. (I first defined the lift as
+   the primitive and had combat use 1 + lift, on the theory that the − 1 + 1 round
+   trip would cost a bit. It doesn't: the multiplier lives in [1, 2), where m − 1
+   is exact by Sterbenz, so both orderings are numerically identical. This one is
+   still the better ordering, because combat's arithmetic is then untouched by a
+   change made for the UI's benefit — but it is defensive, not load-bearing.) */
+export function classMult(s, heroes, troopKey){
+  return (1 + affinity(s, heroes, troopKey)) * (1 + skillClass(s, heroes, troopKey));
+}
+export function classLift(s, heroes, troopKey){ return classMult(s, heroes, troopKey) - 1; }
 
 /* ── skills ──
    Aggregated exactly like lead traits and court passives, so a skill needs no
