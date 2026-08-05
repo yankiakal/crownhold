@@ -16,6 +16,7 @@ import {
   heroCanLead, marchCapacity, fitColumn, bestLeaders, marchParty as partyOf,
   beastPower, beastBusy, marchSpeed,
   isleReady, rationCost, voyageTime, voyageBlockedBy, refPower,
+  tileReq, tileLocked, TILE_LVL_MAX,
   LONG_HAUL_WORK, LONG_HAUL_YIELD,
 } from './world.js';
 import {
@@ -1346,6 +1347,18 @@ function renderDetail(S){
     title = tt.icon+' '+tt.name+' '+TIERS[tile.lvl-1];
     if(tile.respawnAt){
       body += '<p class="d-warn">Worked out — regrows in '+ftime(tile.respawnAt-Date.now())+'.</p>';
+    }else if(tileLocked(S, tile)){
+      /* Stated as a requirement with a number, not a grey tile with no explanation.
+         The deep frontier is the late game's ground; a player should be able to see
+         what it is waiting for. */
+      body += '<p class="d-warn">Beyond your reach. Working '+tt.name+' '+TIERS[tile.lvl-1]
+        + ' needs <b>Town Hall '+tileReq(tile.lvl)+'</b> — yours is '+(S.b.townhall||0)+'.</p>'
+        + '<p class="d-row" style="opacity:.8">The frontier opens as the hold rises: every two Town Hall '
+        + 'levels reach one tier further out. Richer ground sits further from home, so it costs the ride as well.</p>';
+      if(tt.kind==='gather')
+        body += '<p class="d-delta">Would yield ~'+fmt(gatherYield(S,tile))+' '+tt.res+' a trip.</p>';
+      else if(tt.kind==='camp')
+        body += '<p class="d-delta">Held at ≈'+campPower(S,tile)+'.</p>';
     }else{
       body += '<p class="d-row">Distance '+tileDist(tile)+' — '+ftime(travel)+' each way.</p>';
       if(tt.kind==='gather')
@@ -1883,6 +1896,9 @@ function drawMap(S){
   const cv = document.getElementById('worldmap');
   if(!cv) return;
   const ctx = cv.getContext('2d'), C = 56;
+  // the canvas is scaled to fit 640px, so a 15-wide grid renders every glyph at
+  // ~76% — the icons are drawn larger to land at the same apparent size as before
+  const IF = Math.round(24 * 15 / MAP_W), LF = Math.max(9, Math.round(9 * 15 / MAP_W));
   ctx.clearRect(0,0,cv.width,cv.height);
   for(let y=0;y<MAP_H;y++) for(let x=0;x<MAP_W;x++){
     ctx.fillStyle = (x+y)%2 ? '#241d17' : '#221b15';
@@ -1898,10 +1914,14 @@ function drawMap(S){
       ctx.globalAlpha = 1;
       return;
     }
-    ctx.font = '24px serif';
+    const locked = tileLocked(S, t);
+    if(locked) ctx.globalAlpha = 0.34;         // visible, but plainly not yours yet
+    ctx.font = IF+'px serif';
     ctx.fillText(TILE_TYPES[t.type].icon, cx, cy-4);
-    ctx.fillStyle = '#d9a441'; ctx.font = '9px sans-serif';
-    ctx.fillText('I'.repeat(t.lvl), cx, cy+18);
+    // a numeral, not tally marks: 'I'.repeat(8) is eight glyphs wide in a 43px cell
+    ctx.fillStyle = locked ? '#9c8d77' : '#d9a441'; ctx.font = 'bold '+LF+'px sans-serif';
+    ctx.fillText('L'+t.lvl, cx, cy+18);
+    ctx.globalAlpha = 1;
     if(marchTargets.has(i)){
       ctx.strokeStyle = '#d9a441'; ctx.lineWidth = 2;
       ctx.strokeRect(t.x*C+3, t.y*C+3, C-6, C-6);
@@ -1913,15 +1933,15 @@ function drawMap(S){
     const d = BEASTS[b.species];
     if(!d) return;
     const cx = b.x*C+C/2, cy = b.y*C+C/2;
-    ctx.font = '24px serif';
+    ctx.font = IF+'px serif';
     ctx.fillText(d.icon, cx, cy-4);
-    ctx.fillStyle = '#c25a45'; ctx.font = '9px sans-serif';
-    ctx.fillText('I'.repeat(b.lvl), cx, cy+18);
+    ctx.fillStyle = '#c25a45'; ctx.font = 'bold '+LF+'px sans-serif';
+    ctx.fillText('L'+b.lvl, cx, cy+18);
     ctx.strokeStyle = hunted.has(i) ? '#d9a441' : 'rgba(194,90,69,.55)';
     ctx.lineWidth = hunted.has(i) ? 2 : 1;
     ctx.strokeRect(b.x*C+3, b.y*C+3, C-6, C-6);
   });
-  ctx.font = '28px serif';
+  ctx.font = Math.round(IF*1.15)+'px serif';
   ctx.fillText('🏰', CX*C+C/2, CY*C+C/2);
 }
 

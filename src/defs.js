@@ -266,7 +266,7 @@ export const BEAST_ROAM_MS = 5 * 60000;      // how often the herds move
    Without this the frontier became a conveyor belt: a bot farmed 281 of them in
    eight hours, which is not a hunt, it is a queue. */
 export const BEAST_RESPAWN_MS = 6 * 60000;
-export const BEAST_COUNT = 5;
+export const BEAST_COUNT = 7;   // 7 on 135 cells keeps the herd density of 5 on 77
 export const BEASTS = {
   boar:  {name:'Tusked Boar',      icon:'🐗', power:0.45, valor:8,  mxp:18, pet:1, blurb:'Bad-tempered and everywhere.'},
   wolf:  {name:'Ridgeback Wolf',   icon:'🐺', power:0.75, valor:12, mxp:26, pet:2, blurb:'Hunts in a pack; so should you.'},

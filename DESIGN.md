@@ -419,6 +419,37 @@ court skill does nothing at all — and ends with a sweep that fails the run and
 `npm run check` chains build → verify → verify:ui → sim, so a red test stops the
 chain before the simulator runs.
 
+### I reported a green check while the last step was crashing (v1.34)
+
+`npm run check` chains build → verify → verify:ui → sim. From **v1.31 to v1.33** the
+sim step crashed on every run, and I reported "check passes" three times.
+
+The bug: v1.31 threaded `rand` into a `gainBond()` call that lives in
+`resolveReturn()` — a function with no `rand` parameter. I had read a grep of line
+numbers and assumed the line sat inside `resolveArrival()`, which does take one. Every
+completed beast hunt threw a `ReferenceError`, **in the browser as well as the
+simulator**, and it shipped.
+
+The simulator caught it instantly. I never saw it, because I was filtering the output:
+
+    npm run check 2>&1 | grep -E "all [0-9]+ passed|FAILED|✗|index.html written"
+
+An uncaught exception matches none of those patterns. The two verify suites printed
+their green lines, the sim died after them, and I read the green and moved on. The
+`&&` chain did its job and returned non-zero; my grep threw that away.
+
+Three changes, in order of how much they matter:
+
+1. **`check` now ends with `== check complete ==`.** If that line is absent, something
+   died — which survives careless filtering, because the thing I look for is now
+   emitted only on total success rather than by each step individually.
+2. **A test that exercises a march from muster to homecoming** and fails loudly, rather
+   than requiring someone to read a stack trace in a log they filtered. Verified by
+   re-introducing the bug and watching it fail.
+3. The lesson under both: **narrowing output is a way of deciding in advance what
+   failure looks like.** A crash is the failure mode you did not anticipate, so it is
+   precisely what the filter removes. Read the tail of a build, not a grep of it.
+
 ### The simulator was lying, and that was worse than a bug (v1.31)
 
 While checking that a refactor had changed no numbers, the sim reported a
@@ -449,6 +480,53 @@ Three lessons, in order of how much they cost:
    the direction of my own recent change, which is the direction to be most
    suspicious of. Reproduce first, theorise second. The check that settled it took
    one command: run it twice, unchanged.
+
+### The frontier, deepened (v1.34) — and what Kingshot's map is actually for
+
+Researched Kingshot's map properly, and Whiteout Survival's, which is the same studio
+on the same engine and far better documented. Both run **1200×1200 ≈ 1.44M tiles** per
+kingdom, resource nodes at **levels 1–8**, richest toward the middle, with alliance
+territory claimed by banners.
+
+**Their map is that size because it has to hold the players.** Those coordinates are
+mostly empty ground whose job is to seat thousands of cities far enough apart that
+travel time and neighbourhood politics mean something — which is why teleports and
+territory claims exist. Ours seats nobody: the Frontier is single-player and the shared
+layer is realms and the Rift, which have no map at all. So copying the dimensions would
+buy exactly nothing.
+
+What was worth taking is the **ladder**, and two inversions:
+
+- **Level range.** Ours stopped at 3 on 18 tiles, so the map ran out of interesting
+  work by mid-game — the simulator's bot ground level-2 camps **187 times** in an
+  8-hour run. Now 40 tiles across levels 1–8 on a 15×9 grid.
+- **Richest at the centre → richest at the edge.** Their centre is contested, so
+  centre-outward is right for them. Our hold sits *at* the centre, so the same
+  gradient would put the best ground on the doorstep. Here `tileBase()` sets level
+  from distance, and travel time is the price of richness.
+- **Node level gated behind furnace level → gated behind Town Hall.** Taken directly,
+  and it closed a real hole: gather tiles carry no defence, so before this the only
+  cost of a level-8 node was the walk, and 90-minute runs were already hauling from
+  level 7 and 8 — skipping the near map entirely. `tileReq()` opens one tier every
+  two Town Hall levels, L1–L2 free, L8 at TH13.
+
+Measured, same bot, old map vs new: army 22,941 → 22,197, at-cap 55% in both, TH14 in
+both. **Income-neutral.** What changed is the shape: level-2 camps ×187 became a spread
+across L2/L4/L5/L7/L8, and the deepest camp taken rises with the hold — TH5→L2,
+TH9→L6, TH14→L8. That isolation mattered: my first read blamed the richer map for a
+55% at-cap figure that turned out to be the improved bot.
+
+Three fixes to the simulator were needed before it could measure any of this, and each
+was hiding a real distortion:
+
+- **The bot's safety gate compared raw army power to an enemy figure that ignored the
+  wall, blunting and the streak multiplier** — an enemy far stronger than the one that
+  actually arrives. As waves escalated the gate closed for good and the bot stopped
+  going out: the 4-hour and 8-hour runs reported *identical* frontier activity.
+- **It took the first camp it could beat, not the best**, so it always took the
+  nearest and weakest and the deep map went unvisited however strong it got.
+- **It started one march per tick and preferred a hunt**, so once beasts unlocked it
+  hunted essentially forever. Nobody with eight march slots plays that way.
 
 ### The renderer, and the limits of a stub DOM (v1.32)
 

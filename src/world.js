@@ -15,7 +15,22 @@ import {
   gainRes, gainValor, gainShield, gainMastery, pushLog, showBanner, fmt, ftime,
 } from './logic.js';
 
-export const MAP_W = 11, MAP_H = 7, CX = 5, CY = 3;
+/* The frontier. 15×9 with the hold at its centre — up from 11×7, which held only
+   18 tiles and topped out at level 3, so the map ran out of interesting work by
+   mid-game and the simulator's bot drifted to farming beasts instead.
+
+   Whiteout Survival and Kingshot (same studio, same engine) both run a 1200×1200
+   shared kingdom with resource nodes to level 8, richest toward the middle. Their
+   map is that size because it has to HOLD thousands of player cities; ours holds
+   nobody, so copying the dimensions would buy nothing. What is worth taking is the
+   LADDER: a node level range deep enough that the map stays relevant for months.
+
+   Their gradient is centre-outward, because the centre is contested. Ours has to be
+   inverted — the hold sits at the centre, so richest-at-the-centre would put the
+   best tiles on your doorstep. Here distance from home sets the level, and travel
+   time is the price of richness. See tileBase(). */
+export const MAP_W = 15, MAP_H = 9, CX = 7, CY = 4;
+export const TILE_LVL_MAX = 8;
 export const TRAVEL_MS_PER_TILE = 12000, GATHER_MS = 60000, RUIN_MS = 25000;
 export const RESPAWN_MS = 240000;
 /* The long haul: send a column out for hours and they work the node properly.
@@ -42,6 +57,37 @@ function mulberry32(a){
   };
 }
 
+/* A tile's level from where it sits: near the hold is poor and safe, the far edge
+   is rich and defended. This is the map's geography — the reason a march is a
+   decision rather than a button, since the good ground is the ground that costs an
+   hour to reach and a column strong enough to take it.
+
+   Kept as a pure function of position so it is stable: a worked-out tile regrows to
+   its own level rather than re-rolling, or the far map would slowly flatten into
+   the same porridge as the near map. */
+/* What the hold must be to work a tile of this level. Taken from Whiteout Survival
+   and Kingshot, where resource-node level is gated behind furnace/Town Center level
+   rather than behind the strength of the column you send.
+
+   Without it the deep map was free to a beginner: gather tiles carry no defence, so
+   the only cost of a level-8 node was the walk, and the simulator's 90-minute runs
+   were already hauling from level 7 and 8 — skipping the near map entirely. Camps are
+   gated by the same rule for one explanation rather than two: the frontier opens as
+   the hold rises. */
+export function tileReq(lvl){ return lvl <= 2 ? 1 : 2*lvl - 3; }   // L1–2 open at once, then L8 at TH13
+export function tileLocked(s, tile){ return (s.b.townhall || 0) < tileReq(tile.lvl); }
+
+export function tileBase(x, y){
+  /* Chebyshev, because tileDist() is Chebyshev and tileDist is what travel time is
+     billed on. A Euclidean curve here would have priced richness against a distance
+     the game does not actually charge for — and normalising per axis (my first
+     attempt) was worse still: the map is wider than it is tall, so a tile two cells
+     north read as "far" and got level 4 while a tile two cells east got level 2. */
+  const d = Math.max(Math.abs(x-CX), Math.abs(y-CY));
+  const t = Math.min(1, d / Math.max(CX, CY));
+  return Math.max(1, Math.min(TILE_LVL_MAX, Math.round(1 + (TILE_LVL_MAX-1) * Math.pow(t, 1.35))));
+}
+
 export function genWorld(seed){
   const rng = mulberry32(seed);
   const spots = [];
@@ -49,14 +95,40 @@ export function genWorld(seed){
     if(Math.abs(x-CX)<=1 && Math.abs(y-CY)<=1) continue; // keep the hold's doorstep clear
     spots.push({x,y});
   }
-  for(let i=spots.length-1; i>0; i--){ const j=Math.floor(rng()*(i+1)); [spots[i],spots[j]]=[spots[j],spots[i]]; }
-  const kinds = ['woods','woods','woods','woods','farmstead','farmstead','farmstead',
-                 'quarry','quarry','quarry','ironvein','ironvein',
-                 'camp','camp','camp','camp','ruin','ruin'];
-  const tiles = kinds.map((type,i)=>({
-    x:spots[i].x, y:spots[i].y, type,
-    lvl:1+Math.floor(rng()*3), respawnAt:0,
-  }));
+  const shuffle = a => { for(let i=a.length-1;i>0;i--){ const j=Math.floor(rng()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
+
+  /* Placement is STRATIFIED by distance, not uniformly random. Uniform placement
+     put almost nothing inside ring 3, because a ring at distance d holds ~8d cells —
+     so four fifths of the map is far, and four fifths of the tiles landed there. The
+     first build of this had exactly one tile below level 4, which would have left a
+     new hold with nothing it could take. Quotas per band instead. */
+  const band = d => d <= 3 ? 0 : d <= 5 ? 1 : 2;
+  const bands = [[], [], []];
+  for(const sp of shuffle(spots)) bands[band(Math.max(Math.abs(sp.x-CX), Math.abs(sp.y-CY)))].push(sp);
+  const QUOTA = [10, 14, 16];                       // near / middle / far — 40 tiles
+  const placed = [];
+  for(let b=0; b<3; b++) placed.push(...bands[b].slice(0, QUOTA[b]));
+
+  /* 40 tiles on 135 cells, up from 18 on 77 — denser as well as bigger, because a
+     map you have to hunt across for something to do reads as empty rather than large.
+     The kind list CYCLES rather than being shuffled, so every band gets a mix: a
+     shuffle could have handed the near band no camps at all, and camps are where the
+     early fighting is. */
+  const need = { woods:9, farmstead:8, quarry:6, ironvein:5, camp:9, ruin:3 };
+  const order = ['woods','camp','farmstead','quarry','ironvein','camp','farmstead','ruin'];
+  const kinds = [];
+  while(kinds.length < placed.length){
+    let any = false;
+    for(const k of order) if(need[k] > 0){ need[k]--; kinds.push(k); any = true; if(kinds.length >= placed.length) break; }
+    if(!any) break;
+  }
+
+  const tiles = placed.map(({x, y}, i) => {
+    const base = tileBase(x, y);
+    // ±1 of jitter, so two tiles the same distance out are not interchangeable
+    const lvl = Math.max(1, Math.min(TILE_LVL_MAX, base + (rng() < 0.34 ? (rng() < 0.5 ? -1 : 1) : 0)));
+    return { x, y, type: kinds[i] || 'woods', base, lvl, respawnAt:0 };
+  });
   return { seed, tiles, beasts: [], roamAt: 0 };
 }
 
@@ -201,9 +273,12 @@ export function bestLeaders(s, n = MARCH_HEROES){
 export function campPower(s, tile){
   return Math.round(refPower(s) * (0.55 + 0.3*tile.lvl));
 }
+/* Yield rises faster than linearly in the tile's level, because the cost of a far
+   tile is not just its defence — it is the travel time, which is linear in distance.
+   A level-8 node pays about 6× a level-1 one, against roughly 3× the round trip. */
 export function gatherYield(s, tile){
   const th = s.b.townhall;
-  const base = (35 + 18*tile.lvl) * th;
+  const base = (26 + 15*Math.pow(tile.lvl, 1.36)) * th;
   const scale = {wood:1, food:1, stone:0.55, iron:0.3}[TILE_TYPES[tile.type].res];
   return Math.round(base * scale);
 }
@@ -268,6 +343,7 @@ export function startMarch(s, idx, want, now, longHaul, heroes){
   s.now = now;
   const tile = s.world.tiles[idx];
   if(!tile || tile.respawnAt || tileBusy(s, idx)) return false;
+  if(tileLocked(s, tile)) return false;              // the hold is not ready for this ground
   if((s.marches||[]).length >= marchSlots(s)) return false;
   const party = (Array.isArray(heroes) ? heroes : (heroes ? [heroes] : []))
     .filter(Boolean).slice(0, MARCH_HEROES);
@@ -413,7 +489,12 @@ function resolveArrival(s, m, now, rand){
   }
 }
 
-function resolveReturn(s, m, now){
+/* rand reaches here because the pet offer needs it. It was added to the gainBond
+   call below in v1.31 without being added to this signature — the line lives in
+   resolveReturn, and I had read a grep of line numbers and assumed it was inside
+   resolveArrival, which does take rand. Every completed beast hunt threw a
+   ReferenceError from then on. */
+function resolveReturn(s, m, now, rand){
   let home = 0;
   for(const [k,n] of Object.entries(m.troops)){ s.t[k] += n; home += n; }
   // losses on the road are settled here, so the Infirmary can take its share
@@ -454,7 +535,7 @@ export function tickWorld(s, now, rand=Math.random){
   }
   for(let i = s.marches.length-1; i >= 0; i--){
     if(s.marches[i].resolved && now >= s.marches[i].homeAt){
-      resolveReturn(s, s.marches[i], now);
+      resolveReturn(s, s.marches[i], now, rand);
       s.marches.splice(i,1);
     }
   }
@@ -465,11 +546,16 @@ export function tickWorld(s, now, rand=Math.random){
   if(!s.world.beasts || (s.world.beasts.length < BEAST_COUNT && now >= (s.world.spawnAt || 0)))
     spawnBeasts(s, now, rand);
   if(now >= (s.world.roamAt || 0)) roamBeasts(s, now, rand);
-  // worked-out tiles regrow, sometimes richer
+  /* Worked-out tiles regrow to what that GROUND is worth, not to a fresh roll.
+     Re-rolling 1–3 everywhere used to quietly flatten the map: every rich far tile
+     became a poor one the first time it was worked, so the ladder existed only
+     until you climbed it once. */
   for(const t of s.world.tiles){
     if(t.respawnAt && now >= t.respawnAt){
       t.respawnAt = 0;
-      t.lvl = 1 + Math.floor(rand()*3);
+      const base = t.base || tileBase(t.x, t.y);
+      t.base = base;
+      t.lvl = Math.max(1, Math.min(TILE_LVL_MAX, base + (rand() < 0.34 ? (rand() < 0.5 ? -1 : 1) : 0)));
     }
   }
 }

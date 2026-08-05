@@ -316,6 +316,117 @@ console.log('\n── a pre-skills save is inert, not broken ──');
   }
 }
 
+/* ── the frontier ladder ──
+   The map went from 18 tiles at levels 1–3 to 40 at levels 1–8, with level gated
+   behind Town Hall the way Whiteout Survival and Kingshot gate resource nodes behind
+   furnace level. Two things have to hold or the deepening is a mirage: the near map
+   must stay usable by a beginner, and the deep map must actually be reachable rather
+   than decorative. */
+{
+  console.log('\n── the frontier is a ladder, open at the bottom ──');
+  const s = hold();
+  ok('the map is 40 tiles on ' + (W.MAP_W*W.MAP_H) + ' cells', s.world.tiles.length === 40,
+     String(s.world.tiles.length));
+  const lv = s.world.tiles.map(t => t.lvl);
+  ok('levels span the whole range', Math.min(...lv) <= 2 && Math.max(...lv) >= 7,
+     'L' + Math.min(...lv) + '–L' + Math.max(...lv));
+
+  /* Richness must track TRAVEL distance, since travel is what it costs. tileDist is
+     Chebyshev, so tileBase has to be too — a Euclidean curve priced richness against
+     a distance the game never charges for. */
+  let monotone = true;
+  for(let d = 1; d < Math.max(W.CX, W.CY); d++)
+    if(W.tileBase(W.CX + d, W.CY) > W.tileBase(W.CX + d + 1, W.CY)) monotone = false;
+  ok('level rises with distance from the hold', monotone,
+     [1,2,3,4,5,6,7].map(d => 'd'+d+'→L'+W.tileBase(W.CX+d, W.CY)).join(' '));
+
+  /* A brand-new hold must have work. The first build of this had exactly one tile
+     below level 4 — uniform placement puts four fifths of the tiles in the outer
+     rings, because a ring at distance d holds ~8d cells. */
+  const fresh = freshState(Date.now(), 42);
+  const open = fresh.world.tiles.filter(t => !W.tileLocked(fresh, t));
+  ok('a Town Hall 1 hold has real work waiting', open.length >= 5, open.length + ' of 40 tiles open');
+  const nearCamps = fresh.world.tiles.filter(t => t.type === 'camp' && W.tileDist(t) <= 3);
+  ok('and camps within reach to fight', nearCamps.length >= 2, nearCamps.length + ' near camps');
+
+  /* The gate must be total: every level reachable at some Town Hall, and the top of
+     the map reachable before the Town Hall runs out of levels. */
+  ok('level 8 unlocks at Town Hall ' + W.tileReq(W.TILE_LVL_MAX),
+     W.tileReq(W.TILE_LVL_MAX) <= D.BUILDINGS.townhall.max,
+     'TH max is ' + D.BUILDINGS.townhall.max);
+  /* Strictly rising from L3 up. L1 and L2 deliberately share Town Hall 1: gating the
+     second tier behind TH3 left a brand-new hold just TWO workable tiles out of forty,
+     which is not an opening, it is a wait. */
+  ok('the first two tiers are open immediately', W.tileReq(1) === 1 && W.tileReq(2) === 1);
+  let ladder = true;
+  for(let l = 4; l <= W.TILE_LVL_MAX; l++) if(W.tileReq(l) <= W.tileReq(l-1)) ladder = false;
+  ok('every tier above the second needs a higher hold than the last', ladder,
+     [1,2,3,4,5,6,7,8].map(l => 'L'+l+'→TH'+W.tileReq(l)).join(' '));
+
+  // and the gate is actually enforced, not merely advertised
+  const deep = fresh.world.tiles.find(t => t.lvl >= 6);
+  if(deep){
+    const idx = fresh.world.tiles.indexOf(deep);
+    fresh.b.townhall = 1;
+    ok('a locked tile refuses the march',
+       W.startMarch(fresh, idx, { spearman: 5 }, Date.now(), false, []) === false);
+  } else ok('a deep tile exists to test the gate with', false, 'none found');
+
+  /* Worked-out ground regrows to what that GROUND is worth. Re-rolling 1–3 flattened
+     the far map the first time it was touched. */
+  const t0 = s.world.tiles.find(t => t.lvl >= 5);
+  if(t0){
+    t0.respawnAt = 1; const wasBase = t0.base;
+    W.tickWorld(s, 2, () => 0.9);
+    ok('a rich tile regrows rich', t0.lvl >= wasBase - 1, 'base ' + wasBase + ' → L' + t0.lvl);
+  } else ok('a rich tile exists to regrow', false, 'none');
+}
+
+/* ── a march completes end to end ──
+   v1.31 threaded `rand` into a gainBond() call that lives in resolveReturn(), a
+   function with no rand parameter — so EVERY completed beast hunt threw a
+   ReferenceError, in the browser as well as the simulator, for three versions. The
+   simulator caught it immediately and I did not see it: I was grepping `npm run
+   check` output for "passed" and "FAILED", and an uncaught exception in the sim step
+   matches neither. The verify suites printed their green lines, the sim died after
+   them, and I read the green.
+
+   So the fix is not only the argument. It is a test that exercises the full
+   arrival→return path and FAILS rather than requiring someone to read a stack trace
+   in a log they filtered. */
+{
+  console.log('\n── a march runs from muster to homecoming ──');
+  const s = hold();
+  s.b.command = 30;
+  const fixed = () => 0.5;
+  W.spawnBeasts(s, s.now, fixed);
+  const beasts = (s.world.beasts || []).length;
+  ok('a herd is on the map', beasts > 0, beasts + ' beasts');
+
+  let threw = null, slain = 0;
+  try {
+    const party = ['marshal','gatekeeper','forager'];
+    const troops = { spearman: 60, archer: 40, knight: 30, ballista: 10 };
+    const started = W.startHunt(s, 0, troops, s.now, party);   // (s, bi, want, now, heroes)
+    ok('the hunt sets out', started !== false);
+    // run the clock past arrival and all the way home
+    for(let t = 1; t <= 3600; t++){
+      const ms = s.now + t * 1000;
+      L.tick(s, ms, 1, fixed);
+      W.tickWorld(s, ms, fixed);
+      if(!s.marches.length) break;
+    }
+    slain = s.beastsSlain || 0;
+  } catch(e){ threw = e; }
+
+  ok('nothing threw between muster and homecoming', !threw,
+     threw ? threw.constructor.name + ': ' + threw.message : 'clean');
+  ok('the column came home', s.marches.length === 0, s.marches.length + ' still out');
+  ok('the beast was accounted for', slain > 0, String(slain));
+  ok('and the hunt produced bond toward a companion', (s.bond || 0) > 0 || !!(s.choiceQueue||[]).length,
+     'bond ' + (s.bond || 0));
+}
+
 /* ── every roll obeys the injected rng ──
    gainBond() called Math.random() directly, so the pet offer was the one roll the
    simulator could not control. Pets carry bonuses, so a different companion moved

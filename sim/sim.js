@@ -28,6 +28,12 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
   const T = minutes*60;
   const ev = [];
   let idleBuild=0, cappedTime=0, valorSpent=0, prevTH=1, prevWon=0, prevLost=0;
+  /* Frontier activity, by tile level. Tracked because "the bot fought no camps" is
+     the exact shape the v1.19 disaster took — the frontier was mathematically
+     unwinnable for two commits and the only symptom was an absence in this output.
+     With levels now running to 8, an unreachable top of the ladder would look
+     identical, so the ladder gets counted rather than assumed. */
+  const campsAt = {}, gathersAt = {};
   const mm = t => String(Math.floor(t/60)).padStart(3,' ')+':'+String(t%60).padStart(2,'0');
   const note = (t,txt) => ev.push(mm(t)+'  '+txt);
 
@@ -88,7 +94,15 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
        which is not how anyone actually plays. 1.4x is still cautious (it keeps
        a comfortable margin over the next wave) but it does go out. */
     if(skilled && s.marches.length < W.marchSlots(s)){
-      const nextEnemy = L.wavePower(s.wave)*(s.wave%5===0?1.6:1)*1.12;
+      /* The safety gate now compares like with like. It used to weigh raw army power
+         against a wave figure that ignored the wall, the Watchtower's blunting and the
+         streak multiplier — i.e. against an enemy far stronger than the one that
+         actually arrives. As waves escalated the gate closed for good, and the bot
+         simply stopped going out: the 4-hour and 8-hour runs reported IDENTICAL
+         frontier activity, meaning every march happened in the first two hours. This
+         is the same expression resolveWave() fights with. */
+      const nextEnemy = L.wavePower(s.wave)*(s.wave%5===0?1.6:1)*1.12
+        * (1 - L.bluntMult(s)) * L.streakMult(s);
       if(L.armyPower(s) > 1.15*nextEnemy){
         let target = -1;
         // three leaders per column now, and they cap how many troops fit
@@ -96,18 +110,27 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
         // PvE only wounds, so a real player commits a proper column, not a token quarter
         const want = {}; for(const k of Object.keys(TROOPS)) want[k] = Math.floor(s.t[k]*0.6);
         const q = W.fitColumn(s, want, party).troops;
+        /* The RICHEST camp this column can take, not the first one in the array.
+           Taking the first meant always taking the nearest and weakest, so the deep
+           map went unvisited no matter how strong the hold got — and a level-8 camp
+           nobody ever attempts cannot be shown to be beatable. Real players push as
+           high as they can. */
+        const mine = W.marchPower(s, q, party, 'camp');
+        let bestLvl = -1;
         for(let i=0;i<s.world.tiles.length;i++){
           const tl = s.world.tiles[i];
           if(tl.respawnAt || W.tileBusy(s,i) || tl.type!=='camp') continue;
-          if(W.marchPower(s,q,party,'camp') > 1.5*W.campPower(s,tl)){ target=i; break; }
+          if(W.tileLocked && W.tileLocked(s, tl)) continue;  // the Town Hall gates the deep map
+          if(mine > 1.5*W.campPower(s,tl) && tl.lvl > bestLvl){ bestLvl = tl.lvl; target = i; }
         }
         if(target<0){
           const scarce = ['iron','stone','wood','food'].sort((a,b)=>s.res[a]-s.res[b])[0];
+          let rich = -1;
           for(let i=0;i<s.world.tiles.length;i++){
             const tl = s.world.tiles[i];
-            if(tl.respawnAt || W.tileBusy(s,i)) continue;
+            if(tl.respawnAt || W.tileBusy(s,i) || (W.tileLocked && W.tileLocked(s, tl))) continue;
             const tt = W.TILE_TYPES[tl.type];
-            if(tt.kind==='gather' && tt.res===scarce){ target=i; break; }
+            if(tt.kind==='gather' && tt.res===scarce && tl.lvl > rich){ rich = tl.lvl; target = i; }
           }
         }
         let beast = -1;
@@ -118,11 +141,27 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
         /* Camps pay nearly twice the loot; beasts pay bond, and bond is the only
            road to a companion. So the errand is chosen by what the hold is short
            of — which is also the decision a real player is making here. */
+        /* Send BOTH if there are slots for both. The bot used to start one march per
+           tick and prefer a hunt unless the hold was short of resources — so once
+           beasts unlocked it hunted essentially forever and the camp ladder went
+           unmeasured: an 8-hour run took three camps, all before the first beast
+           appeared. Nobody with eight march slots plays that way, and more to the
+           point a system the bot never touches is a system the simulator cannot
+           tell me anything about. */
+        const sendCamp = () => {
+          if(target < 0 || s.marches.length >= W.marchSlots(s)) return;
+          const tl = s.world.tiles[target];
+          const bag = tl.type === 'camp' ? campsAt : gathersAt;
+          if(W.startMarch(s, target, want, ms, false, party) !== false) bag[tl.lvl] = (bag[tl.lvl]||0)+1;
+        };
+        const sendHunt = () => {
+          if(beast < 0 || s.marches.length >= W.marchSlots(s)) return;
+          W.startHunt(s, beast, want, ms, party);
+        };
+        // camps pay nearly twice the loot; beasts pay bond, the only road to a
+        // companion. Short of stores, the loot goes first; otherwise the hunt does.
         const poor = s.res.food + s.res.wood < L.storageCap(s) * 0.5;
-        const preferCamp = poor && target >= 0;
-        if(!preferCamp && beast>=0) W.startHunt(s, beast, want, ms, party);
-        else if(target>=0) W.startMarch(s, target, want, ms, false, party);
-        else if(beast>=0) W.startHunt(s, beast, want, ms, party);
+        if(poor){ sendCamp(); sendHunt(); } else { sendHunt(); sendCamp(); }
       }
     }
     // a companion left in the kennel is a bonus left on the floor
@@ -267,6 +306,24 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
     +' | army '+L.armyPower(s)+' (upkeep '+L.upkeepPerSec(s).toFixed(1)+'/s, food prod '+L.prodPerSec(s,'food').toFixed(1)+'/s)'
     +' | mastery '+L.masteryLvl(s)+' | quests '+s.questIdx+'/24');
   console.log('-- buildings: '+Object.entries(s.b).map(([k,v])=>k+':'+v).join(' '));
+  const lvls = o => Object.keys(o).map(Number).sort((a,b)=>a-b);
+  const show = o => lvls(o).length ? lvls(o).map(l=>'L'+l+'×'+o[l]).join(' ') : 'none';
+  /* Reported alongside the deepest camp taken so a GATE is never mistaken for an
+     unwinnable fight — the two look identical in a bare count, and that confusion is
+     what let the frontier stay mathematically unbeatable for two commits in v1.19. */
+  const LMAX = W.TILE_LVL_MAX || 3;
+  let unlocked = 0, open8 = 0;
+  for(const t of s.world.tiles){ if(!(W.tileLocked && W.tileLocked(s, t))) unlocked++; if(t.lvl === LMAX) open8++; }
+  /* Derived by asking tileReq, not by restating its arithmetic. The restated version
+     said "TH14 unlocks to L7" in the same line that reported an L8 camp taken — two
+     formulas that have to agree, which is exactly the bug that mis-tiered seven
+     sprites earlier today. */
+  let cap = 1;
+  for(let l = 1; l <= LMAX; l++) if(W.tileReq(l) <= (s.b.townhall || 0)) cap = l;
+  console.log('-- frontier tiles: camps '+show(campsAt)+' | gathers '+show(gathersAt)
+    + ' | deepest taken L'+(lvls(campsAt).pop()||0)
+    + ' | TH'+(s.b.townhall||0)+' unlocks to L'+Math.min(cap, LMAX)
+    + ' ('+unlocked+'/'+s.world.tiles.length+' tiles open)');
   console.log('-- frontier: '+(s.beastsSlain||0)+' beasts slain, bond '+(s.bond||0)
     +' | pets: '+(Object.entries(s.pets||{}).map(([k,p])=>k+' L'+p.lvl).join(', ')||'none')
     +(s.petOut?' (out: '+s.petOut+')':''));
