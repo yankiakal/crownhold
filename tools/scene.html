@@ -1,0 +1,38 @@
+<!-- The renderer's test bench. `npm run shoot` serves this and screenshots it in
+     headless Chrome, because a stub-DOM test cannot see a pixel: it proved the scene
+     rendered without throwing while roofs swallowed the walls, trees drew underneath
+     the buildings that hid them, and every future building site was a mud patch.
+     Query: ?lvl=N raises every building, ?empty=1 a new hold, ?threat=1 raiders at
+     the gate, ?building=1 scaffolding up. -->
+<!doctype html><html><head><meta charset="utf-8"><style>
+  html,body{margin:0;background:#171310}
+  .wrap{width:600px;padding:8px}
+  canvas{display:block;width:100%}
+  h3{color:#d9a441;font:12px system-ui;margin:6px 0 2px}
+</style></head><body>
+<div class="wrap"><h3 id="cap"></h3><canvas id="c"></canvas></div>
+<script type="module">
+import { freshState, store } from '/src/state.js';
+import { mountScene } from '/src/iso.js';
+import * as D from '/src/defs.js';
+
+const q = new URLSearchParams(location.search);
+const lvl = +(q.get('lvl') || 12);
+const now = D.SEASON_EPOCH + 2 * D.SEASON_MS;
+const s = freshState(now, 42);
+s.seenIntro = true;
+// raise every building to the requested level, capped by its own max
+for(const k of Object.keys(D.BUILDINGS)) s.b[k] = Math.min(lvl, D.BUILDINGS[k].max);
+s.b.townhall = Math.min(lvl, D.BUILDINGS.townhall.max);
+if(q.get('empty')) for(const k of Object.keys(D.BUILDINGS)) s.b[k] = k === 'townhall' ? 2 : 0;
+if(q.get('building')) s.bq = { key:'library', lvl:s.b.library + 1, endsAt: Date.now() + 6e5, total: 9e5 };
+s.res = { food:9e5, wood:9e5, stone:9e5, iron:9e5, steel:9e5, runestone:9e5, rations:500, trueore:9, truegold:2 };
+s.nextWave = Date.now() + (q.get('threat') ? 6000 : 6e5);
+s.wave = 40;
+s.now = now;
+store.s = s;
+document.getElementById('cap').textContent =
+  (q.get('empty') ? 'a new hold' : 'every building at level ' + lvl) + (q.get('threat') ? ' · raiders at the gate' : '');
+mountScene(document.getElementById('c'), store);
+window.__ready = true;
+</script></body></html>

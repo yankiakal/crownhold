@@ -129,6 +129,38 @@ try {
   ok('nothing on screen says "ballistas"', !/ballistas/i.test(flat));
   ok('the composer does say "ballistae"', /ballistae/i.test(flat));
 
+  /* ── every building has somewhere to stand ──
+     kitchen and crucible shipped in v1.28 with no entry in PLOTS and none in
+     LOOK, so drawBuilding() returned early and both were INVISIBLE in the hold
+     for three versions: buildable, producing, and simply not drawn. No error, no
+     log line, just an absence — the failure mode this project keeps repeating.
+     The scene is data-driven from these two tables, so the test is one loop. */
+  console.log('\n── the scene can draw every building ──');
+  const ISO = await from('iso.js');
+  const noPlot = Object.keys(D.BUILDINGS).filter(k => k !== 'wall' && !ISO.PLOTS[k]);
+  const noLook = Object.keys(D.BUILDINGS).filter(k => k !== 'wall' && !ISO.LOOK[k]);
+  ok('every building has a plot', noPlot.length === 0, noPlot.join(', ') || 'all placed');
+  ok('every building has a look', noLook.length === 0, noLook.join(', ') || 'all styled');
+  ok('the wall is deliberately plotless', ISO.PLOTS.wall === null);
+
+  // two buildings must never share a tile, or one silently hides the other
+  const seen = new Map(), clashes = [];
+  for(const [k, p] of Object.entries(ISO.PLOTS)){
+    if(!p) continue;
+    const at = p[0] + ',' + p[1];
+    if(seen.has(at)) clashes.push(seen.get(at) + ' & ' + k + ' both on ' + at);
+    seen.set(at, k);
+  }
+  ok('no two buildings share a plot', clashes.length === 0, clashes.join('; ') || 'all distinct');
+  // and every plot must be inside the walls, not under them
+  const outside = Object.entries(ISO.PLOTS).filter(([, p]) => p &&
+    (p[0] < 1 || p[1] < 1 || p[0] > 7 || p[1] > 7)).map(([k]) => k);
+  ok('every plot is inside the wall', outside.length === 0, outside.join(', ') || 'all within');
+
+  /* Materials are what stop every building being the same box in a new colour. */
+  const noMat = Object.entries(ISO.LOOK).filter(([, l]) => !l.mat).map(([k]) => k);
+  ok('every look names a wall material', noMat.length === 0, noMat.join(', ') || 'all textured');
+
   /* With nobody picked the strip must still render, and claim nothing. */
   console.log('\n── with no leaders picked it claims nothing ──');
   UI._pick([], {});

@@ -441,6 +441,35 @@ Three lessons, in order of how much they cost:
    suspicious of. Reproduce first, theorise second. The check that settled it took
    one command: run it twice, unchanged.
 
+### The renderer, and the limits of a stub DOM (v1.32)
+
+Asked to spend the effort on the procedural renderer rather than start a sprite
+pipeline. Full write-up in GRAPHICS.md; the transferable lessons:
+
+**The performance ceiling was the art ceiling.** The scene redrew entirely at
+60fps, so every surface had to be cheap, and cheap looks like boxes. Splitting it
+into a cached static layer (ground, wall, buildings — invalidated only by a level,
+the threat state, the skin or a resize) and a dynamic pass (smoke, flags, folk,
+badges) did not make the old picture faster; it made a better picture affordable.
+Measured over a run: the static layer rebuilt **once**.
+
+**A test that cannot see cannot check a renderer.** `verify-ui.mjs` runs against a
+stub DOM whose canvas context discards everything, so it happily proved the scene
+rendered while three things were badly wrong — two buildings invisible since v1.28,
+trees drawn underneath the buildings that hid them, and a mud patch on every future
+building site. `npm run shoot` now screenshots six states in headless Chrome.
+Anything whose output is *looked at* needs an instrument that looks.
+
+**And it caught my own bad geometry.** I hipped every roof, reasoned that it was
+right, and the first screenshot showed a village of coloured plates on stumps — a
+hip roof over a square footprint projects, in 2:1 iso, as a pyramid wider than the
+building it sits on. No amount of reading the code would have told me that.
+
+I also reported a frame rate from headless Chrome before noticing that
+`--virtual-time-budget` runs a virtual clock, so the figure meant nothing. The
+cache-hit count was measurable and the fps was not; only one of them belongs in
+this document.
+
 ### `verify-ui.mjs` — because nothing checked rendering (v1.31)
 
 `npm run build` proves the imports resolve. It does not notice a render that

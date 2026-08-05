@@ -11,7 +11,8 @@
     "check": "npm run build && npm run verify && npm run verify:ui && npm run sim",
     "server": "node server/server.js",
     "deploy": "sh scripts/deploy.sh",
-    "verify:ui": "node sim/verify-ui.mjs"
+    "verify:ui": "node sim/verify-ui.mjs",
+    "shoot": "sh scripts/shoot.sh"
   },
   "devDependencies": {
     "vite": "^6.0.0",
