@@ -199,6 +199,21 @@ export async function bossStrike(){
   await refreshRealm();
   return d;
 }
+export async function rallyCall(host){
+  const d = await post('/api/rally/call', { token: session.token, host });
+  await refreshRealm();
+  return d;
+}
+export async function rallyJoin(params){
+  const d = await post('/api/rally/join', { token: session.token, ...params });
+  await refreshRealm();
+  return d;
+}
+export async function rallyLaunch(){
+  const d = await post('/api/rally/launch', { token: session.token });
+  await refreshRealm();
+  return d;
+}
 export async function landmarkHelp(id){
   const d = await post('/api/landmark/help', { token: session.token, id });
   await refreshRealm();

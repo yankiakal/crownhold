@@ -18,10 +18,11 @@ import { join, dirname, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
-import { tick, armyPower, masteryLvl, upkeepPerSec, gainValor, gainMastery, pushLog } from '../src/logic.js';
+import { tick, armyPower, masteryLvl, upkeepPerSec, gainValor, gainMastery, pushLog,
+         takeCasualties, capFor } from '../src/logic.js';
 import { SEASON_MS as DEFAULT_SEASON_MS, SEASON_EPOCH, SEASON_ARCS,
          seasonNo as defSeasonNo, seasonEndsIn as defSeasonEndsIn } from '../src/defs.js';
-import { tickWorld } from '../src/world.js';
+import { tickWorld, fitColumn, marchPower, bestLeaders } from '../src/world.js';
 import { freshState, applyOffline, migrate } from '../src/state.js';
 import { applyAction, isGameAction } from '../src/actions.js';
 import {
@@ -292,6 +293,123 @@ function bossFor(tag, now){
            closesIn: open ? BOSS_WINDOW - (now % BOSS_EVERY) : 0 };
 }
 
+/* ── rallies: the Great Hosts ──
+   The alliance boss is an ASYNCHRONOUS pile-on — everyone strikes when they can
+   and damage accumulates. A rally is the other thing entirely, and the thing
+   this genre is actually social for: one member calls it, a muster window opens,
+   others commit real columns, and it launches as a single combined attack.
+   "Rally in five minutes" is the sentence that makes an alliance a team rather
+   than a help button.
+
+   The target is a Great Host — the Unpaid mustering in force, far past what one
+   hold can meet. It is deliberately PvE: rallying players would make farming
+   organised, and nothing in Crownhold is allowed to do that. Troops committed to
+   a rally leave home and cannot defend, which is the whole cost; they come back
+   wounded rather than dead, as everywhere else in the PvE game. */
+const MUSTER_MS = Number(process.env.MUSTER_MS) || 5 * 60 * 1000;
+const RALLY_CD = Number(process.env.RALLY_CD) || 20 * 60 * 1000;
+const HOSTS = [
+  { id:'column',  name:'The Unpaid Column',   icon:'🏴', mult:1.8, blurb:'A wage-column three hundred strong, come to collect.' },
+  { id:'outriders',name:'The Ashen Outriders', icon:'🐎', mult:2.4, blurb:'Horse off the burned country. They do not stop to parley.' },
+  { id:'engines', name:'The Siege Train',     icon:'⚙️', mult:3.0, blurb:'They brought engines. Someone told them about your wall.' },
+  { id:'warhost', name:'The Hallowmere Host', icon:'💀', mult:4.0, blurb:'The whole grievance, in one place, at last.' },
+];
+const hostById = id => HOSTS.find(h => h.id === id);
+
+/* What a member can actually bring to a rally: one full column under their best
+   three captains. NOT their whole army — a rally is fought with columns, and
+   columns are capped by their leaders. Scaling the host on total army power made
+   every host unreachable no matter how many people committed, which is a quiet
+   way to make a whole system pointless. */
+function memberColumn(m){
+  const party = bestLeaders(m.state, 3);
+  const want = {};
+  for(const k of Object.keys(m.state.t)) want[k] = m.state.t[k];
+  const fit = fitColumn(m.state, want, party);
+  return marchPower(m.state, fit.troops, party);
+}
+
+/* A Great Host is priced in columns: at 1.8x to 4.0x the average member's
+   column, the four tiers need roughly two to four people to answer the horn.
+   The floor is applied BEFORE the multiplier so the tiers stay distinguishable
+   for a young alliance instead of collapsing onto one number. */
+function hostPower(tag, mult){
+  const a = db.alliances[tag];
+  if(!a || !a.members.length) return 0;
+  const total = a.members.reduce((t,n) => {
+    const m = db.users[n.toLowerCase()];
+    return t + (m ? memberColumn(m) : 0);
+  }, 0);
+  return Math.round(Math.max(60, total / a.members.length) * mult);
+}
+
+function rallyView(tag, now){
+  const r = tag && db.rallies && db.rallies[tag];
+  if(!r) return null;
+  const h = hostById(r.host) || HOSTS[0];
+  const committed = Object.values(r.joins).reduce((t,j) => t + j.power, 0);
+  return {
+    host: h.id, name: h.name, icon: h.icon, blurb: h.blurb,
+    caller: r.caller, power: r.power, committed,
+    joins: Object.entries(r.joins).map(([name,j]) => ({ name, power: j.power, troops: j.troops })),
+    launchesIn: Math.max(0, r.launchAt - now),
+    resolved: !!r.resolved,
+  };
+}
+
+/* Resolution is lazy, like everything else here — but it must be checked on
+   EVERY request, not just rally endpoints, or a rally nobody happens to poll
+   would leave its joiners' troops in limbo indefinitely. */
+function resolveRallies(now){
+  if(!db.rallies) return;
+  for(const [tag, r] of Object.entries(db.rallies)){
+    if(r.resolved || now < r.launchAt) continue;
+    const h = hostById(r.host) || HOSTS[0];
+    const joins = Object.entries(r.joins);
+    const committed = joins.reduce((t,[,j]) => t + j.power, 0);
+    const won = committed >= r.power;
+    const total = committed || 1;
+    for(const [name, j] of joins){
+      const m = db.users[name.toLowerCase()];
+      if(!m) continue;
+      // the column comes home; a host wounds, it does not kill
+      const lossFrac = won ? 0.10 : 0.28;
+      let hurt = 0;
+      for(const [k,n] of Object.entries(j.troops)){
+        const l = Math.round(n * lossFrac);
+        m.state.t[k] = (m.state.t[k] || 0) + n;
+        const res = takeCasualties(m.state, k, l, true);
+        hurt += res.hurt + res.dead;
+      }
+      const share = j.power / total;
+      if(won){
+        gainValor(m.state, Math.round(60 + 240 * share));
+        gainMastery(m.state, Math.round(180 + 450 * share), now);
+        m.state.shields = Math.min((m.state.shields || 0) + 1, 9);
+        for(const [res, amt] of Object.entries({ food:1400, wood:1400, stone:600, iron:300 }))
+          m.state.res[res] = Math.min((m.state.res[res] || 0) + Math.round(amt * (0.4 + share)), capFor(m.state, res));
+        pushLog(m.state, h.icon+' '+h.name+' is broken by the rally — '+Math.round(share*100)
+          +'% of the muster was yours.'+(hurt?' '+hurt+' came back wounded.':''), 'gold');
+      }else{
+        gainValor(m.state, 12);
+        gainMastery(m.state, 40, now);
+        pushLog(m.state, h.icon+' The rally on '+h.name+' fell short ('+fmtNum(committed)+' against '
+          +fmtNum(r.power)+'). Your column is home.'+(hurt?' '+hurt+' wounded.':''), 'loss');
+      }
+      m.state.rallyReady = now + RALLY_CD;
+    }
+    const a = db.alliances[tag];
+    pushMsg(db.chat.alliance[tag] ||= [], '—', won
+      ? h.icon+' '+h.name+' is down. '+joins.length+' answered the horn.'
+      : h.icon+' The rally on '+h.name+' fell short — '+fmtNum(committed)+' of '+fmtNum(r.power)+' needed.');
+    if(won) pushMsg(db.chat.state, '—', h.icon+' '+(a?a.name:tag)+' broke '+h.name+'.');
+    delete db.rallies[tag];
+    markDirty();
+  }
+}
+const fmtNum = n => n >= 10000 ? (n/1000).toFixed(1)+'k' : String(Math.round(n));
+const humanMs = ms => ms >= 60000 ? Math.round(ms/60000)+'m' : Math.round(ms/1000)+'s';
+
 /* ── seasons ──
    A fortnight. At rollover the standings are frozen, titles are handed out, and
    Laurels drift halfway back to 1000 — a soft reset, so a season's champion
@@ -475,6 +593,12 @@ function serveStatic(req, res, urlPath){
 async function api(req, res, url){
   const path = url.pathname;
   const now = Date.now();
+
+  /* Rallies resolve here, on EVERY request, rather than in the rally endpoints.
+     A rally holds real troops out of their owners' holds, so if resolution only
+     ran when someone happened to poll the rally, an alliance that all logged off
+     mid-muster would leave those columns stranded indefinitely. */
+  resolveRallies(now);
 
   if(path === '/api/health') return send(res, 200, { ok:true, players:Object.keys(db.users).length });
 
@@ -762,6 +886,9 @@ async function api(req, res, url){
     return send(res, 200, {
       landmarks: realmView(now),
       boss: bossFor(u.alliance, now),
+      rally: rallyView(u.alliance, now),
+      musterMs: MUSTER_MS,
+      hosts: HOSTS.map(h => ({ ...h, power: hostPower(u.alliance, h.mult) })),
       season: {
         no: seasonNo(now), endsIn: seasonEndsIn(now),
         arc: SEASON_ARCS[seasonNo(now)] || null,
@@ -845,6 +972,65 @@ async function api(req, res, url){
     }
     if(helped) markDirty();
     return send(res, 200, { helped, landmarks: realmView(now) });
+  }
+
+  if(path === '/api/rally/call'){
+    if(!u.alliance) return send(res, 400, { error:'Only an alliance can raise a rally.' });
+    db.rallies ||= {};
+    if(db.rallies[u.alliance]) return send(res, 400, { error:'Your alliance is already mustering.' });
+    if((u.state.rallyReady || 0) > now)
+      return send(res, 429, { error:'Your hold is still recovering from the last rally.' });
+    const h = hostById(String(body.host || '')) || HOSTS[0];
+    const power = hostPower(u.alliance, h.mult);
+    db.rallies[u.alliance] = {
+      host: h.id, caller: u.name, power,
+      joins: {}, launchAt: now + MUSTER_MS, resolved: false,
+    };
+    const a = db.alliances[u.alliance];
+    pushMsg(db.chat.alliance[u.alliance] ||= [], '—',
+      h.icon+' '+u.name+' calls a rally on '+h.name+' — '+fmtNum(power)
+      +' needed, muster closes in '+humanMs(MUSTER_MS)+'. Commit a column.');
+    markDirty();
+    return send(res, 200, { rally: rallyView(u.alliance, now), ...publicState(u) });
+  }
+
+  if(path === '/api/rally/join'){
+    if(!u.alliance) return send(res, 400, { error:'Only an alliance can join a rally.' });
+    const r = db.rallies && db.rallies[u.alliance];
+    if(!r) return send(res, 400, { error:'No rally is mustering.' });
+    if(now >= r.launchAt) return send(res, 400, { error:'The muster has closed.' });
+    if(r.joins[u.name]) return send(res, 400, { error:'Your column has already ridden out.' });
+    advance(u, now);
+    // the same column rules as a march: three captains, and they cap the size
+    const party = String(body.heroes || '').split(',').filter(Boolean).slice(0, 3)
+      .filter(id => u.state.heroes[id]);
+    const want = {};
+    for(const k of Object.keys(u.state.t)) want[k] = Number(body['t_'+k]) || 0;
+    const fit = fitColumn(u.state, want, party);
+    if(!fit.total) return send(res, 400, { error:'You sent nobody.' });
+    for(const [k,n] of Object.entries(fit.troops)) u.state.t[k] -= n;
+    r.joins[u.name] = {
+      troops: fit.troops,
+      power: marchPower(u.state, fit.troops, party),
+    };
+    const h = hostById(r.host) || HOSTS[0];
+    const committed = Object.values(r.joins).reduce((t,j) => t + j.power, 0);
+    pushMsg(db.chat.alliance[u.alliance] ||= [], '—',
+      u.name+' commits '+fit.total+' troops ('+fmtNum(committed)+'/'+fmtNum(r.power)+').');
+    pushLog(u.state, h.icon+' Your column rides to the rally on '+h.name+'. They cannot defend the wall until it resolves.');
+    markDirty();
+    return send(res, 200, { rally: rallyView(u.alliance, now), ...publicState(u) });
+  }
+
+  if(path === '/api/rally/launch'){
+    const r = u.alliance && db.rallies && db.rallies[u.alliance];
+    if(!r) return send(res, 400, { error:'No rally is mustering.' });
+    if(r.caller !== u.name) return send(res, 403, { error:'Only the caller may send it early.' });
+    if(!Object.keys(r.joins).length) return send(res, 400, { error:'Nobody has committed a column yet.' });
+    r.launchAt = now;
+    resolveRallies(now);
+    advance(u, now);
+    return send(res, 200, { rally: rallyView(u.alliance, now), ...publicState(u) });
   }
 
   if(path === '/api/boss/strike'){

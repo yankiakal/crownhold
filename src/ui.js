@@ -508,6 +508,57 @@ function renderDaily(S){
   return h;
 }
 
+/* Rallies: the synchronous ritual. One member calls, the muster window opens,
+   everyone commits a real column, and it goes as one attack. */
+function renderRally(S){
+  if(!net.isOnline()) return '';
+  const d = net.realmData();
+  if(!d || !d.hosts) return '';
+  const r = d.rally;
+  const me = net.accountName();
+  let h = '<section class="panel"><h2>The Horn <span style="letter-spacing:.05em">'
+    + (r ? 'mustering — '+ftime(r.launchesIn) : 'no rally called')+'</span></h2>';
+
+  if(!r){
+    h += '<div class="stat-note">A Great Host is past what one hold can meet. Call a rally, and your alliance '
+      + 'has '+ftime(d.musterMs || 300000)+' to commit columns before it rides. Troops in a rally cannot defend your wall — '
+      + 'and they come home wounded, never dead.</div>';
+    if((S.rallyReady||0) > Date.now())
+      h += '<div class="stat-note">Your hold is still recovering — '+ftime(S.rallyReady-Date.now())+'.</div>';
+    for(const host of d.hosts)
+      h += '<div class="trow"><span>'+host.icon+'</span><span class="tname">'+host.name+'</span>'
+        + '<span class="tmeta">'+host.blurb+'</span><span class="spacer"></span>'
+        + '<span class="count">'+fmt(host.power)+'</span>'
+        + '<button data-act="rallyCall" data-key="'+host.id+'" '
+        + (((S.rallyReady||0) > Date.now())?'disabled':'')+'>Sound the horn</button></div>';
+    return h + '</section>';
+  }
+
+  const pct = Math.min(100, 100*r.committed/Math.max(1,r.power));
+  const mine = r.joins.find(j => j.name === me);
+  h += '<div class="stat-note">'+r.icon+' <b>'+r.name+'</b> — '+r.blurb+'<br>'
+    + '<b>'+fmt(r.committed)+' / '+fmt(r.power)+'</b> mustered · called by '+r.caller+'</div>'
+    + '<div class="bar'+(r.committed>=r.power?'':' threat-fill')+'" style="margin:.2rem 0 .5rem"><i style="width:'+pct+'%"></i></div>';
+  for(const j of r.joins)
+    h += '<div class="trow'+(j.name===me?' mine':'')+'"><span class="tname">'+j.name+'</span>'
+      + '<span class="tmeta">'+Object.values(j.troops).reduce((a,b)=>a+b,0)+' troops</span>'
+      + '<span class="spacer"></span><span class="count">'+fmt(j.power)+'</span></div>';
+  if(mine){
+    h += '<div class="stat-note">Your column has ridden out. It comes home when the rally resolves.</div>';
+  }else{
+    h += renderColumnComposer(S);
+    const fit = fitColumn(S, marchWant, marchParty);
+    h += '<button class="primary" data-act="rallyJoin" '+columnAttrs()+(fit.total?'':' disabled')+'>'
+      + (fit.total ? '🏹 Commit '+fit.total+' troops' : 'Choose troops to commit')+'</button>';
+  }
+  if(r.caller === me && r.joins.length)
+    h += '<button data-act="rallyLaunch" style="margin-top:.4rem">Send it now, without waiting</button>';
+  h += '<p style="font-size:.68rem;font-family:var(--sans);color:var(--ink-dim);margin-top:.45rem">'
+    + 'Rallies only ever face the Unpaid. Organising an attack on another player would make farming efficient, '
+    + 'and nothing here is allowed to do that.</p>';
+  return h + '</section>';
+}
+
 function renderBoss(S){
   if(!net.isOnline()) return '';
   const d = net.realmData();
@@ -1566,7 +1617,7 @@ export function render(){
   app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
     + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderPets(S) + renderRegalia(S) + renderSpoils(S)
-      + renderDaily(S) + renderEvent(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
+      + renderDaily(S) + renderEvent(S) + renderRally(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
       + renderAchievements(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
   fx.innerHTML = renderFx(S) + renderLore(S)
@@ -1670,6 +1721,21 @@ const VIEW_ACTIONS = {
   landmarkHelp: b => { net.landmarkHelp(b.dataset.key).then(render).catch(()=>{}); },
   bossStrike: () => {
     net.bossStrike()
+      .then(d => { if(d.state) store.s = d.state; render(); })
+      .catch(e => { acctMsg = e.message; acctOpen = true; renderAccount(); });
+  },
+  rallyCall: b => {
+    net.rallyCall(b.dataset.key)
+      .then(d => { if(d.state) store.s = d.state; render(); })
+      .catch(e => { acctMsg = e.message; acctOpen = true; renderAccount(); });
+  },
+  rallyJoin: b => {
+    net.rallyJoin(paramsOf(b))
+      .then(d => { if(d.state) store.s = d.state; marchParty = []; marchWant = {}; render(); })
+      .catch(e => { acctMsg = e.message; acctOpen = true; renderAccount(); });
+  },
+  rallyLaunch: () => {
+    net.rallyLaunch()
       .then(d => { if(d.state) store.s = d.state; render(); })
       .catch(e => { acctMsg = e.message; acctOpen = true; renderAccount(); });
   },

@@ -250,6 +250,37 @@ Regalia and all 32 heroes. Measured: a full Regalia is ~10 hours of exclusive
 forge time; kitting an entire roster is several hundred. Runestone enters at
 tier 6, so early gear never blocks on the Runeworks (TH22).
 
+### Rallies: the Great Hosts (v1.25)
+
+The alliance boss is an **asynchronous** pile-on — everyone strikes when they
+can, damage accumulates. A rally is the other thing entirely, and the thing this
+genre is actually social for: one member calls it, a muster window opens, others
+commit **real columns**, and it launches as a single combined attack. *"Rally in
+five minutes"* is the sentence that turns an alliance from a help button into a
+team.
+
+Four Great Hosts, priced at 1.8× / 2.4× / 3.0× / 4.0× the average member's
+column — so the tiers need roughly **two to four people to answer the horn**.
+Committed troops leave home and cannot defend, which is the whole cost. They come
+back wounded, never dead, like all PvE. Rewards split by share of the muster,
+with a Writ for everyone who rode.
+
+**Rallies only ever face the Unpaid.** Organised attacks on other players would
+make farming efficient, and nothing in Crownhold is allowed to do that.
+
+Two bugs worth recording from building it:
+
+- **Hosts were priced against whole armies.** A member's rally contribution is a
+  *column*, capped by their leaders at ~198 troops — perhaps 40% of their army
+  power. Pricing the host on `armyPower` made every host unreachable no matter
+  how many people committed: two fully-committed members mustered 28 against a
+  host needing 3,492. Hosts are now priced in columns (`memberColumn`), and the
+  same test musters 2,658 against 2,392 — a win that needed both of them.
+- **Resolution had to move out of the rally endpoints.** A rally holds real troops
+  out of their owners' holds. If it only resolved when someone polled the rally,
+  an alliance that all logged off mid-muster would leave those columns stranded
+  indefinitely. `resolveRallies(now)` now runs at the top of *every* request.
+
 ### Beasts and companions (v1.24)
 
 **Beasts roam.** Camps sit on a node and wait; the herds move every five minutes
