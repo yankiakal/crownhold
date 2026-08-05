@@ -491,7 +491,9 @@ ten minutes after someone burned your city. Fear of loss is the product.
 
 Four rules remove the fear without removing the fight, each one a line in `src/raid.js`:
 
-1. **Nobody dies.** Every casualty on both sides is a wound.
+1. **Your wall is survivable; your ambition is not.** Soldiers defending your own hold
+   are only ever wounded — however small your Infirmary. Soldiers you *send out* can die,
+   and a broken assault buries most of the column.
 2. **Only food, wood, stone and iron can be taken**, and only the share the Warehouse
    leaves exposed. Steel, runestone, rations, Isle ore and Truegold — the scarce spine of
    the economy — cannot be carted off at all.
@@ -505,7 +507,33 @@ one bracket in this codebase, not two — so a maxed hold cannot farm a beginner
 suite's first attempt to stage a raid was refused by it, which was the bracket working
 and my setup being wrong.
 
-#### The bug that rule 1 was hiding
+#### Rule 1 was half wrong, and the correction is the better design (v1.38)
+
+The first version made **both** sides wounds-only, and that was a mistake: it meant an
+attack cost nothing you could not heal, so raiding was free and the correct play was to
+raid every cooldown forever.
+
+The distinction that fixes it is the one that mattered all along. WoS's funnel is **victim
+desperation** — troops destroyed while you slept, by an attack you did not choose, and then
+a healing pack for sale. An **attacker's** losses are a risk they opted into. So a share of
+an attacker's casualties are dead for good (35% of them on a win, 70% on a defeat), and the
+defender's are still never.
+
+The first attempt at the cost curve was also backwards. Both sides used *"a rout costs the
+loser little because there was no fight"*, which for an attacker is exactly wrong: hurling
+60 soldiers at a hold four times their strength cost **17%** of the column — a cheap probe.
+The two sides are now costed on opposite curves, and a defender who is overwhelmed still
+takes few casualties (what a rout costs them is their stores) while an attacker's losses
+*rise* as the odds worsen:
+
+| | permanently lost |
+|---|---|
+| clean win | 3% |
+| narrow win | 5% |
+| near thing, still won | 6% |
+| hopeless charge | **42%** — 25 of 60 came home |
+
+#### The bug that the defender's half was hiding
 
 `takeCasualties` has always capped the wounded at the beds the Infirmary provides and
 buried the overflow. Its own comment says so: *"`pve` means nobody dies except for want

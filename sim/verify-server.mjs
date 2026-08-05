@@ -276,6 +276,10 @@ try {
       const cAfter = (await post('/api/state', { token: tc })).body.state;
       /* RULE 1 — nobody dies. */
       const cWounded = Object.values(cAfter.wounded || {}).reduce((x, y) => x + y, 0);
+      // the attacker's own losses are partly permanent — asymmetric on purpose
+      const rep = after.body.raid.lastRaid;
+      ok('the attacker buried some of their own', !!rep && (rep.dead || 0) > 0,
+         rep ? rep.dead + ' fell, ' + rep.hurt + ' wounded' : 'no report');
       ok('the defender took wounds', cWounded > 0, cWounded + ' wounded');
       const cTroopsBefore = Object.values(cBefore.t).reduce((x, y) => x + y, 0);
       const cTroopsAfter = Object.values(cAfter.t).reduce((x, y) => x + y, 0);

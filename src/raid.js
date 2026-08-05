@@ -8,9 +8,17 @@
 //
 // Four rules remove the fear without removing the fight. Each is a line here:
 //
-//   1. NOBODY DIES. Every casualty on both sides is a wound. Wounds heal at the
-//      Infirmary for resources and time — both earnable, neither sellable. Permanent
-//      troop loss is what makes a player reach for a wallet.
+//   1. A DEFENDER NEVER DIES; AN ATTACKER DOES. This asymmetry is the whole design, and
+//      the first version of it was wrong: I made both sides wounds-only, which meant
+//      attacking cost nothing you could not heal, so raiding was free and the right play
+//      was to raid constantly.
+//
+//      The funnel in WoS is VICTIM desperation — troops destroyed while you slept, by an
+//      attack you did not choose, and then a healing pack for sale. That is what has to
+//      go. An attacker's losses are a risk they opted into, and aggression that costs no
+//      blood is not a decision. So: a share of an attacker's casualties are dead for
+//      good, and a FAILED assault buries far more of them than a successful one. Your
+//      wall is survivable; your ambition is not.
 //   2. ONLY THE FOUR BASE STORES CAN BE TAKEN, and only a share of what the Warehouse
 //      leaves exposed. Steel, runestone, rations and Truegold — the scarce spine of the
 //      economy — cannot be carted off at all.
@@ -36,6 +44,10 @@ export const RAID_COOLDOWN_MS = 8 * 60 * 1000;
    sale — this window is the single most monetized object in the genre. */
 export const RAID_GRACE_MS = 30 * 60 * 1000;
 export const RAID_LOOT_FRAC = 0.16;          // of what the Warehouse leaves exposed
+/* What share of an ATTACKER's casualties are dead rather than wounded. A won assault
+   still buries some; a broken one buries most of them. Nothing on the defending side
+   ever uses these. */
+export const DEATH_SHARE_WON = 0.35, DEATH_SHARE_LOST = 0.7;
 export const CARRY_PER_TROOP = 55;           // a column can only cart off so much
 export const LOOTABLE = ['food', 'wood', 'stone', 'iron'];
 
@@ -64,19 +76,32 @@ export function resolveRaid(att, def, col, now, rand = Math.random){
   const won = mine > theirs;
   const ratio = won ? theirs / mine : mine / theirs;
 
-  /* Wounds on both sides, scaled by how close it was. A rout costs the loser little
-     because there was no fight; a near thing costs everybody. */
-  const attFrac = (won ? 0.14 : 0.30) * (0.5 + ratio);
+  /* The two sides are costed on opposite curves, and that is deliberate.
+
+     A DEFENDER who is overwhelmed barely fought, so a rout costs them few casualties —
+     what it costs them is their stores. An ATTACKER who is thrown back has hurled a
+     column at a wall, and the worse the mismatch the less of it comes home. The first
+     version used the same "a rout costs the loser little" curve for both, which meant
+     a hopeless assault was a cheap probe: 17% of the column lost for throwing 60
+     soldiers at a hold four times their strength. Charging a fortress should ruin you. */
+  const attFrac = won ? 0.14 * (0.5 + ratio)          // a won fight still costs, most when close
+                      : 0.34 + 0.30 * (1 - ratio);    // a broken one costs more the worse the odds
   const defFrac = (won ? 0.30 : 0.14) * (0.5 + ratio);
 
-  let attHurt = 0;
+  /* The attacker's casualties split. Dead are gone — no bed, no Infirmary, no healing —
+     because a raid you chose has to cost something you cannot get back, or the correct
+     play is to raid every cooldown forever. */
+  const deathShare = won ? DEATH_SHARE_WON : DEATH_SHARE_LOST;
+  let attHurt = 0, attDead = 0;
   const survivors = {};
   for(const k of Object.keys(TROOPS)){
     const n = col.troops[k] || 0;
     if(n <= 0) continue;
     const h = Math.min(n, Math.round(n * attFrac * (0.75 + rand() * 0.5)));
+    const dead = Math.min(h, Math.round(h * deathShare));
     survivors[k] = n - h;
-    attHurt += h;
+    attDead += dead;
+    attHurt += h - dead;
   }
 
   let defHurt = 0;
@@ -122,7 +147,7 @@ export function resolveRaid(att, def, col, now, rand = Math.random){
   if(won){
     pushLog(att, '⚔️ Your column broke ' + defName + ' (' + mine + ' vs ' + theirs + ')'
       + (hauled ? ' and hauled off ' + Object.entries(loot).map(([r, v]) => v + ' ' + r).join(', ') : '')
-      + '. ' + attHurt + ' came back wounded.', 'win');
+      + '. ' + attDead + ' fell and ' + attHurt + ' came back wounded.', 'win');
     pushLog(def, '🔥 ' + attName + ' broke through (' + mine + ' vs ' + theirs + ')'
       + (hauled ? ' and carried off part of your stores' : '')
       + '. Nobody died — ' + (defHurt + watchHurt) + ' wounded. A Writ of Peace is granted, and no one '
@@ -132,7 +157,8 @@ export function resolveRaid(att, def, col, now, rand = Math.random){
     scoreDeed(att, 'camp', 1, now);
   }else{
     pushLog(att, '🛡️ ' + defName + ' held their wall against you (' + mine + ' vs ' + theirs
-      + '). ' + attHurt + ' came home wounded, and nothing was taken.', 'loss');
+      + '). A broken assault is dear: ' + attDead + ' fell, ' + attHurt
+      + ' came home wounded, and nothing was taken.', 'loss');
     pushLog(def, '🛡️ You threw back ' + attName + ' (' + theirs + ' vs ' + mine + ')'
       + (watchHurt ? ', the Watch bleeding beside you' : '')
       + '. ' + (defHurt + watchHurt) + ' wounded, none lost.', 'win');
@@ -140,7 +166,7 @@ export function resolveRaid(att, def, col, now, rand = Math.random){
     gainValor(def, 8); gainMastery(def, 12, now);
   }
 
-  return { won, mine, theirs, loot, hauled, attHurt, defHurt, watchHurt, survivors,
+  return { won, mine, theirs, loot, hauled, attHurt, attDead, defHurt, watchHurt, survivors,
            lifted: d.lifted, watchers: d.watchers };
 }
 

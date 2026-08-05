@@ -463,7 +463,7 @@ console.log('\n── a pre-skills save is inert, not broken ──');
    not sell power to attackers; it sells RELIEF TO VICTIMS, bought in a panic in the ten
    minutes after someone burned your city. Each rule removes a reason to panic. */
 {
-  console.log('\n── raids: nobody dies, and only stores move ──');
+  console.log('\n── raids: your wall is survivable, your ambition is not ──');
   const R = await import('../src/raid.js');
   const mk = (troops, opts = {}) => {
     const s = hold();
@@ -514,6 +514,31 @@ console.log('\n── a pre-skills save is inert, not broken ──');
     const c = L.takeCasualties(viaCasualties, 'spearman', L.woundedCap(viaCasualties) * 4, true);
     ok('while takeCasualties still buries the overflow, as PvE intends',
        c.dead > 0, c.dead + ' dead, ' + c.hurt + ' wounded — the reason raids needed their own path');
+  }
+
+  /* And the other half of rule 1, which the first version of this system got wrong:
+     an ATTACKER's soldiers can die, because aggression that costs no blood is not a
+     decision. Wounds-only on both sides made raiding free — heal up and go again — so
+     the correct play was to raid every cooldown forever. */
+  ok('an attacker buries some of their own even in victory', out.attDead > 0,
+     out.attDead + ' fell, ' + out.attHurt + ' wounded');
+  {
+    const fort = mk({ spearman: 600 }), doomed = mk({ spearman: 500 });
+    fort.name = 'Fortress'; doomed.name = 'Doomed';
+    const forlorn = { troops: { spearman: 60 }, base: 0, mult: 1 };
+    for(const [k, n] of Object.entries(forlorn.troops)) forlorn.base += L.tierPower(doomed, k) * n;
+    const o3 = R.resolveRaid(doomed, fort, forlorn, fort.now, () => 0.5);
+    ok('a hopeless charge is thrown back', o3.won === false, o3.mine + ' vs ' + o3.theirs);
+    const gone = o3.attDead / 60;
+    ok('and it ruins the column rather than costing a probe', gone > 0.3,
+       Math.round(gone * 100) + '% of the column will not be coming back');
+    ok('the worse the odds the worse the cost', o3.attDead / 60 > out.attDead / 300,
+       'hopeless ' + Math.round(100*o3.attDead/60) + '% vs won ' + Math.round(100*out.attDead/300) + '%');
+    /* But the hold that threw them back still buried nobody. */
+    const fortWounded = Object.values(fort.wounded || {}).reduce((a, b) => a + b, 0);
+    ok('while the DEFENDER still loses no one, only beds',
+       600 - fort.t.spearman === fortWounded,
+       '600 → ' + fort.t.spearman + ' with ' + fortWounded + ' wounded');
   }
 
   /* RULE 2 — the scarce spine of the economy cannot be carted off. */

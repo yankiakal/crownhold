@@ -1021,10 +1021,12 @@ function renderRaid(S){
   let h = '<section class="panel"><h2>Raids'
     + ' <span style="letter-spacing:.05em">'+fmt(r.me.power)+' at your wall</span></h2>';
 
-  h += '<div class="stat-note">Hold against hold, and four rules that never change: '
-    + '<b>nobody dies</b> — every casualty on both sides is a wound that heals; '
-    + '<b>only '+r.lootable.join(', ')+' can be taken</b>, and only the share your Warehouse leaves exposed; '
-    + '<b>a column carries what it can carry</b>; and <b>losing buys peace free</b> — a beaten hold '
+  h += '<div class="stat-note">Hold against hold, and four rules that never change. '
+    + '<b>Your wall is survivable; your ambition is not</b> — soldiers defending your own hold are '
+    + 'only ever wounded, however small your Infirmary, but soldiers you send out can die, and a '
+    + 'broken assault buries most of the column. '
+    + '<b>Only '+r.lootable.join(', ')+' can be taken</b>, and only the share your Warehouse leaves exposed. '
+    + '<b>A column carries what it can carry.</b> And <b>losing buys peace free</b> — a beaten hold '
     + 'gets a Writ and '+ftime(r.graceMs)+' of grace, automatically. Targets are bracketed by power, '
     + 'so nobody can farm a smaller hold.</div>';
 
@@ -1048,13 +1050,14 @@ function renderRaid(S){
     h += '<div class="stat-note">Last raid — '+(l.won ? 'you broke ' : 'you were held by ')
       + esc(l.against)+' ('+fmt(l.mine)+' vs '+fmt(l.theirs)+')'
       + (l.won && Object.keys(l.loot||{}).length ? ', hauling '+Object.entries(l.loot).map(([k,v])=>fmt(v)+' '+k).join(', ') : '')
-      + '. '+l.hurt+' of yours wounded, '+l.theirHurt+' of theirs.'
+      + '. '+(l.dead||0)+' of yours fell and '+l.hurt+' came home wounded; '+l.theirHurt+' of theirs wounded.'
       + (l.theirWatchers ? ' '+l.theirWatchers+' allied column'+(l.theirWatchers===1?'':'s')+' stood with them.' : '')+'</div>';
   }
   if(r.lastDefence){
     const d = r.lastDefence;
     h += '<div class="stat-note">Last assault on you — '+esc(d.from)+' '+(d.held ? 'was thrown back' : 'broke through')
-      + ' ('+fmt(d.mine)+' vs '+fmt(d.theirs)+'). '+d.hurt+' of yours wounded, none lost.'
+      + ' ('+fmt(d.mine)+' vs '+fmt(d.theirs)+'). '+d.hurt+' of yours wounded, none lost'
+      + ((d.theirDead||0) ? ' — and '+d.theirDead+' of theirs will not be going home' : '')+'.'
       + (d.lifted ? ' The Watch at your wall lifted your whole line.' : '')+'</div>';
   }
 
