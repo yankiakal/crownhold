@@ -76,6 +76,23 @@ export const EVENTS = [
 ];
 
 export function eventIndex(now){ return Math.floor(now / EVENT_MS) % EVENTS.length; }
+/* The calendar: what is running, what is next, and exactly when each begins and
+   ends. Windows are deterministic from the clock, so this needs no server. */
+export function schedule(now, count = 5){
+  const start0 = Math.floor(now / EVENT_MS) * EVENT_MS;
+  const out = [];
+  for(let i = 0; i < count; i++){
+    const start = start0 + i * EVENT_MS;
+    out.push({
+      event: EVENTS[(eventIndex(now) + i) % EVENTS.length],
+      start, end: start + EVENT_MS,
+      startsIn: Math.max(0, start - now),
+      endsIn: start + EVENT_MS - now,
+      live: i === 0,
+    });
+  }
+  return out;
+}
 export function currentEvent(now){ return EVENTS[eventIndex(now)]; }
 export function eventEndsIn(now){ return EVENT_MS - (now % EVENT_MS); }
 export function eventCap(s){ return EVENT_CAP_BASE + EVENT_CAP_PER_TH * s.b.townhall; }

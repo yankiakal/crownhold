@@ -217,7 +217,34 @@ one has two beats:
 Losing a landmark costs nothing but the bonus. No stores, no troops, no
 buildings — consistent with the arena. The prize is the buff and the flag.
 
-**Seasons** run a fortnight. The realm's landmark map, event calendar and
+**Twelve sites, opened over the realm's own age.** Only some are awake at the
+start; the rest have a wake day counted from the realm's founding (day 2, 4, 7,
+10, 14, 21, 28, 35, 45). There is always a new site coming, and the map a
+year-old realm fights over is not the one it started with.
+
+**Seasons** run a fortnight, and roll over on their own: standings freeze, the
+top three are named Sovereign / Warden / Bannerlord of the Realm, everyone who
+fought gets a share, event scores clear, and **Laurels drift halfway back to
+1000** — a soft reset, so a champion starts ahead but never untouchable and
+nobody is locked out of climbing. All of it is earned; none of it is sold.
+
+**Calendar.** Event windows are deterministic from the clock, so the client can
+show what is running, what comes next, when each begins and ends, how long the
+season has left, and which sites are still sleeping — without asking the server.
+
+### How states should open (recommended)
+
+Kingshot gates its content by **server age**: every kingdom has a founding date,
+and hero generations, fortresses and events unlock on fixed *server days*, not
+calendar dates. Crownhold already works this way — landmarks wake on realm days.
+
+For opening new states, the model to copy is a hybrid, because either rule alone
+fails: purely time-based opening leaves half-empty realms, and purely cap-based
+opening can stall for weeks. So: **a new state opens when the newest one reaches
+a population cap OR a fixed age, whichever comes first**, new players always join
+the newest open state, and each state runs its own age clock from its founding
+day. Old states never take newcomers — which is what keeps a two-year-old realm
+from swallowing a beginner. The realm's landmark map, event calendar and
 rankings live inside one, and the paid track is cosmetic (MONETIZATION.md).
 
 **Event standings** are ranked inside Town Hall bands — Reach (1–8), March

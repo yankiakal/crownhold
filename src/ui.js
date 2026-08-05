@@ -29,8 +29,8 @@ import {
   RESEARCH, techLvl, techCost, techTime, researchProgress,
 } from './research.js';
 import {
-  EVENTS, currentEvent, eventEndsIn, eventState, eventCap,
-  nextMilestone, claimableMilestones,
+  EVENTS, EVENT_MS, currentEvent, eventEndsIn, eventState, eventCap,
+  nextMilestone, claimableMilestones, schedule,
 } from './events.js';
 import * as net from './net.js';
 import { mountScene, sceneResize, pickBuilding } from './iso.js';
@@ -332,6 +332,43 @@ function renderChronicle(S){
   return h;
 }
 
+function renderCalendar(S){
+  const now = Date.now();
+  const rows = schedule(now, 5);
+  const realm = net.isOnline() ? net.realmData() : null;
+  let h = '<section class="panel"><h2>Calendar'
+    + (realm ? ' <span style="letter-spacing:.05em">Season '+realm.season.no
+        + ' · day '+realm.season.realmDay+' of the realm</span>' : '')+'</h2>';
+  if(realm)
+    h += '<div class="stat-note">Season ends in <b>'+ftime(realm.season.endsIn)+'</b>'
+      + ' — standings freeze, titles are named, and Laurels drift halfway back to 1000.</div>';
+  for(const r of rows){
+    h += '<div class="trow'+(r.live?' mine':'')+'"><span>'+r.event.icon+'</span>'
+      + '<span class="tname">'+r.event.name+'</span>'
+      + '<span class="tmeta">'+(r.live ? 'running now' : 'starts in '+ftime(r.startsIn))+'</span>'
+      + '<span class="spacer"></span>'
+      + '<span class="tmeta">'+(r.live ? 'ends in '+ftime(r.endsIn) : 'lasts '+ftime(EVENT_MS))+'</span></div>';
+  }
+  if(realm && realm.landmarks){
+    const sleeping = realm.landmarks.filter(l => !l.awake).slice(0, 4);
+    if(sleeping.length){
+      h += '<div class="stat-note" style="margin-top:.6rem">Sites still sleeping — the realm keeps opening</div>';
+      for(const l of sleeping)
+        h += '<div class="trow"><span>'+l.icon+'</span><span class="tname">'+l.name+'</span>'
+          + '<span class="tmeta">'+l.fx+'</span><span class="spacer"></span>'
+          + '<span class="tmeta">wakes on realm day '+l.wake+' — '+ftime(l.wakesIn)+'</span></div>';
+    }
+  }
+  if(realm && realm.season.titles && realm.season.titles.length){
+    h += '<div class="stat-note" style="margin-top:.6rem">Your titles</div>';
+    for(const t of realm.season.titles.slice(-3))
+      h += '<div class="trow"><span class="tname">👑 '+t.title+'</span>'
+        + '<span class="spacer"></span><span class="tmeta">Season '+t.season+'</span></div>';
+  }
+  h += '</section>';
+  return h;
+}
+
 function renderRealm(S){
   if(!net.isOnline())
     return '<section class="panel"><h2>The Realm</h2>'
@@ -342,7 +379,7 @@ function renderRealm(S){
   const myTag = (net.allianceData() && net.allianceData().alliance) ? net.allianceData().alliance.tag : null;
   let h = '<section class="panel"><h2>The Realm <span style="letter-spacing:.05em">Season '
     + d.season.no + ' · ' + ftime(d.season.endsIn) + ' left</span></h2>';
-  for(const l of d.landmarks){
+  for(const l of d.landmarks.filter(x => x.awake)){
     const mine = l.holder && l.holder.tag === myTag;
     const raising = l.banner;
     h += '<div class="trow'+(mine?' mine':'')+'"><span>'+l.icon+'</span>'
@@ -964,7 +1001,7 @@ export function render(){
   app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
     + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderSpoils(S)
-      + renderEvent(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
+      + renderEvent(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
       + renderAchievements(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
   fx.innerHTML = renderFx(S) + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');

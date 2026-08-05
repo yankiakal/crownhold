@@ -18,7 +18,7 @@ import { join, dirname, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
-import { tick, armyPower, masteryLvl, upkeepPerSec, gainValor, gainMastery } from '../src/logic.js';
+import { tick, armyPower, masteryLvl, upkeepPerSec, gainValor, gainMastery, pushLog } from '../src/logic.js';
 import { tickWorld } from '../src/world.js';
 import { freshState, applyOffline } from '../src/state.js';
 import { applyAction, isGameAction } from '../src/actions.js';
@@ -152,13 +152,27 @@ function allianceView(tag, now){
      2. Raise the Banner — a long build on the spot, which alliance help speeds.
    That second beat is what alliance banners actually are: a claim you build
    together, which is exactly why help matters so much for them. */
+/* Twelve sites, but the realm does not open them all at once: each has a wake
+   day counted from the realm's own founding, so there is always something new
+   coming. (Kingshot gates content the same way — by server age, not calendar.) */
 const LANDMARKS = [
-  { id:'sunspire',  name:'The Sunspire',   icon:'🗼', fx:'+8% production for every member',  bonus:{production:0.08},  base:2500 },
-  { id:'ironbridge',name:'Ironhold Bridge',icon:'🌉', fx:'+8% troop power for every member', bonus:{troopPower:0.08},  base:3000 },
-  { id:'oldmint',   name:'The Old Mint',   icon:'🪙', fx:'+15% Valor for every member',      bonus:{valor:0.15},       base:2200 },
-  { id:'quarryhead',name:'Quarryhead',     icon:'⛏️', fx:'−10% build time for every member', bonus:{buildSpeed:0.10},  base:2800 },
-  { id:'watchfires',name:'The Watchfires', icon:'🔥', fx:'+12% raid loot for every member',  bonus:{loot:0.12},        base:2000 },
+  { id:'sunspire',  name:'The Sunspire',    icon:'🗼', fx:'+8% production for every member',  bonus:{production:0.08}, base:2500, wake:0 },
+  { id:'ironbridge',name:'Ironhold Bridge', icon:'🌉', fx:'+8% troop power for every member', bonus:{troopPower:0.08}, base:3000, wake:0 },
+  { id:'watchfires',name:'The Watchfires',  icon:'🔥', fx:'+12% raid loot for every member',  bonus:{loot:0.12},       base:2000, wake:0 },
+  { id:'oldmint',   name:'The Old Mint',    icon:'🪙', fx:'+15% Valor for every member',      bonus:{valor:0.15},      base:2200, wake:2 },
+  { id:'quarryhead',name:'Quarryhead',      icon:'⛏️', fx:'−10% build time for every member', bonus:{buildSpeed:0.10}, base:2800, wake:4 },
+  { id:'greenmarch',name:'The Green March', icon:'🌾', fx:'+10% production for every member', bonus:{production:0.10}, base:3400, wake:7 },
+  { id:'blackforge',name:'The Black Forge', icon:'🔨', fx:'+10% troop power for every member',bonus:{troopPower:0.10}, base:3800, wake:10 },
+  { id:'saltroad',  name:'The Salt Road',   icon:'🧂', fx:'+18% raid loot for every member',  bonus:{loot:0.18},       base:3200, wake:14 },
+  { id:'highkeep',  name:'The High Keep',   icon:'🏯', fx:'−14% build time for every member', bonus:{buildSpeed:0.14}, base:4200, wake:21 },
+  { id:'godsteeth', name:"The God's Teeth", icon:'⛰️', fx:'+20% Valor for every member',      bonus:{valor:0.20},      base:4600, wake:28 },
+  { id:'palewater', name:'Palewater',       icon:'🌊', fx:'+12% production, +6% troop power', bonus:{production:0.12, troopPower:0.06}, base:5200, wake:35 },
+  { id:'crownhall', name:'The Crown Hall',  icon:'👑', fx:'+12% troop power, +12% Valor',     bonus:{troopPower:0.12, valor:0.12},      base:6000, wake:45 },
 ];
+const REALM_EPOCH = Date.UTC(2026, 7, 1);
+const realmDay = now => Math.max(0, Math.floor((now - REALM_EPOCH) / 86400000));
+const isAwake = (d, now) => realmDay(now) >= d.wake;
+const wakesIn = (d, now) => Math.max(0, REALM_EPOCH + d.wake*86400000 - now);
 // tunables are env-overridable so the capture flow can be tested end to end
 const BANNER_MS = Number(process.env.BANNER_MS) || 30 * 60 * 1000;
 const BANNER_HELP = 0.03;
@@ -183,7 +197,9 @@ function maxGarrison(d, st){
   return Math.round((d.base + held * 0.25) * GARRISON_SCALE);   // a strong holder is harder to dislodge
 }
 function tickRealm(now){
+  checkSeasonRollover(now);
   for(const d of LANDMARKS){
+    if(!isAwake(d, now)) continue;
     const st = landmarkState(d.id);
     const mins = (now - (st.lastTick || now)) / 60000;
     st.lastTick = now;
@@ -200,10 +216,11 @@ function tickRealm(now){
     }
   }
 }
-function realmBonusFor(tag){
+function realmBonusFor(tag, now = Date.now()){
   const b = {};
   if(!tag) return b;
   for(const d of LANDMARKS){
+    if(!isAwake(d, now)) continue;
     const st = landmarkState(d.id);
     if(st.holder !== tag) continue;
     for(const [k,v] of Object.entries(d.bonus)) b[k] = (b[k] || 0) + v;
@@ -217,6 +234,7 @@ function realmView(now){
     const a = st.holder && db.alliances[st.holder];
     return {
       id:d.id, name:d.name, icon:d.icon, fx:d.fx,
+      awake: isAwake(d, now), wake: d.wake, wakesIn: wakesIn(d, now),
       holder: a ? { tag:a.tag, name:a.name } : null,
       garrison: Math.round(st.garrison), max: maxGarrison(d, st),
       banner: st.banner ? { tag: st.banner.tag, endsIn: Math.max(0, st.banner.end - now), helps: st.banner.helps || 0 } : null,
@@ -224,11 +242,61 @@ function realmView(now){
   });
 }
 
-/* ── seasons ── */
-const SEASON_MS = 14 * 24 * 3600 * 1000;
+/* ── seasons ──
+   A fortnight. At rollover the standings are frozen, titles are handed out, and
+   Laurels drift halfway back to 1000 — a soft reset, so a season's champion
+   starts the next one ahead but not untouchable, and nobody is ever locked out
+   of climbing. Nothing here is purchasable. */
+const SEASON_MS = Number(process.env.SEASON_MS) || 14 * 24 * 3600 * 1000;
 const SEASON_EPOCH = Date.UTC(2026, 7, 1);      // season 1 opened here
 const seasonNo = now => Math.max(1, Math.floor((now - SEASON_EPOCH) / SEASON_MS) + 1);
 const seasonEndsIn = now => SEASON_MS - ((now - SEASON_EPOCH) % SEASON_MS);
+
+const SEASON_TITLES = ['Sovereign of the Realm', 'Warden of the Realm', 'Bannerlord'];
+
+function checkSeasonRollover(now){
+  const no = seasonNo(now);
+  db.season ||= { no, history: [] };
+  if(db.season.no === no) return;
+
+  // freeze the standings the season ended on
+  const holds = Object.values(db.users)
+    .map(u => ({ name:u.name, laurels:u.state.laurels ?? START_LAURELS, waves:u.state.wavesWon||0 }))
+    .sort((a,b) => b.laurels - a.laurels);
+  const allies = Object.values(db.alliances).map(a => ({
+    tag:a.tag, name:a.name,
+    holds: LANDMARKS.filter(d => (db.realm?.[d.id]||{}).holder === a.tag).length,
+  })).sort((x,y) => y.holds - x.holds);
+
+  holds.slice(0, 3).forEach((r, i) => {
+    const u = db.users[r.name.toLowerCase()];
+    if(!u) return;
+    u.titles = (u.titles || []).concat({ season: db.season.no, title: SEASON_TITLES[i] });
+    gainValor(u.state, 300 - i*80);
+    gainMastery(u.state, 500 - i*120, now);
+    u.state.shields = Math.min(u.state.shields + 2, 9);
+    pushLog(u.state, '👑 Season ' + db.season.no + ' closes — you are named ' + SEASON_TITLES[i] + '.', 'gold');
+  });
+  // everyone who fought gets something; the season is not winner-take-all
+  for(const u of Object.values(db.users)){
+    if((u.state.arenaWins || 0) + (u.state.wavesWon || 0) < 5) continue;
+    gainValor(u.state, 60);
+    u.state.laurels = Math.round(1000 + ((u.state.laurels ?? START_LAURELS) - 1000) * 0.5);
+    u.state.ev = null;                       // event scores start clean
+  }
+
+  db.season.history.push({
+    no: db.season.no,
+    champions: holds.slice(0, 3).map(r => r.name),
+    banners: allies.slice(0, 3),
+  });
+  if(db.season.history.length > 12) db.season.history.shift();
+  db.season.no = no;
+  pushMsg(db.chat.state, '—', '👑 Season ' + (no - 1) + ' has closed. '
+    + (holds[0] ? holds[0].name + ' is named ' + SEASON_TITLES[0] + '.' : '')
+    + ' Laurels drift back toward the middle; the realm begins again.');
+  markDirty(); flush();
+}
 
 /* ── chat ──
    Four kinds of room: the whole state, your alliance, a direct line to one
@@ -636,7 +704,12 @@ async function api(req, res, url){
     const mine = band(u.state.b.townhall);
     return send(res, 200, {
       landmarks: realmView(now),
-      season: { no: seasonNo(now), endsIn: seasonEndsIn(now) },
+      season: {
+        no: seasonNo(now), endsIn: seasonEndsIn(now),
+        realmDay: realmDay(now),
+        titles: u.titles || [],
+        history: (db.season && db.season.history || []).slice(-3).reverse(),
+      },
       eventBoard: {
         band: mine,
         rows: board.filter(r => band(r.townhall) === mine)
@@ -657,6 +730,7 @@ async function api(req, res, url){
     if(!u.alliance) return send(res, 400, { error:'Only an alliance can take a landmark.' });
     const d = LANDMARKS.find(l => l.id === String(body.id||''));
     if(!d) return send(res, 404, { error:'No such landmark.' });
+    if(!isAwake(d, now)) return send(res, 400, { error:'That site still sleeps.' });
     tickRealm(now);
     const st = landmarkState(d.id);
     if(st.holder === u.alliance) return send(res, 400, { error:'Your banner already flies there.' });
