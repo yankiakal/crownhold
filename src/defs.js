@@ -8,8 +8,16 @@ export const BUILDINGS = {
   lumberyard:{name:'Lumberyard', icon:'🪵', prod:'wood', rate:1.6, cost:{food:30},           time:8,  max:30},
   quarry:    {name:'Quarry',     icon:'⛰️', prod:'stone',rate:1.0, cost:{wood:60,food:40},   time:12, max:30},
   ironmine:  {name:'Iron Mine',  icon:'⚒️', prod:'iron', rate:0.7, cost:{wood:80,stone:60},  time:15, max:30, th:3},
-  barracks:  {name:'Barracks',   icon:'⚔️', fx:'Trains troops; each level trains 6% faster.',
+  barracks:  {name:'Barracks',   icon:'⚔️', fx:'Drills Spearmen. Each level trains 6% faster.',
               cost:{wood:60,stone:30},  time:15, max:30},
+  range:     {name:'Archery Range',icon:'🏹', fx:'Drills Archers, on its own queue.',
+              cost:{wood:110,stone:50}, time:16, max:30, th:3},
+  stable:    {name:'Stable',     icon:'🐎', fx:'Drills Knights, on its own queue.',
+              cost:{wood:160,food:120}, time:20, max:30, th:5},
+  siegeyard: {name:'Siege Yard', icon:'⚙️', fx:'Builds Ballistas, on its own queue.',
+              cost:{wood:240,iron:90},  time:24, max:30, th:7},
+  embassy:   {name:'Embassy',    icon:'🕊️', fx:'+2 alliance helps your builds may take, per level.',
+              cost:{stone:180,wood:120},time:18, max:25, th:5},
   wall:      {name:'Wall',       icon:'🧱', fx:'+18 defense power per level.',
               cost:{stone:90,wood:40},  time:18, max:30, th:2},
   watchtower:{name:'Watchtower', icon:'🗼', fx:'Scouts raid shape & strength; blunts attacks 4% per level.',
@@ -41,11 +49,11 @@ export const TIER_POWER = 0.25, TIER_UPKEEP = 0.18, TIER_COST = 0.22;
 /* upkeep: food/sec per soldier — armies eat. This is what keeps army size in
    equilibrium with your farms instead of scaling to infinity. */
 export const TROOPS = {
-  spearman:{name:'Spearman', icon:'🛡️', power:3,  upkeep:0.06, cost:{food:25,wood:10}, time:4,  barracks:1},
-  archer:  {name:'Archer',   icon:'🏹', power:5,  upkeep:0.10, cost:{food:20,wood:25}, time:6,  barracks:2},
+  spearman:{name:'Spearman', icon:'🛡️', power:3,  upkeep:0.06, cost:{food:25,wood:10}, time:4,  at:'barracks'},
+  archer:  {name:'Archer',   icon:'🏹', power:5,  upkeep:0.10, cost:{food:20,wood:25}, time:6,  at:'range'},
   // iron units eat less per point of power — quality is the path past the food ceiling
-  knight:  {name:'Knight',   icon:'🐎', power:11, upkeep:0.17, cost:{food:60,iron:20}, time:12, barracks:4},
-  ballista:{name:'Ballista', icon:'⚙️', power:24, upkeep:0.38, cost:{wood:80,iron:40}, time:20, barracks:6},
+  knight:  {name:'Knight',   icon:'🐎', power:11, upkeep:0.17, cost:{food:60,iron:20}, time:12, at:'stable'},
+  ballista:{name:'Ballista', icon:'⚙️', power:24, upkeep:0.38, cost:{wood:80,iron:40}, time:20, at:'siegeyard'},
 };
 
 /* The Mastery track — Crownhold's replacement for VIP levels. Earned from every

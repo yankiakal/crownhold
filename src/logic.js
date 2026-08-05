@@ -161,13 +161,22 @@ export function activeQueues(s){
 }
 export function canAfford(s,cost){ return Object.entries(cost).every(([r,v]) => s.res[r] >= v); }
 export function payCost(s,cost){ for(const [r,v] of Object.entries(cost)) s.res[r] -= v; }
-export function trainMultFor(s, barracksLvl){
-  const b = Math.max(0, barracksLvl-1);
+export function trainMultFor(s, houseLvl){
+  const b = Math.max(0, houseLvl-1);
   return Math.max(0.25,
     (1 - 0.06*b - heroBonus(s,'trainTime') - spoilBonus(s,'trainTime') - techBonus(s,'drillcraft'))
     * (perk(s,5)?0.88:1) * (perk(s,18)?0.9:1));
 }
-export function trainMult(s){ return trainMultFor(s, s.b.barracks); }
+/* Each troop drills in its own building, so the queues run in parallel — four
+   things training at once instead of one, the way Kingshot splits Barracks,
+   Range and Stable. */
+export function trainHouse(s, k){ return TROOPS[k].at; }
+export function trainHouseLvl(s, k){ return s.b[TROOPS[k].at] || 0; }
+export function trainMult(s, k){ return trainMultFor(s, k ? trainHouseLvl(s,k) : s.b.barracks); }
+export function trainQueue(s, k){ return (s.tq && s.tq[k]) || null; }
+export function activeTrainings(s){
+  return Object.keys(TROOPS).filter(k => trainQueue(s, k));
+}
 export function armyBreakdown(s){
   let base = 0;
   for(const k of Object.keys(TROOPS)) base += tierPower(s,k) * s.t[k];
@@ -352,9 +361,11 @@ export function trainCost(s, key, count){
 }
 export function startTraining(s, key, count, now){
   s.now = now;
-  if(s.tq) return false;
   const d = TROOPS[key];
-  if(s.b.barracks < d.barracks) return false;
+  if(!d) return false;
+  if(!s.tq || s.tq.key) s.tq = {};              // migrate a stale single queue
+  if(s.tq[key]) return false;                   // that yard is already busy
+  if(trainHouseLvl(s, key) < 1) return false;   // no building, no drilling
   count = Number(count)||1;
   const cost = trainCost(s, key, count);
   if(!canAfford(s, cost)) return false;
@@ -362,10 +373,10 @@ export function startTraining(s, key, count, now){
   // deliberately NOT scaled by TIME_SCALE: raids keep arriving every 75s, so the
   // muster has to answer on that cadence. Construction is the long game; the
   // army is the fast one.
-  let dur = d.time*1000*count*trainMult(s);
+  let dur = d.time*1000*count*trainMult(s, key);
   if(s.trainFastNext){ dur *= 0.25; s.trainFastNext = false; }
-  s.tq = {key, count, start:now, end:now+dur};
-  pushLog(s, 'The Barracks begins drilling '+count+' '+d.name+(count>1?'s':'')+'.');
+  s.tq[key] = {key, count, start:now, end:now+dur};
+  pushLog(s, 'The '+BUILDINGS[d.at].name+' begins drilling '+count+' '+d.name+(count>1?'s':'')+'.');
   return true;
 }
 /* ── events ── */
@@ -435,11 +446,13 @@ export function finishBuildNow(s, now, slot){
   s.valor -= c; s[q].end = now;
   return true;
 }
-export function finishTrainNow(s, now){
-  if(!s.tq) return false;
-  const c = finishCost(s.tq.end, now);
+export function finishTrainNow(s, now, key){
+  const k = key && trainQueue(s, key) ? key : activeTrainings(s)[0];
+  if(!k) return false;
+  const q = s.tq[k];
+  const c = finishCost(q.end, now);
   if(s.valor < c) return false;
-  s.valor -= c; s.tq.end = now;
+  s.valor -= c; q.end = now;
   return true;
 }
 export const CARAVAN_GRACE = 15000, CARAVAN_YIELD = 0.5;
@@ -549,7 +562,12 @@ export function useOrder(s, id, now){
     case 'triage':      m.noCasual = true; break;
     case 'expose':      m.enemyX *= 0.85; break;
     case 'requisition': gainRes(s,'food',60*s.b.townhall); gainRes(s,'wood',60*s.b.townhall); break;
-    case 'forcedmarch': if(!s.tq) return false; s.tq.end = now; break;
+    case 'forcedmarch': {
+      const ks = activeTrainings(s);
+      if(!ks.length) return false;
+      for(const k of ks) s.tq[k].end = now;
+      break;
+    }
     case 'crashcourse': s.trainFastNext = true; break;
     case 'richtrails':  s.expedBoost = true; break;
     case 'ration':      s.upkeepPauseUntil = now + 60000; break;
@@ -719,15 +737,19 @@ export function tick(s, now, dt, rand=Math.random){
     gainMastery(s, 10, now);
     scoreDeed(s, 'research', 1, now);
   }
-  if(s.tq && now >= s.tq.end){
-    const n = s.tq.count;
-    s.t[s.tq.key] += n;
-    s.trained += n;
-    s.trainedBy[s.tq.key] = (s.trainedBy[s.tq.key]||0) + n;
-    pushLog(s, n+' '+TROOPS[s.tq.key].name+(n>1?'s':'')+' join the muster.');
-    s.tq = null;
-    gainMastery(s, n, now);
-    scoreDeed(s, 'trained', n, now);
+  if(s.tq && !Array.isArray(s.tq)){
+    for(const k of Object.keys(TROOPS)){
+      const q = s.tq[k];
+      if(!q || now < q.end) continue;
+      const n = q.count;
+      s.t[k] += n;
+      s.trained += n;
+      s.trainedBy[k] = (s.trainedBy[k]||0) + n;
+      pushLog(s, n+' '+TROOPS[k].name+(n>1?'s':'')+' join the muster.');
+      s.tq[k] = null;
+      gainMastery(s, n, now);
+      scoreDeed(s, 'trained', n, now);
+    }
   }
 
   if(now >= s.nextWave) resolveWave(s, now, rand);

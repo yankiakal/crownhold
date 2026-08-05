@@ -14,6 +14,7 @@ import {
 } from './world.js';
 import {
   fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor, capFor, isUnlocked,
+  activeTrainings, trainQueue,
   prodPerSec, prodMult, upkeepPerSec, buildCost, buildTime, canAfford, armyPower,
   armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
   valorQuota, valorToday, isRested, QUEUE_KEYS, buildSlots, activeQueues, freeSlot, townhallReq,
@@ -190,18 +191,22 @@ function renderHold(S){
 
 function renderMuster(S){
   const bd = armyBreakdown(S);
-  let h = '<section class="panel"><h2>Muster <span style="letter-spacing:.05em">power '+bd.total+'</span></h2>';
+  const yards = Object.values(TROOPS).filter(d => (S.b[d.at]||0) >= 1).length;
+  let h = '<section class="panel"><h2>Muster <span style="letter-spacing:.05em">power '+bd.total
+    + ' · '+yards+' yard'+(yards===1?'':'s')+' drilling in parallel</span></h2>';
   h += '<div class="stat-note">'+Math.round(bd.base)+' troops × '+bd.mult.toFixed(2)+' bonuses + '+Math.round(bd.wall)+' wall = <b>'+bd.total+'</b>'
     + ' &nbsp;·&nbsp; eats '+upkeepPerSec(S).toFixed(1)+' food/s of your +'+prodPerSec(S,'food').toFixed(1)+'/s</div>';
-  if(S.b.barracks === 0){
-    h += '<p style="font-size:.85rem;color:var(--ink-dim);font-style:italic">Build the Barracks to train troops.</p>';
+  if(!yards){
+    h += '<p style="font-size:.85rem;color:var(--ink-dim);font-style:italic">Build the Barracks to drill Spearmen. The Archery Range, Stable and Siege Yard each drill their own troops, on their own queues.</p>';
   }else{
-    if(S.tq){
-      const d = TROOPS[S.tq.key];
-      h += queueStrip(S, S.tq, d.icon+' '+S.tq.count+'× '+d.name, 'finishTrain');
+    for(const k of activeTrainings(S)){
+      const q = trainQueue(S, k), d = TROOPS[k];
+      h += queueStrip(S, q, d.icon+' '+q.count+'× '+d.name, 'finishTrain', k);
     }
     for(const [k,d] of Object.entries(TROOPS)){
-      const locked = S.b.barracks < d.barracks;
+      const house = BUILDINGS[d.at];
+      const locked = (S.b[d.at] || 0) < 1;
+      const busy = !!trainQueue(S, k);
       const tier = tierOf(S,k);
       const canPromote = !locked && tier < maxTier(S);
       h += '<div class="trow">'
@@ -211,12 +216,12 @@ function renderMuster(S){
         + (canPromote?'⬆':'ⓘ')+'</button>'
         + '<span class="spacer"></span>';
       if(locked){
-        h += '<span class="tmeta">Barracks '+d.barracks+'</span>';
+        h += '<span class="tmeta">needs a '+house.name+'</span>';
       }else{
         h += '<span class="count">'+S.t[k]+'</span>'
-          + '<button data-act="train" data-key="'+k+'" data-n="1" '+(S.tq?'disabled':'')+'>+1</button>'
-          + '<button data-act="train" data-key="'+k+'" data-n="5" '+(S.tq?'disabled':'')+'>+5</button>'
-          + '<button data-act="train" data-key="'+k+'" data-n="25" '+(S.tq?'disabled':'')+'>+25</button>';
+          + '<button data-act="train" data-key="'+k+'" data-n="1" '+(busy?'disabled':'')+'>+1</button>'
+          + '<button data-act="train" data-key="'+k+'" data-n="5" '+(busy?'disabled':'')+'>+5</button>'
+          + '<button data-act="train" data-key="'+k+'" data-n="25" '+(busy?'disabled':'')+'>+25</button>';
       }
       h += '</div>';
     }
@@ -558,8 +563,8 @@ function renderAlliance(S){
       + '<button class="primary" data-act="allianceHelpAll" '+(pending?'':'disabled')+'>🤝 Help all'
       + (pending?' ('+pending+')':'')+'</button>'
       + '<span class="tmeta" style="font-family:var(--sans);font-size:.65rem;color:var(--ink-dim)">'
-      + 'each help cuts <b style="color:var(--gold)">'+(a.helpPct||1.5)+'%</b> off a build · up to '
-      + (a.helpCap||20)+' helps each — Fellowship research raises both</span></div>';
+      + 'each help cuts <b style="color:var(--gold)">'+(a.helpPct||1.5)+'%</b> off a build · your builds take up to '
+      + (20 + 2*(S.b.embassy||0))+' helps — Fellowship research raises the value, your Embassy raises the ceiling</span></div>';
     // alliance research: what makes the help worth having
     if(a.tech){
       h += '<div class="stat-note" style="margin-top:.5rem">Alliance research — everyone contributes, everyone benefits</div>';
@@ -871,6 +876,8 @@ function renderCodex(S){
     + '<li>Offline: the hold produces (and the muster eats) for up to 2 hours while you are away. No raids strike while you are gone.</li>'
     + '<li>Build costs scale with level², and build <i>times</i> stretch with level too — a level-3 hut is minutes, a late keep is most of a day. The queue is the wall, and it keeps working while you are away.</li>'
     + '<li><b>A second crew</b> joins at Town Hall '+SECOND_QUEUE_TH+', so two upgrades can run at once (never two on the same building). Training runs on its own queue and is deliberately fast — raids arrive every 75s and the muster has to answer.</li>'
+    + '<li><b>Four drilling yards, four queues</b>: the Barracks drills Spearmen, the Archery Range Archers, the Stable Knights, the Siege Yard Ballistas — each on its own timer, so four batches can be in progress at once. A troop type you have no yard for is one you cannot field at all.</li>'
+    + '<li><b>The Embassy</b> raises how many alliance helps your own builds may take (+2 a level), on top of what your alliance&#39;s Wide Roads research grants everyone.</li>'
     + '<li><b>Research lives in the Great Library</b> (Town Hall 4). Nothing can be studied without one, and <b>its level is the ceiling on every track</b> — a Library 7 means no study passes 7. Each level also speeds study by 2%. Research runs on its own queue and never competes with the build crews.</li>'
     + '<li><b>Refined goods</b>: the Forge (Town Hall 12) smelts iron and wood into <b>Steel</b> without pause; the Runeworks (Town Hall 22) binds stone and steel into <b>Runestone</b>. Their vaults are small — 10% and 3.5% of your raw storage.</li>'
     + '<li>From level '+15+' every upgrade also costs Steel; from level '+24+', Runestone too. That is what makes the last third of the game long — and why food, wood, stone and iron never stop mattering: they are the fuel.</li>'

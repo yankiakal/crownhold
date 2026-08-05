@@ -108,9 +108,12 @@ function simulate(minutes, enemyLuck, skilled, label){
         if(s.valor >= c && L.finishBuildNow(s, ms, q)) valorSpent += c;
       }
     }
-    if(s.tq && s.tq.end-ms > 15000){
-      const c = L.finishCost(s.tq.end, ms);
-      if(s.valor >= c && L.finishTrainNow(s, ms)) valorSpent += c;
+    for(const tk of L.activeTrainings(s)){
+      const q = L.trainQueue(s, tk);
+      if(q && q.end-ms > 15000){
+        const c = L.finishCost(q.end, ms);
+        if(s.valor >= c && L.finishTrainNow(s, ms, tk)) valorSpent += c;
+      }
     }
 
     while(L.freeSlot(s)){
@@ -127,6 +130,11 @@ function simulate(minutes, enemyLuck, skilled, label){
       else if(s.b.quarry===0 && eligible('quarry')) pick = 'quarry';
       else if(s.b.barracks===0 && eligible('barracks')) pick = 'barracks';
       else if(s.b.academy < 6 && eligible('academy')) pick = 'academy';
+      // a yard you do not own is a troop type you can never field — stand them
+      // all up before widening anything else
+      else if(s.b.range === 0 && eligible('range')) pick = 'range';
+      else if(s.b.stable === 0 && eligible('stable')) pick = 'stable';
+      else if(s.b.siegeyard === 0 && eligible('siegeyard')) pick = 'siegeyard';
       else {
         // clear the Town Hall's prerequisites first — that is what the gate is for
         const req = L.townhallReq(s);
@@ -140,6 +148,9 @@ function simulate(minutes, enemyLuck, skilled, label){
         // the refineries are not optional: without them every upgrade stops at 14
         // the Library is the spine of research — the bot keeps it climbing
         if(!pick && s.b.library < Math.min(10, s.b.townhall) && eligible('library')) pick='library';
+        // the drilling yards are what let the army keep pace with the raid clock
+        if(!pick) for(const k of ['range','stable','siegeyard','embassy'])
+          if(s.b[k] < Math.min(8, s.b.townhall) && eligible(k)){ pick=k; break; }
         if(!pick) for(const k of ['forge','runeworks','tavern','granary','hospital','warehouse'])
           if(eligible(k)){ pick=k; break; }
       }
@@ -166,12 +177,13 @@ function simulate(minutes, enemyLuck, skilled, label){
     }
 
     // training: keep ahead of the next wave, but never beyond food sustainability
-    if(!s.tq && s.b.barracks > 0){
+    for(const troopKey of ['ballista','knight','archer','spearman']){
+     if(!L.trainQueue(s, troopKey) && (s.b[TROOPS[troopKey].at]||0) >= 1){
       const wb = s.wave%5===0;
       const target = 1.4 * L.wavePower(s.wave)*(wb?1.6:1)*1.12
         *(1-L.bluntMult(s))*L.streakMult(s);
       const deficit = target - L.armyPower(s);
-      const best = ['ballista','knight','archer','spearman'].find(k => s.b.barracks >= TROOPS[k].barracks);
+      const best = troopKey;
       const dump = s.res.food > 0.8*L.storageCap(s);
       if(deficit > 0 || dump){
         // skilled: keep a mixed line for class counters and screening; lazy: spam the best
@@ -195,6 +207,7 @@ function simulate(minutes, enemyLuck, skilled, label){
         const n = Math.max(0, Math.min(25, maxAfford, want, maxSustain));
         if(n > 0) L.startTraining(s, pick, n, ms);
       }
+     }
     }
   }
 

@@ -98,7 +98,11 @@ function allyTechNeed(a, k){
   return Math.round(ALLY_TECH[k].base * Math.pow(allyTechLvl(a,k) + 1, 1.8));
 }
 function allyHelpFraction(a){ return HELP_FRACTION * (1 + 0.10 * allyTechLvl(a,'fellowship')); }
-function allyHelpCap(a){ return HELP_CAP + 2 * allyTechLvl(a,'wideRoads'); }
+function allyHelpCap(a, m){
+  // the alliance's Wide Roads research lifts everyone; the receiving hold's own
+  // Embassy lifts only theirs — which is what an embassy is for
+  return HELP_CAP + 2 * allyTechLvl(a,'wideRoads') + 2 * ((m && m.state.b.embassy) || 0);
+}
 function allyMemberBonus(a){
   if(!a) return null;
   return {
@@ -122,7 +126,7 @@ function allianceView(tag, now){
     if(!m) return null;
     const builds = ['bq','bq2'].map(q => m.state[q]).filter(b => b && b.end > now).map(b => ({
       key: b.key, endsIn: b.end - now,
-      helps: b.helps || 0, cap: allyHelpCap(a),
+      helps: b.helps || 0, cap: allyHelpCap(a, m),
       helped: (b.helpers || []).length,
     }));
     return {
@@ -665,7 +669,7 @@ async function api(req, res, url){
         const b = m.state[q];
         if(!b || b.end <= now) continue;
         b.helps = b.helps || 0;
-        if(b.helps >= allyHelpCap(a)) continue;
+        if(b.helps >= allyHelpCap(a, m)) continue;
         if((b.helpers||[]).includes(u.name)) continue;   // one help per hold per build
         const total = Math.max(1, b.end - b.start);
         b.end = Math.max(now, b.end - Math.max(HELP_MIN_MS, total * allyHelpFraction(a)));
