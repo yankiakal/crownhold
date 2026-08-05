@@ -195,7 +195,36 @@ late-game costs by 3–10× at launch and the cap lands in the intended window �
 still an order of magnitude short of Kingshot's multi-year VIP grind, which is
 the point.
 
-## Events — and the spending-race problem (design, not yet built)
+## The Realm — landmarks, banners, seasons (v1.11)
+
+The state-wide layer, and the answer to "what do alliances actually fight over".
+
+**Five landmarks** sit on the map — the Sunspire, Ironhold Bridge, the Old Mint,
+Quarryhead, the Watchfires. Whichever alliance holds one gives *every member* a
+standing bonus (production, troop power, Valor, build speed, raid loot). Taking
+one has two beats:
+
+1. **Assault.** Members throw their army power at the garrison, once per
+   cooldown, losing ~5% of the muster each time. Garrisons regenerate, and a
+   strong holder's garrison is larger — so holding is real, and dislodging a big
+   alliance takes a coordinated push rather than one player.
+2. **Raise the Banner.** Breaking the garrison does not hand you the landmark;
+   it lets you start *building a claim* there, over real time, which **alliance
+   help accelerates**. That is what banners are — the thing everyone in Kingshot
+   is always begging help for. Help on a banner is the same currency as help on
+   a build: attention from people who like you.
+
+Losing a landmark costs nothing but the bonus. No stores, no troops, no
+buildings — consistent with the arena. The prize is the buff and the flag.
+
+**Seasons** run a fortnight. The realm's landmark map, event calendar and
+rankings live inside one, and the paid track is cosmetic (MONETIZATION.md).
+
+**Event standings** are ranked inside Town Hall bands — Reach (1–8), March
+(9–16), Dominion (17–24), Crown (25+) — so a new hold never shares a board with
+the server's oldest account.
+
+## Events — and the spending-race problem
 
 Kingshot's events are the monetisation engine, and the mechanism is worth naming
 precisely: an event is a scoring window, score comes from spending stockpiles

@@ -332,6 +332,57 @@ function renderChronicle(S){
   return h;
 }
 
+function renderRealm(S){
+  if(!net.isOnline())
+    return '<section class="panel"><h2>The Realm</h2>'
+      + '<p style="font-size:.85rem;color:var(--ink-dim);font-style:italic">Sign in to see the map of landmarks. '
+      + 'Alliances break a garrison, then raise a banner over it — and every member carries the bonus while it flies.</p></section>';
+  const d = net.realmData();
+  if(!d) return '<section class="panel"><h2>The Realm</h2><div class="stat-note">Asking the server…</div></section>';
+  const myTag = (net.allianceData() && net.allianceData().alliance) ? net.allianceData().alliance.tag : null;
+  let h = '<section class="panel"><h2>The Realm <span style="letter-spacing:.05em">Season '
+    + d.season.no + ' · ' + ftime(d.season.endsIn) + ' left</span></h2>';
+  for(const l of d.landmarks){
+    const mine = l.holder && l.holder.tag === myTag;
+    const raising = l.banner;
+    h += '<div class="trow'+(mine?' mine':'')+'"><span>'+l.icon+'</span>'
+      + '<span class="tname">'+l.name+'</span>'
+      + '<span class="tmeta">'+l.fx+'</span><span class="spacer"></span>';
+    if(raising){
+      const ours = raising.tag === myTag;
+      h += '<span class="tmeta">🚩 ['+raising.tag+'] raising — '+ftime(raising.endsIn)+' ('+raising.helps+' helps)</span>'
+        + (ours ? '<button class="primary" data-act="landmarkHelp" data-key="'+l.id+'">🤝 Help raise</button>' : '');
+    }else{
+      h += '<span class="tmeta">'+(l.holder ? 'held by ['+l.holder.tag+'] '+l.holder.name : 'unclaimed')
+        + ' · garrison '+fmt(l.garrison)+'/'+fmt(l.max)+'</span>';
+      if(myTag && !mine) h += '<button data-act="landmarkAssault" data-key="'+l.id+'">⚔ Assault</button>';
+    }
+    h += '</div>';
+  }
+  if(d.eventBoard && d.eventBoard.rows.length){
+    h += '<div class="stat-note" style="margin-top:.6rem">Event standings — '+d.eventBoard.band+' bracket</div>';
+    const me = net.accountName();
+    d.eventBoard.rows.slice(0,8).forEach((r,i) => {
+      h += '<div class="trow'+(r.name===me?' mine':'')+'"><span class="tmeta">'+(i+1)+'</span>'
+        + '<span class="tname">'+r.name+'</span>'
+        + '<span class="tmeta">'+(r.alliance?'['+r.alliance+']':'')+' TH'+r.townhall+'</span>'
+        + '<span class="spacer"></span><span class="count">'+fmt(r.score)+'</span></div>';
+    });
+  }
+  if(d.alliances && d.alliances.length){
+    h += '<div class="stat-note" style="margin-top:.6rem">Alliances of the realm</div>';
+    for(const a of d.alliances.slice(0,6))
+      h += '<div class="trow'+(a.tag===myTag?' mine':'')+'"><span class="tname">['+a.tag+'] '+a.name+'</span>'
+        + '<span class="tmeta">'+a.members+' holds'+(a.holds?' · '+a.holds+' 🚩':'')+'</span>'
+        + '<span class="spacer"></span><span class="count">'+fmt(a.power)+'</span></div>';
+  }
+  h += '<p style="font-size:.68rem;font-family:var(--sans);color:var(--ink-dim);margin-top:.45rem">'
+    + 'Break a garrison with assaults, then your alliance raises a banner there — a long build that alliance help speeds up. '
+    + 'While it flies, every member carries the bonus.</p>';
+  h += '</section>';
+  return h;
+}
+
 function renderEvent(S){
   const now = Date.now();
   const ev = currentEvent(now), st = eventState(S, now);
@@ -913,7 +964,7 @@ export function render(){
   app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
     + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderSpoils(S)
-      + renderEvent(S) + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
+      + renderEvent(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
       + renderAchievements(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
   fx.innerHTML = renderFx(S) + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
@@ -988,6 +1039,12 @@ const VIEW_ACTIONS = {
   allianceLeave: () => {
     net.allianceLeave().then(() => { allyOpen = false; renderAllySheet(); render(); }).catch(()=>{});
   },
+  landmarkAssault: b => {
+    net.landmarkAssault(b.dataset.key)
+      .then(d => { if(d.state) store.s = d.state; render(); })
+      .catch(e => { acctMsg = e.message; acctOpen = true; renderAccount(); });
+  },
+  landmarkHelp: b => { net.landmarkHelp(b.dataset.key).then(render).catch(()=>{}); },
   allianceGive:    b => {
     net.allianceContribute(b.dataset.key)
       .then(d => { if(d.levelled) allyMsg = ''; return net.pullState(); })

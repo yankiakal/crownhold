@@ -21,6 +21,7 @@ net.resume().then(s => {
     net.refreshLeaderboard().then(render);
     net.refreshArena().then(render);
     net.refreshAlliance().then(render);
+    net.refreshRealm().then(render);
     net.refreshChat().then(() => renderChat());
   }
 }).catch(()=>{});
@@ -46,6 +47,7 @@ setInterval(() => {
       net.refreshLeaderboard();
       net.refreshArena();
       net.refreshAlliance();
+      net.refreshRealm();
     }
     if(now - lastChat > 5000){ lastChat = now; net.refreshChat().then(() => renderChat()); }
   }else if(now - lastSave > 5000){

@@ -182,6 +182,24 @@ export async function chatInvite(id, who){
   return d;
 }
 
+let realm = null;
+export function realmData(){ return realm; }
+export async function refreshRealm(){
+  if(!isOnline()) return null;
+  try{ realm = await post('/api/realm', { token: session.token }); return realm; }
+  catch(e){ return null; }
+}
+export async function landmarkAssault(id){
+  const d = await post('/api/landmark/assault', { token: session.token, id });
+  await refreshRealm();
+  return d;
+}
+export async function landmarkHelp(id){
+  const d = await post('/api/landmark/help', { token: session.token, id });
+  await refreshRealm();
+  return d;
+}
+
 export async function refreshLeaderboard(){
   if(!server) return null;
   try{

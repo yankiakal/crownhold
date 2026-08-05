@@ -145,6 +145,91 @@ function allianceView(tag, now){
   };
 }
 
+/* ── the realm: landmarks, banners, seasons ──
+   The state-wide layer. Five landmarks sit on the map; whichever alliance holds
+   one gives EVERY member a standing bonus. Taking one has two beats:
+     1. Assault — members throw their army power at the garrison until it breaks.
+     2. Raise the Banner — a long build on the spot, which alliance help speeds.
+   That second beat is what alliance banners actually are: a claim you build
+   together, which is exactly why help matters so much for them. */
+const LANDMARKS = [
+  { id:'sunspire',  name:'The Sunspire',   icon:'🗼', fx:'+8% production for every member',  bonus:{production:0.08},  base:2500 },
+  { id:'ironbridge',name:'Ironhold Bridge',icon:'🌉', fx:'+8% troop power for every member', bonus:{troopPower:0.08},  base:3000 },
+  { id:'oldmint',   name:'The Old Mint',   icon:'🪙', fx:'+15% Valor for every member',      bonus:{valor:0.15},       base:2200 },
+  { id:'quarryhead',name:'Quarryhead',     icon:'⛏️', fx:'−10% build time for every member', bonus:{buildSpeed:0.10},  base:2800 },
+  { id:'watchfires',name:'The Watchfires', icon:'🔥', fx:'+12% raid loot for every member',  bonus:{loot:0.12},        base:2000 },
+];
+// tunables are env-overridable so the capture flow can be tested end to end
+const BANNER_MS = Number(process.env.BANNER_MS) || 30 * 60 * 1000;
+const BANNER_HELP = 0.03;
+const ASSAULT_CD = Number(process.env.ASSAULT_CD) || 5 * 60 * 1000;
+const GARRISON_SCALE = Number(process.env.GARRISON_SCALE) || 1;
+const GARRISON_REGEN = 0.02;           // share of full per minute
+
+function landmarkState(id){
+  const d = LANDMARKS.find(l => l.id === id);
+  if(!d) return null;
+  db.realm ||= {};
+  return (db.realm[id] ||= {
+    id, holder:null, heldSince:0, garrison:d.base * GARRISON_SCALE, banner:null, lastTick:Date.now(),
+  });
+}
+function maxGarrison(d, st){
+  const a = st.holder && db.alliances[st.holder];
+  const held = a ? a.members.reduce((t,n) => {
+    const m = db.users[n.toLowerCase()];
+    return t + (m ? armyPower(m.state) : 0);
+  }, 0) : 0;
+  return Math.round((d.base + held * 0.25) * GARRISON_SCALE);   // a strong holder is harder to dislodge
+}
+function tickRealm(now){
+  for(const d of LANDMARKS){
+    const st = landmarkState(d.id);
+    const mins = (now - (st.lastTick || now)) / 60000;
+    st.lastTick = now;
+    const cap = maxGarrison(d, st);
+    if(st.garrison < cap) st.garrison = Math.min(cap, st.garrison + cap * GARRISON_REGEN * mins);
+    if(st.banner && now >= st.banner.end){
+      st.holder = st.banner.tag;
+      st.heldSince = now;
+      st.garrison = maxGarrison(d, st);
+      const a = db.alliances[st.banner.tag];
+      if(a) pushMsg(db.chat.state, '—', '🚩 ' + a.name + ' raises its banner over ' + d.name + '.');
+      st.banner = null;
+      markDirty();
+    }
+  }
+}
+function realmBonusFor(tag){
+  const b = {};
+  if(!tag) return b;
+  for(const d of LANDMARKS){
+    const st = landmarkState(d.id);
+    if(st.holder !== tag) continue;
+    for(const [k,v] of Object.entries(d.bonus)) b[k] = (b[k] || 0) + v;
+  }
+  return b;
+}
+function realmView(now){
+  tickRealm(now);
+  return LANDMARKS.map(d => {
+    const st = landmarkState(d.id);
+    const a = st.holder && db.alliances[st.holder];
+    return {
+      id:d.id, name:d.name, icon:d.icon, fx:d.fx,
+      holder: a ? { tag:a.tag, name:a.name } : null,
+      garrison: Math.round(st.garrison), max: maxGarrison(d, st),
+      banner: st.banner ? { tag: st.banner.tag, endsIn: Math.max(0, st.banner.end - now), helps: st.banner.helps || 0 } : null,
+    };
+  });
+}
+
+/* ── seasons ── */
+const SEASON_MS = 14 * 24 * 3600 * 1000;
+const SEASON_EPOCH = Date.UTC(2026, 7, 1);      // season 1 opened here
+const seasonNo = now => Math.max(1, Math.floor((now - SEASON_EPOCH) / SEASON_MS) + 1);
+const seasonEndsIn = now => SEASON_MS - ((now - SEASON_EPOCH) % SEASON_MS);
+
 /* ── chat ──
    Four kinds of room: the whole state, your alliance, a direct line to one
    person, and any private group people make for themselves. Kept in memory with
@@ -184,8 +269,12 @@ function roomFor(u, channel, target){
 
 function advance(u, now){
   const s = u.state;
-  // alliance techs reach the member through the state itself
-  s.allyBonus = allyMemberBonus(db.alliances[u.alliance]);
+  // alliance techs AND held landmarks reach the member through the state itself
+  const techB = allyMemberBonus(db.alliances[u.alliance]) || {};
+  const realmB = realmBonusFor(u.alliance);
+  s.allyBonus = {};
+  for(const k of new Set([...Object.keys(techB), ...Object.keys(realmB)]))
+    s.allyBonus[k] = (techB[k] || 0) + (realmB[k] || 0);
   const away = Math.min(Math.max(now - (s.lastSeen || now), 0), 7200000);
   if(away > 60000){
     applyOffline(s, away);
@@ -530,6 +619,97 @@ async function api(req, res, url){
       markDirty();
     }
     return send(res, 200, { ok:true, members:g.members });
+  }
+
+  /* ── the realm ── */
+
+  if(path === '/api/realm'){
+    advance(u, now);
+    const board = Object.values(db.users).map(m => ({
+      name: m.name,
+      score: (m.state.ev && m.state.ev.score) || 0,
+      townhall: m.state.b.townhall,
+      alliance: m.alliance || null,
+    })).filter(r => r.score > 0);
+    // ranked inside a Town Hall band, so nobody competes with the server's oldest hold
+    const band = t => t <= 8 ? 'Reach' : t <= 16 ? 'March' : t <= 24 ? 'Dominion' : 'Crown';
+    const mine = band(u.state.b.townhall);
+    return send(res, 200, {
+      landmarks: realmView(now),
+      season: { no: seasonNo(now), endsIn: seasonEndsIn(now) },
+      eventBoard: {
+        band: mine,
+        rows: board.filter(r => band(r.townhall) === mine)
+          .sort((a,b) => b.score - a.score).slice(0, 20),
+      },
+      alliances: Object.values(db.alliances).map(a => ({
+        tag:a.tag, name:a.name, members:a.members.length,
+        power: a.members.reduce((t,n) => {
+          const m = db.users[n.toLowerCase()];
+          return t + (m ? armyPower(m.state) : 0);
+        }, 0),
+        holds: LANDMARKS.filter(d => landmarkState(d.id).holder === a.tag).length,
+      })).sort((x,y) => y.power - x.power).slice(0, 20),
+    });
+  }
+
+  if(path === '/api/landmark/assault'){
+    if(!u.alliance) return send(res, 400, { error:'Only an alliance can take a landmark.' });
+    const d = LANDMARKS.find(l => l.id === String(body.id||''));
+    if(!d) return send(res, 404, { error:'No such landmark.' });
+    tickRealm(now);
+    const st = landmarkState(d.id);
+    if(st.holder === u.alliance) return send(res, 400, { error:'Your banner already flies there.' });
+    if(st.banner) return send(res, 400, { error:'A banner is already going up there.' });
+    if((u.state.assaultReady || 0) > now)
+      return send(res, 429, { error:'Your column is still reforming.' });
+    advance(u, now);
+    const power = armyPower(u.state);
+    if(power <= 0) return send(res, 400, { error:'You have no army to send.' });
+    u.state.assaultReady = now + ASSAULT_CD;
+    st.garrison = Math.max(0, st.garrison - power);
+    // the assault costs the attacker some of the muster, as any siege would
+    let fallen = 0;
+    for(const k of Object.keys(u.state.t)){
+      const l = Math.ceil(u.state.t[k] * 0.05);
+      u.state.t[k] = Math.max(0, u.state.t[k] - l); fallen += l;
+    }
+    gainValor(u.state, 8);
+    gainMastery(u.state, 30, now);
+    let claimed = false;
+    if(st.garrison <= 0){
+      st.holder = null;
+      st.banner = { tag: u.alliance, end: now + BANNER_MS, helps: 0, helpers: [] };
+      claimed = true;
+      const a = db.alliances[u.alliance];
+      pushMsg(db.chat.state, '—',
+        '⚔️ ' + (a ? a.name : u.alliance) + ' breaks the garrison at ' + d.name + ' and begins raising a banner.');
+    }
+    markDirty();
+    return send(res, 200, {
+      dealt: power, fallen, claimed,
+      landmarks: realmView(now), ...publicState(u),
+    });
+  }
+
+  if(path === '/api/landmark/help'){
+    if(!u.alliance) return send(res, 400, { error:'You are in no alliance.' });
+    tickRealm(now);
+    let helped = 0;
+    for(const d of LANDMARKS){
+      const st = landmarkState(d.id);
+      const b = st.banner;
+      if(!b || b.tag !== u.alliance) continue;
+      if(body.id && d.id !== body.id) continue;
+      if((b.helpers || []).includes(u.name)) continue;
+      const total = BANNER_MS;
+      b.end = Math.max(now, b.end - total * BANNER_HELP);
+      b.helps = (b.helps || 0) + 1;
+      b.helpers = (b.helpers || []).concat(u.name);
+      helped++;
+    }
+    if(helped) markDirty();
+    return send(res, 200, { helped, landmarks: realmView(now) });
   }
 
   if(path === '/api/reset'){

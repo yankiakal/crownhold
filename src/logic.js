@@ -124,7 +124,7 @@ export function buildCost(s,k){
   return c;
 }
 export function buildTime(s,k){
-  const spoilMult = Math.max(0.5, 1 - spoilBonus(s,'buildTime'));
+  const spoilMult = Math.max(0.4, 1 - spoilBonus(s,'buildTime') - allyBonus(s,'buildSpeed'));
   return Math.min(buildTimeCap(s.b[k]), BUILDINGS[k].time * Math.max(1, Math.pow(s.b[k], TIME_EXP))
     * (perk(s,5)?0.88:1) * (perk(s,18)?0.9:1) * spoilMult) * 1000 * TIME_SCALE;
 }
@@ -229,7 +229,8 @@ export function dayIndex(now){ return Math.floor(now / 86400000); }
 export function valorToday(s){ return s.valorDay === dayIndex(s.now || 0) ? (s.valorToday || 0) : 0; }
 
 export function gainValor(s, v){
-  const raw = v * (1 + heroBonus(s,'valor') + techBonus(s,'statecraft') + (perk(s,19)?0.10:0));
+  const raw = v * (1 + heroBonus(s,'valor') + techBonus(s,'statecraft')
+    + allyBonus(s,'valor') + (perk(s,19)?0.10:0));
   const day = dayIndex(s.now || 0);
   if(s.valorDay !== day){ s.valorDay = day; s.valorToday = 0; }
   const quota = valorQuota(s);
@@ -600,7 +601,8 @@ export function resolveWave(s, now, rand=Math.random){
       const l = Math.round(s.t[k] * Math.min(0.95, lossFrac*SCREEN[k]) * (0.7+rand()*0.6));
       s.t[k] = Math.max(0, s.t[k]-l); lost += l;
     }
-    const lootMult = (isWB?2:1) * (1 + heroBonus(s,'loot') + spoilBonus(s,'loot') + techBonus(s,'siegecraft') + (perk(s,17)?0.15:0)) * mods.lootX;
+    const lootMult = (isWB?2:1) * (1 + heroBonus(s,'loot') + spoilBonus(s,'loot') + techBonus(s,'siegecraft')
+      + allyBonus(s,'loot') + (perk(s,17)?0.15:0)) * mods.lootX;
     const base = 15*Math.pow(w,0.8);
     const loot = {food:Math.round(base*lootMult), wood:Math.round(base*lootMult),
                   stone:Math.round(0.4*base*lootMult), iron:Math.round(0.2*base*lootMult)};
