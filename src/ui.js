@@ -6,7 +6,7 @@ import {
   WAVE_TYPES, STANCES, EXPEDITIONS,
   WAVE_MS, FIRST_WAVE_MS, SHIELD_MS, SECOND_QUEUE_TH, COURT_PER_TH, COURT_MAX,
   MARCH_HEROES, CLASS_AFFINITY, CAP_PER_HERO, CAP_PER_LEVEL,
-  ARENA_HEROES, STAR_POWER, starNeed,
+  ARENA_HEROES, STAR_POWER, starNeed, TEMPERS, temperFor,
 } from './defs.js';
 import { TIERS } from './defs.js';
 import {
@@ -126,8 +126,28 @@ function renderThreat(S){
     + '</span></div>';
   h += '<div class="bar'+(shielded?'':' threat-fill')+'"><i style="width:'
     + (shielded ? Math.max(0,Math.min(100,100*(S.shieldUntil-now)/SHIELD_MS)) : pct)
-    + '%"></i></div></div>';
+    + '%"></i></div>';
+  h += renderTemper(S, now);
+  h += '</div>';
   return h;
+}
+
+/* What the Unpaid are mustering this season. Shown on the threat bar because it
+   is a planning tool, not trivia: it tells you which troops to drill and which
+   captains to raise for the next fortnight. */
+function renderTemper(S, now){
+  const t = temperFor(now);
+  const fav = t.favours ? TROOPS[t.favours] : null;
+  const cap = fav ? Object.entries(HERO_POOL).filter(([k,d]) => d.cls === t.favours && S.heroes[k]).length : 0;
+  const top = Object.entries(t.waves).sort((a,b)=>b[1]-a[1])[0];
+  return '<div class="temper"><span class="tname">'+t.icon+' '+t.name+'</span>'
+    + '<span class="meta">'+t.blurb+'</span>'
+    + '<span class="meta" style="margin-left:auto">'
+    + Math.round(top[1]*100)+'% '+WAVE_TYPES[top[0]].name.toLowerCase()
+    + (fav ? ' · favours <b>'+fav.icon+' '+fav.name+'s</b>'
+        + (cap ? ' <span style="opacity:.7">('+cap+' captain'+(cap===1?'':'s')+' drafted)</span>'
+              : ' <span style="opacity:.7">(no captain of theirs yet)</span>') : '')
+    + '</span></div>';
 }
 
 function queueStrip(S, q, label, finishAct, slot){
@@ -470,6 +490,19 @@ function renderSeasonCast(S, now){
       + '<span class="tmeta">'+(here ? cast.filter(([k])=>S.heroes[k]).length+'/'+cast.length+' drafted'
                                      : 'in '+ftime((n - cur) * SEASON_MS - (SEASON_MS - seasonEndsIn(now))))+'</span></div>';
   }
+  /* The tempers ahead — the point of showing them is that you can prepare.
+     Nothing here is a surprise and nothing here is sold. */
+  h += '<div class="stat-note" style="margin-top:.7rem">What the Unpaid will muster — plan your drilling</div>';
+  for(let i = 0; i < 4; i++){
+    const n = cur + i, t = TEMPERS[(n - 1) % TEMPERS.length];
+    const fav = t.favours ? TROOPS[t.favours] : null;
+    h += '<div class="trow'+(i===0?' mine':'')+'"><span>'+t.icon+'</span>'
+      + '<span class="tname">'+(i===0?'now':'Season '+n)+' · '+t.name+'</span>'
+      + '<span class="tmeta">'+t.blurb+'</span><span class="spacer"></span>'
+      + '<span class="tmeta">'+(fav ? 'favours '+fav.icon+' '+fav.name+'s' : 'no favourite')
+      + (i ? ' · in '+ftime((n - cur) * SEASON_MS - (SEASON_MS - seasonEndsIn(now))) : '')+'</span></div>';
+  }
+
   const founding = Object.entries(HERO_POOL).filter(([,d]) => !d.season);
   h += '<div class="stat-note">Season 0 · The Founding — '
     + founding.filter(([k])=>S.heroes[k]).length+'/'+founding.length+' drafted. '
@@ -1246,6 +1279,11 @@ function renderCodex(S){
     + 'A hero who actually rides earns far more XP than one who sits.</li>'
     + '<li><b>Formations</b> save a column — its three leaders and the exact count of each troop — for one-tap reuse. '
     + 'They hold nothing you could not assemble by hand; they just spare you assembling it eight times a day.</li>'
+    + '<li><b>Every season the Unpaid muster differently.</b> This season is <b>'+temperFor(Date.now()).name+'</b> — '
+    + temperFor(Date.now()).blurb+' The wave mix shifts, so the right <i>stance</i>, the right <i>troops</i> (+15% for the counter class) '
+    + 'and therefore the right <i>hero captains</i> all change every fortnight. Nothing you own ever gets weaker; what changes is which of '
+    + 'your things is the right answer. That is what a deep roster is for, and it is why seasons matter without anyone being made obsolete. '
+    + 'The next four tempers are listed openly in the Calendar so you can drill ahead.</li>'
     + '<li><b>Stars are the ladder that never ends.</b> On top of levels, heroes ascend in stars — earned by <i>fielding</i> them '
     + '(marches led, camps burned, arena fought), never by acquiring duplicates. Each star is worth +'+Math.round(STAR_POWER*100)
     + '% of everything that hero does. The cap is the season number, so Season 16 means sixteen stars for your <i>whole roster</i>, '

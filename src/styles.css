@@ -175,6 +175,12 @@ section.panel{
 .formrow .form{padding:.35rem .55rem;font-size:.8rem;text-align:left}
 .formrow .form .hmeta{display:block;font-family:var(--sans);font-size:.64rem;color:var(--ink-dim)}
 .stars{color:var(--gold);font-size:.72rem;letter-spacing:.02em}
+/* the season's temper, on the threat bar — a planning tool, not trivia */
+.temper{display:flex;align-items:baseline;gap:.7rem;flex-wrap:wrap;margin-top:.55rem;
+  padding-top:.5rem;border-top:1px solid var(--edge)}
+.temper .tname{font-size:.88rem;color:var(--gold)}
+.temper .meta{font-family:var(--sans);font-size:.7rem;color:var(--ink-dim)}
+.temper .meta b{color:var(--ink)}
 /* the arena five: a compact grid of faces, tapped on and off */
 .fiverow{display:flex;gap:.35rem;flex-wrap:wrap;margin:.35rem 0}
 .fiverow .five{padding:.3rem .45rem;font-size:.9rem;line-height:1.1;text-align:center}

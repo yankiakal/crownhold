@@ -243,6 +243,39 @@ export const HERO_POOL = {
    three level-10s command 108, three level-20s command 198. It binds hard while
    your heroes are green and stops binding once they are veterans, which makes it
    a gate on the *journey* rather than a permanent tax. */
+/* ── the season's temper ──
+   The strongest way to make a season matter without making anyone's hero
+   obsolete: change what is COMING AT YOU, not what you own.
+
+   Each season the Unpaid muster differently — a season of riders makes pikes
+   and shieldwall correct; a season of siege engines makes archers and volley
+   correct. Nothing you own gets weaker. What changes is which of your things is
+   the right answer this fortnight, which is exactly what a deep roster is for.
+
+   Tempers CYCLE, so this works at season 5 and at season 500. The cycle length
+   is coprime with nothing in particular — it just has to keep turning. */
+export const TEMPERS = [
+  {id:'muster',  name:'The Common Muster', icon:'🪓',
+   blurb:'A mixed season. The bands come as they always have.',
+   waves:{rabble:0.25, riders:0.25, skirmishers:0.25, brutes:0.25}, favours:null},
+  {id:'horse',   name:'The Horselords', icon:'🐎',
+   blurb:'Cavalry out of the grass country. Pikes and a shieldwall answer them.',
+   waves:{rabble:0.10, riders:0.60, skirmishers:0.15, brutes:0.15}, favours:'spearman'},
+  {id:'arrows',  name:'The Arrow Season', icon:'🏹',
+   blurb:'Skirmishers and horse-archers. Ride them down — knights and a charge.',
+   waves:{rabble:0.10, riders:0.15, skirmishers:0.60, brutes:0.15}, favours:'knight'},
+  {id:'hammer',  name:'The Hammerfall', icon:'💪',
+   blurb:'Heavy bands with siege at their backs. Break them at range with volley.',
+   waves:{rabble:0.10, riders:0.15, skirmishers:0.15, brutes:0.60}, favours:'archer'},
+  {id:'engines', name:'The Season of Engines', icon:'⚙️',
+   blurb:'Both sides bring machines. Ballistas earn their keep; walls do not.',
+   waves:{rabble:0.15, riders:0.20, skirmishers:0.20, brutes:0.45}, favours:'ballista'},
+  {id:'lean',    name:'The Lean Season', icon:'🌾',
+   blurb:'Hungry, disorganised bands — many of them, none of them fine.',
+   waves:{rabble:0.55, riders:0.15, skirmishers:0.15, brutes:0.15}, favours:'spearman'},
+];
+export function temperFor(now){ return TEMPERS[(seasonNo(now) - 1) % TEMPERS.length]; }
+
 /* ── stars: the ladder that never ends ──
    XP alone is too shallow a track for a hero you keep for a year, so heroes
    ascend in stars on top of it. Stars are earned by *fielding* the hero —

@@ -171,10 +171,37 @@ grind stops being P2W:
   for the first star, ~3 weeks to 5★, months to 10★, a year-plus to 20★. Infinite
   by construction, and every rung is paid in play.
 
-The remaining lever, still unbuilt and the strongest of the four: **seasonal meta
-shifts.** If Season 7's raids run cavalry-heavy, spearman heroes are *correct*
-that season. That makes seasons matter enormously, makes a wide roster valuable,
-and needs no creep at all.
+### The season's temper (v1.22) — the strongest lever, and it costs nothing
+
+The cleanest way to make a season matter is to change **what is coming at you**,
+not what you own. Each season the Unpaid muster differently:
+
+| Temper | Muster | Answer |
+|---|---|---|
+| The Common Muster | even | none |
+| The Horselords | 60% riders | Shield Wall · spearmen |
+| The Arrow Season | 60% skirmishers | Charge · knights |
+| The Hammerfall | 60% brutes | Volley · archers |
+| The Season of Engines | 45% brutes, mixed | ballistas |
+| The Lean Season | 55% rabble | spearmen |
+
+Tempers **cycle**, so this works at season 5 and at season 500 — verified to
+season 501. The shift reaches three systems at once, all of which already
+existed: `counterMult` (stance, ±20%), `compBonus` (troop composition, +15% for
+the counter class), and hero **class affinity** (+1%/level to that troop type).
+So a Horselords fortnight makes shieldwall, spearmen *and* your spearman
+captains all correct together.
+
+Nothing you own ever gets weaker. What changes is which of your things is the
+right answer — which is exactly what a 32-hero roster is *for*, and it is how a
+season earns attention without anyone being made obsolete. The next four tempers
+are listed openly in the Calendar so players can drill ahead.
+
+Sim-verified balance-neutral: a skilled bot scores TH9 / wave 120 / 36 losses
+under The Horselords against TH9 / wave 124 / 34 under The Common Muster. The
+temper does not change difficulty for someone who reads it — it changes what
+reading it *means*. (The sim understates the system: its bot adapts stance but
+never its troop mix or captains, which is where most of the depth is.)
 
 ### Columns and the arena five (v1.19–1.20)
 

@@ -7,7 +7,7 @@ import {
   BUILDINGS, TROOPS, MASTERY, QUESTS, ACHIEVEMENTS, RES_META,
   HERO_POOL, HERO_SLOTS, SPOILS, RARITY,
   COURT_BASE, COURT_PER_TH, COURT_MAX, seasonNo, CLASS_AFFINITY, MARCH_HEROES,
-  ARENA_HEROES, STAR_POWER, starCap, starNeed, DEEDS,
+  ARENA_HEROES, STAR_POWER, starCap, starNeed, DEEDS, temperFor,
   WAVE_TYPES, STANCES, COUNTER_BONUS, COUNTER_PENALTY, COUNTER_CASUALTY, SCREEN,
   EXPEDITIONS, EXPEDITION_CD,
   COST_EXP, TIME_EXP, TIERS, TIER_POWER, TIER_UPKEEP, TIER_COST,
@@ -841,12 +841,15 @@ export function useOrder(s, id, now){
   return true;
 }
 
-export function rollWaveType(rand){
-  const r = rand();
-  if(r < 0.25) return 'rabble';
-  if(r < 0.50) return 'riders';
-  if(r < 0.75) return 'skirmishers';
-  return 'brutes';
+/* What musters against you this season. The weights come from the season's
+   temper, so the correct stance — and the correct troops, and therefore the
+   correct hero captains — shift every fortnight without anything you own ever
+   getting weaker. This is the whole reason a deep roster is worth keeping. */
+export function rollWaveType(rand, now){
+  const w = temperFor(now || Date.now()).waves;
+  let r = rand(), acc = 0;
+  for(const [k,v] of Object.entries(w)){ acc += v; if(r < acc) return k; }
+  return 'rabble';
 }
 export function counterMult(s){
   const wt = WAVE_TYPES[s.waveType||'rabble'];
@@ -949,7 +952,7 @@ export function resolveWave(s, now, rand=Math.random){
   // the battle consumes orders; the next band takes shape on the horizon
   s.mods = freshMods();
   for(const id of Object.keys(s.orderCd)) if(s.orderCd[id] > 0) s.orderCd[id]--;
-  s.waveType = rollWaveType(rand);
+  s.waveType = rollWaveType(rand, s.now);
 }
 
 /* ── the simulation step: everything that happens per tick ── */

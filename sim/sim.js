@@ -7,14 +7,20 @@
 // spends Valor to finish long timers.
 
 import { BUILDINGS, TROOPS, RES_META, WAVE_TYPES } from '../src/defs.js';
+import * as D from '../src/defs.js';
 import * as L from '../src/logic.js';
 import * as W from '../src/world.js';
 import { freshState } from '../src/state.js';
 
 // skilled=true reads the scouts and sets the counter-stance; false stays Balanced.
 // Both use hero orders — the delta isolates the value of paying attention.
-function simulate(minutes, enemyLuck, skilled, label){
-  const s = freshState(0, 42); // fixed map seed keeps runs comparable
+/* `season` lets a run be played under a chosen temper: the clock starts that
+   many fortnights past the epoch, so rollWaveType picks from that season's
+   muster. Without it every run sits in season 1 (The Common Muster, even
+   weights) and the temper system is never exercised. */
+function simulate(minutes, enemyLuck, skilled, label, season = 1){
+  const t0 = D.SEASON_EPOCH + (season - 1) * D.SEASON_MS;
+  const s = freshState(t0, 42); // fixed map seed keeps runs comparable
   s.seenIntro = true;
   // resolveWave rolls enemy strength as 0.88 + rand()*0.24; invert for a fixed roll
   const rand = () => (enemyLuck - 0.88) / 0.24;
@@ -27,7 +33,7 @@ function simulate(minutes, enemyLuck, skilled, label){
 
   let prevML = 0;
   for(let t=1; t<=T; t++){
-    const ms = t*1000;
+    const ms = t0 + t*1000;
 
     // capture pre-tick battle context (a wave will resolve inside this tick)
     let pre = null;
@@ -108,7 +114,11 @@ function simulate(minutes, enemyLuck, skilled, label){
     }
     // expeditions: the skilled bot dispatches by hand; the lazy one sets a caravan and forgets
     if(skilled){
-      if(t >= (s.patrolReady/1000)){
+      // compare against the clock, not the loop counter — `t` is elapsed seconds
+      // and patrolReady is an absolute timestamp. These only coincided while the
+      // sim started at epoch 0; rebasing onto the season clock silently stopped
+      // the skilled bot expediting at all.
+      if(ms >= s.patrolReady){
         const route = s.valor < 15 ? 'barrows'
           : (s.res.stone + s.res.iron < s.res.food ? 'wildwood' : 'kingsroad');
         L.expedition(s, route, ms, rand);
@@ -230,7 +240,7 @@ function simulate(minutes, enemyLuck, skilled, label){
   }
 
   const famines = s.log.filter(e => e.txt.startsWith('Famine')).length;
-  console.log('══ '+label+' ══');
+  console.log('══ '+label+' · '+D.temperFor(t0).name+' ══');
   console.log(ev.join('\n'));
   console.log('-- end state: TH'+s.b.townhall+' wave '+s.wave+' won '+s.wavesWon+' lost '+s.wavesLost
     +' | army '+L.armyPower(s)+' (upkeep '+L.upkeepPerSec(s).toFixed(1)+'/s, food prod '+L.prodPerSec(s,'food').toFixed(1)+'/s)'
@@ -250,3 +260,6 @@ simulate(90, 1.0,  true,  '90 min, average luck, SKILLED (reads scouts, counters
 simulate(90, 1.0,  false, '90 min, average luck, LAZY (never changes stance)');
 simulate(240, 1.0, true,  '4 hours, average luck, skilled');
 simulate(480, 1.0, true,  '8 hours, average luck, skilled — the long road');
+// the temper system only earns its keep if a lopsided season plays differently
+simulate(240, 1.0, true,  '4 hours, skilled, under a lopsided muster', 2);
+simulate(240, 1.0, false, '4 hours, LAZY, under a lopsided muster', 2);
