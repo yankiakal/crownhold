@@ -1,7 +1,7 @@
 // Crownhold state: fresh-state shape, persistence, save migration.
 
 import { RES_META, FIRST_WAVE_MS, EXPEDITIONS } from './defs.js';
-import { prodPerSec, upkeepPerSec, storageCap, capFor, refineStep, pushLog, fmt,
+import { prodPerSec, upkeepPerSec, storageCap, capFor, refineStep, bankRest, pushLog, fmt,
          expedCdMs, caravanYields, CARAVAN_GRACE } from './logic.js';
 import { genWorld } from './world.js';
 
@@ -16,6 +16,7 @@ export function freshState(now, seed){
     marches: [],
     res:{food:120,wood:120,stone:60,iron:0,steel:0,runestone:0},
     achieved:{}, campsBurned:0, ruinsRaided:0, winStreak:0, bestStreakWon:0,
+    valorDay:0, valorToday:0, rest:0,
     valor:0,
     b:{townhall:1,farm:1,lumberyard:1,quarry:0,ironmine:0,barracks:0,wall:0,watchtower:0,
        tavern:0,granary:0,academy:0,hospital:0,warehouse:0,forge:0,runeworks:0},
@@ -121,6 +122,10 @@ export function load(now){
     if(s.ruinsRaided==null) s.ruinsRaided = 0;
     if(s.winStreak==null) s.winStreak = 0;
     if(s.bestStreakWon==null) s.bestStreakWon = 0;
+    // v1.5 pacing
+    if(s.valorDay==null) s.valorDay = 0;
+    if(s.valorToday==null) s.valorToday = 0;
+    if(s.rest==null) s.rest = 0;
     // v1.2 the Arena
     if(s.laurels==null) s.laurels = 1000;
     if(s.defStance==null) s.defStance = 'shieldwall';
@@ -128,8 +133,14 @@ export function load(now){
     if(s.arenaLosses==null) s.arenaLosses = 0;
     if(s.arenaReady==null) s.arenaReady = 0;
     if(s.arenaLast===undefined) s.arenaLast = null;
+    // time away banks Rest — the catch-up for anyone who has been gone
+    const trueAway = Math.max(now - (s.lastSeen||now), 0);
+    if(trueAway > 7200000){
+      bankRest(s, trueAway - 7200000);
+      pushLog(s, '🌙 You were away a while. The hold is Rested: production runs +50% hot and your daily Valor quota is doubled until it fades.', 'gold');
+    }
     // offline production (capped at 2 hours), net of army upkeep
-    const away = Math.min(Math.max(now - (s.lastSeen||now), 0), 7200000);
+    const away = Math.min(trueAway, 7200000);
     if(away > 60000) applyOffline(s, away);
     if(s.nextWave < now) s.nextWave = now + 60000;
     if(s.banner) s.banner = null;

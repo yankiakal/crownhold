@@ -15,6 +15,7 @@ import {
   fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor, capFor, isUnlocked,
   prodPerSec, prodMult, upkeepPerSec, buildCost, buildTime, canAfford, armyPower,
   armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
+  valorQuota, valorToday, isRested,
   maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost,
   wavePower, streakMult, finishCost, xpNeed,
 } from './logic.js';
@@ -55,7 +56,15 @@ function renderHeader(S){
     h += '<span class="res"><span class="lbl">'+m.lbl+'</span> '+fmt(S.res[r]||0)
        + '<span class="rate" style="'+warn+'">/'+fmt(capFor(S,r))+' · '+rateTxt+'/s</span></span>';
   }
-  h += '<span class="res valor"><span class="lbl">Valor</span> '+fmt(S.valor)+'</span>';
+  const quota = valorQuota(S), today = valorToday(S);
+  const spent = Math.min(today, quota);
+  h += '<span class="res valor" title="Valor earns at full rate up to your daily quota, then trickles">'
+    + '<span class="lbl">Valor</span> '+fmt(S.valor)
+    + '<span class="rate" style="color:'+(today>=quota?'var(--ink-dim)':'var(--gold-deep)')+'">'
+    + ' · today '+fmt(spent)+'/'+fmt(quota)+(today>=quota?' (trickle)':'')+'</span></span>';
+  if(isRested(S))
+    h += '<span class="res" style="color:var(--info)"><span class="lbl" style="color:var(--info)">Rested</span> '
+      + ftime(S.rest)+'</span>';
   h += '</div></header>';
   return h;
 }
@@ -611,6 +620,8 @@ function renderCodex(S){
     + '<ul>'
     + '<li>Valor comes from wins (5 + wave, capped +15, warbands ×2), quests, patrols (+2), finished buildings (+2), even losses (+2). It is never sold.</li>'
     + '<li>Spend it to finish any timer: 1 Valor per 4s remaining. Redrawing a draft costs 5.</li>'
+    + '<li><b>Daily quota</b>: Valor earns at full rate up to '+fmt(valorQuota(S))+' a day (it grows with your Town Hall), then trickles at a quarter rate. Ten hours of play beats one hour — by about half again, not tenfold. Progression is paced by the calendar, so nobody can be sold a way past it either.</li>'
+    + '<li><b>Rested</b>: every hour away banks half an hour of Rest (up to two days&#39; worth). While Rested, production runs +50% and your Valor quota doubles — so a week away is a running start, not a hole.</li>'
     + '<li>Writs of Peace pause raids for 3m. Earned from losses, warbands, and quests; capacity '+shieldCap(S)+'.</li>'
     + '</ul>'
 

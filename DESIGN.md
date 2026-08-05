@@ -110,6 +110,45 @@ an enormous pile of iron and wood, laundered through a Forge.
 Everything now runs to **Town Hall 30**, Mastery **30**, and a 30-step charter,
 with a 24-entry permanent achievement list underneath.
 
+## Pacing: can an addict finish it in a week? (v1.5)
+
+The honest failure the simulator exposed: with uncapped Valor, attention
+converted straight into skipped time (~2.4 h of timers skipped per 1.5 h
+played), so a ten-hour-a-day player capped the game in about four days.
+
+Kingshot's answer is that **the calendar paces you, not your stamina** — a
+Town Hall 25 upgrade takes real days, and playing longer cannot touch it. That
+is also exactly where they sell the escape hatch. We keep the pacing and refuse
+to sell the exit:
+
+- **Build times cap per level** (`600 + 400 × level` seconds; the live game
+  multiplies by ~10, putting late builds in day-long territory). The build
+  queue, not your energy, is the wall — and it runs while you sleep.
+- **Daily Valor quota** (`100 + 25 × Town Hall`, doubled while Rested). Earn
+  freely up to it, then Valor trickles at 25%. Ten hours still beats one hour;
+  it does not beat it tenfold.
+- **Rested** — the catch-up. Every hour away banks half an hour of Rest (max
+  two days' worth). While Rested, production runs +50% and the Valor quota
+  doubles. Coming back after a week away is a running start, not a hole.
+
+### Measured: 30 days on three human schedules
+
+| Schedule | Town Hall | Mastery | Army | Waves held |
+|---|---|---|---|---|
+| 1 h/day | 29 | 30 | 29,679 | 880 |
+| 3 h/day | 30 | 30 | 39,578 | 1,095 |
+| 10 h/day | 30 | 30 | 26,548 | 1,095 |
+
+Progression converges — which is the point, and is precisely Kingshot-minus-
+speedups. What heavy play still buys is everything the calendar does not gate:
+a bigger army, arena rating, achievements, waves survived, and keeping the build
+queue full (worth roughly a Town Hall level a month over a one-hour player).
+
+**Absolute pace still needs the launch multiplier.** The prototype holds about
+200 hours of total build queue, so everyone caps within a month here. Multiply
+build and training times 10–20× at launch and that becomes the intended 6–12
+months — still an order of magnitude short of Kingshot's multi-year VIP grind.
+
 ### How long to max, measured
 
 | Milestone | Perfect always-online play |

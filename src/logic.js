@@ -10,6 +10,8 @@ import {
   EXPEDITIONS, EXPEDITION_CD,
   COST_EXP, TIME_EXP, TIERS, TIER_POWER, TIER_UPKEEP, TIER_COST,
   REFINE, STEEL_FROM, RUNE_FROM,
+  buildTimeCap, VALOR_QUOTA_BASE, VALOR_QUOTA_PER_TH, VALOR_OVERFLOW,
+  REST_CAP_MS, REST_PROD_BONUS, REST_QUOTA_BONUS,
   WAVE_MS, FIRST_WAVE_MS, masteryLvl,
 } from './defs.js';
 
@@ -66,7 +68,7 @@ export function prodMult(s, res){
 export function prodPerSec(s, res){
   let p = 0;
   for(const [k,d] of Object.entries(BUILDINGS)) if(d.prod===res) p += d.rate * s.b[k];
-  return p * prodMult(s,res);
+  return p * prodMult(s,res) * (isRested(s) ? 1 + REST_PROD_BONUS : 1);
 }
 /* ── troop tiers ── */
 export function maxTier(s){ return Math.min(10, (s.b.academy||0)+1); }
@@ -112,7 +114,7 @@ export function buildCost(s,k){
 }
 export function buildTime(s,k){
   const spoilMult = Math.max(0.5, 1 - spoilBonus(s,'buildTime'));
-  return Math.min(600, BUILDINGS[k].time * Math.max(1, Math.pow(s.b[k], TIME_EXP))
+  return Math.min(buildTimeCap(s.b[k]), BUILDINGS[k].time * Math.max(1, Math.pow(s.b[k], TIME_EXP))
     * (perk(s,5)?0.88:1) * (perk(s,18)?0.9:1) * spoilMult) * 1000;
 }
 export function canAfford(s,cost){ return Object.entries(cost).every(([r,v]) => s.res[r] >= v); }
@@ -168,7 +170,43 @@ export function refineStep(s, dt){
     s.res[def.out] = (s.res[def.out] || 0) + want;
   }
 }
-export function gainValor(s, v){ s.valor += Math.round(v * (1 + heroBonus(s,'valor') + (perk(s,19)?0.10:0))); }
+/* ── the daily quota ──
+   Valor is the one currency that converts attention into skipped time, so it is
+   the one that must not scale linearly with hours played. Earn freely up to a
+   quota that grows with your hold (and doubles while Rested); past it Valor
+   still comes, at a trickle. A ten-hour day still beats a one-hour day — by
+   something like half again, not by tenfold. */
+export function isRested(s){ return (s.rest || 0) > 0; }
+export function valorQuota(s){
+  const base = VALOR_QUOTA_BASE + VALOR_QUOTA_PER_TH * s.b.townhall;
+  return Math.round(base * (isRested(s) ? 1 + REST_QUOTA_BONUS : 1));
+}
+export function dayIndex(now){ return Math.floor(now / 86400000); }
+export function valorToday(s){ return s.valorDay === dayIndex(s.now || 0) ? (s.valorToday || 0) : 0; }
+
+export function gainValor(s, v){
+  const raw = v * (1 + heroBonus(s,'valor') + (perk(s,19)?0.10:0));
+  const day = dayIndex(s.now || 0);
+  if(s.valorDay !== day){ s.valorDay = day; s.valorToday = 0; }
+  const quota = valorQuota(s);
+  const left = Math.max(0, quota - s.valorToday);
+  const full = Math.min(raw, left);
+  const over = raw - full;                       // past the quota it only trickles
+  const got = full + over * VALOR_OVERFLOW;
+  s.valorToday += raw;
+  s.valor += Math.round(got);
+  return got;
+}
+
+/* Rest: banked while you are away, spent while you play. It is the catch-up —
+   production runs hot and the Valor quota doubles until it runs out, so coming
+   back after a week away is a boost, not a hole you have to dig out of. */
+export function restStep(s, dt){
+  if((s.rest || 0) > 0) s.rest = Math.max(0, s.rest - dt*1000);
+}
+export function bankRest(s, awayMs){
+  s.rest = Math.min(REST_CAP_MS, (s.rest || 0) + awayMs * 0.5);
+}
 export function gainShield(s, n){ s.shields = Math.min(shieldCap(s), s.shields + (n||1)); }
 export function gainMastery(s, amt, now){
   const before = masteryLvl(s);
@@ -527,6 +565,7 @@ export function tick(s, now, dt, rand=Math.random){
 
   for(const r of Object.keys(RES_META)) gainRes(s, r, prodPerSec(s,r)*dt);
   refineStep(s, dt);
+  restStep(s, dt);
 
   // armies eat: upkeep drains food; an unfed muster deserts
   if(!(s.upkeepPauseUntil > now)) s.res.food -= upkeepPerSec(s)*dt;
