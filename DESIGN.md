@@ -1737,13 +1737,21 @@ Polynomial (level²) cost curves keep early levels snappy and late levels long.
 Progression ladders (all free, all parallel — there is always a next rung):
 - **Town Hall 1–20** gating 13 buildings (Tavern, Granary, Drillfield, Hospital,
   Warehouse joined in v0.8, each with a distinct lever).
-- **Troop tiers I–X** via the Drillfield; promotion reforges the whole class. Tiers II–IX
-  arrive every third level, at 3 through 24; **Tier X asks for the finished building at 30**.
-  It used to land at 27, three short of the top, which left the Drillfield as the one
-  building stopping short of 30 and made its last three levels the only ones buying nothing
-  but a percentage. The 24→30 run is now the longest dry spell in the ladder — the deliberate
-  cost of a dramatic final gate — and each of those levels still pays +2.5% troop power,
-  +12.5% across the six.
+- **Troop tiers I–X** via the Drillfield; promotion reforges the whole class. **The ladder
+  starts at 6 and steps every third level: 6, 9, 12, 15, 18, 21, 24, 27, 30.** Nine tiers, nine
+  equal steps, Tier X landing exactly on the building's last level.
+
+  Two worse versions came first, and the third only worked because of where it put the gap.
+  Starting at 3 with a flat step put Tier X at 27 — three short of the top, leaving this the only
+  building stopping short of 30 and its last three levels the only ones in the game buying nothing
+  but a percentage. Pinning Tier X to 30 while keeping the start at 3 fixed that but opened a
+  six-level dry spell from 24 to 30, which is the worst place in the building for one. Measured:
+  levels 0→6 are 8,400 stone and 2.3 hours of queue; the same six at 24→30 are 634,650 stone, 79
+  hours, and refined goods besides — seventy-five times the cost. So the quiet stretch belongs at
+  the *start*, where it is nearly free, and `maxTier` collapses to a single expression with no
+  special case for the last tier. `ACADEMY_TOP` derives from `TIERS.length × ACADEMY_PER_TIER`, and
+  a test asserts the ladder ends exactly where the building does, so adding a tier cannot silently
+  strand Tier X above the max again.
 - **Mastery 1–20** (the VIP replacement), **heroes to level 20**, spoils stacking.
 - Roadmap ladders, in order: **hero gear** (crafted from raid drops), **player/lord
   gear**, **seasons** (leagues + cosmetic passes), **arena** (async PvP vs snapshot

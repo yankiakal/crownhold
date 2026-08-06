@@ -36,7 +36,7 @@ export const BUILDINGS = {
      troop tier and EVERY level drills the muster harder, so there is no dull rung. */
   /* "+1%" here was stale for a long time: ACADEMY_POWER moved from 0.01 to 0.025 and this string
      did not follow, so the panel promised a quarter of what the building actually gave. */
-  academy:   {name:'The Drillfield',icon:'🎓', fx:'+2.5% troop power per level. A troop tier every 3rd level, and Tier X at 30.',
+  academy:   {name:'The Drillfield',icon:'🎓', fx:'+2.5% troop power per level. A troop tier every 3rd level from 6, up to Tier X at 30.',
               cost:{stone:150,iron:60}, time:25, max:30, th:4},
   hospital:  {name:'Infirmary',   icon:'⛑️', fx:'−4% casualties, and more of the fallen come back wounded instead of dead.',
               cost:{wood:120,food:80},  time:18, max:25, th:4},
@@ -68,19 +68,21 @@ export const TIERS = ['I','II','III','IV','V','VI','VII','VIII','IX','X'];
    climbs properly and Tier X becomes a late-game achievement rather than something you have
    by Town Hall 9. */
 export const ACADEMY_PER_TIER = 3;
-/* Tiers II–IX arrive every third level, at 3 through 24. TIER X ASKS FOR THE WHOLE BUILDING.
-   It used to arrive at 27, three short of the Drillfield's top, which made the last three levels
-   the only ones in the game that bought nothing but a percentage — and left the Drillfield as the
-   one building that stopped at 27 when everything around it runs to 30.
+/* THE LADDER STARTS AT 6, and that one change makes everything else come out even: Tier II at 6,
+   then every third level — 6, 9, 12, 15, 18, 21, 24, 27, 30. Nine tiers, nine steps of three, and
+   Tier X landing exactly on the Drillfield's last level with no gap anywhere in the ladder.
 
-   So the final tier is now the long climb: 24 to 30 with no tier in between. That is a deliberate
-   dry spell and the longest in the ladder, which is the honest cost of the change — the five
-   levels inside it still pay ACADEMY_POWER each, +12.5% troop power across them, so they are not
-   dead rungs, just quieter ones. The alternative was spreading all nine tiers evenly to 30, which
-   keeps every gap to three or four levels but moves Tier II to 4 and gives up the clean "every
-   third level" rule. A dramatic final gate is the more genre-honest of the two: Kingshot's own top
-   tier sits behind a building that opens around two hundred days in. */
-export const ACADEMY_TOP = 30;
+   Two worse versions came first. Starting at 3 with a flat step put Tier X at 27, three short of
+   the top, which left this as the only building stopping short of 30 and made its last three levels
+   the only ones in the game buying nothing but a percentage. Keeping the start at 3 and making
+   Tier X ask for 30 fixed that but opened a six-level dry spell from 24 to 30 — and that is the
+   worst place in the building to put one. Measured: levels 0→6 are 8,400 stone and 2.3 hours of
+   queue; levels 24→30 are 634,650 stone, 79 hours, and refined goods besides. The same six levels
+   cost seventy-five times as much at the top.
+
+   So the quiet stretch belongs at the START, where it is nearly free, and every tier after it
+   arrives on the same rhythm. The five levels before Tier II still pay ACADEMY_POWER each. */
+export const ACADEMY_TOP = TIERS.length * ACADEMY_PER_TIER;   // 30, and BUILDINGS must agree
 /* And what every level gives regardless, so no rung is dead. Deliberately troop POWER: it is
    the Academy's own domain, it lands on the multiplier every power figure already passes
    through, and it breaks no invariant.

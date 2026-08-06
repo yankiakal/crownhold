@@ -406,18 +406,18 @@ export function prodPerSec(s, res){
   return p * prodMult(s,res) * (isRested(s) ? 1 + REST_PROD_BONUS : 1);
 }
 /* ── troop tiers ── */
-/* Tiers II–IX every third level; Tier X only at the Drillfield's top. The step ladder is capped
-   one short of the last tier so that no amount of ordinary progress can reach X — it is the one
-   tier that asks for the finished building. */
+/* One expression, no special case for the last tier. The ladder starts at 6 — floor(a/3) is 1 for
+   every level below it — and then steps every third level, so Tier X falls on 30 of its own accord
+   rather than needing to be pinned there. The version this replaced had to cap the step ladder at
+   IX and hard-code X at the top, which is the shape of a formula fighting its own numbers. */
 export function maxTier(s){
   const a = s.b.academy || 0;
-  if(a >= ACADEMY_TOP) return TIERS.length;
-  return Math.min(TIERS.length - 1, 1 + Math.floor(a / ACADEMY_PER_TIER));
+  return Math.min(TIERS.length, Math.max(1, Math.floor(a / ACADEMY_PER_TIER)));
 }
-/* The Drillfield level that opens a given tier — what the UI has to name when it refuses. */
+/* The Drillfield level that opens a given tier — what the UI has to name when it refuses.
+   Tier I is free; every tier after it sits at exactly its own number times the step. */
 export function academyForTier(t){
-  if(t >= TIERS.length) return ACADEMY_TOP;
-  return Math.max(0, (t - 1) * ACADEMY_PER_TIER);
+  return t <= 1 ? 0 : t * ACADEMY_PER_TIER;
 }
 /* Every level drills the muster, tier or no tier. Multiplied into tierPower for the same
    reason supply is: that is the one function every power figure in the game passes through,

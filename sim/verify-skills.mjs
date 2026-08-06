@@ -797,33 +797,47 @@ console.log('\n── a pre-skills save is inert, not broken ──');
    a soldier a tier higher, precisely so neither route to a tier is cheaper. Asserted below,
    because that invariant is easy to break from a long way away. */
 {
-  console.log('\n── the Drillfield: a tier every third level, and no dull rung ──');
+  console.log('\n── the Drillfield: a tier every third level from 6, and no dull rung ──');
   const at = a => { const s = hold(); s.b.academy = a; return s; };
   ok('an unbuilt Academy still allows Tier I', L.maxTier(at(0)) === 1);
-  ok('a tier every third level', L.maxTier(at(3)) === 2 && L.maxTier(at(6)) === 3 && L.maxTier(at(9)) === 4,
-     'L3→' + D.TIERS[L.maxTier(at(3))-1] + ', L6→' + D.TIERS[L.maxTier(at(6))-1] + ', L9→' + D.TIERS[L.maxTier(at(9))-1]);
+  /* The ladder STARTS at 6, which is what makes the whole thing come out even — nine tiers, nine
+     steps of three, Tier X on the Drillfield's last level. The five levels below 6 pay power only,
+     and that is deliberately where the quiet stretch goes: measured, 0→6 is 8,400 stone and 2.3
+     hours, while the same six levels at 24→30 are 634,650 stone and 79 hours. */
+  ok('nothing before level 6 opens a tier', L.maxTier(at(3)) === 1 && L.maxTier(at(5)) === 1,
+     'L3→' + D.TIERS[L.maxTier(at(3))-1] + ', L5→' + D.TIERS[L.maxTier(at(5))-1]);
+  ok('then a tier every third level', L.maxTier(at(6)) === 2 && L.maxTier(at(9)) === 3 && L.maxTier(at(12)) === 4,
+     'L6→' + D.TIERS[L.maxTier(at(6))-1] + ', L9→' + D.TIERS[L.maxTier(at(9))-1] + ', L12→' + D.TIERS[L.maxTier(at(12))-1]);
+  /* No gap anywhere: every step from Tier II up is exactly ACADEMY_PER_TIER. This is the invariant
+     the two earlier versions each broke in a different place — one stranded Tier X three levels
+     below the top, the other opened a six-level dry spell at the most expensive end of the curve. */
+  {
+    const steps = [];
+    for(let t = 3; t <= D.TIERS.length; t++) steps.push(L.academyForTier(t) - L.academyForTier(t-1));
+    ok('every step of the ladder is the same size', steps.every(x => x === D.ACADEMY_PER_TIER),
+       'steps ' + steps.join(',') + ' (want all ' + D.ACADEMY_PER_TIER + ')');
+  }
   /* Tier X asks for the FINISHED building, not the ninth step of the ladder. It used to land at
      27, three short of the Drillfield's top, which made the last three levels the only ones that
      bought nothing but a percentage — and left this the one building stopping at 27 when
      everything near it runs to 30. Derived from ACADEMY_TOP so the two cannot drift. */
-  ok('the step ladder stops at Tier IX however far it climbs',
-     L.maxTier(at(24)) === 9 && L.maxTier(at(29)) === 9,
-     'L24→' + D.TIERS[L.maxTier(at(24))-1] + ', L29→' + D.TIERS[L.maxTier(at(29))-1]);
   ok('Tier X arrives only with the whole Drillfield',
-     L.maxTier(at(D.ACADEMY_TOP - 1)) === 9 && L.maxTier(at(D.ACADEMY_TOP)) === 10
-       && D.BUILDINGS.academy.max === D.ACADEMY_TOP,
+     L.maxTier(at(D.ACADEMY_TOP - 1)) === 9 && L.maxTier(at(D.ACADEMY_TOP)) === 10,
      'L' + (D.ACADEMY_TOP-1) + '→' + D.TIERS[L.maxTier(at(D.ACADEMY_TOP-1))-1]
        + ', L' + D.ACADEMY_TOP + '→' + D.TIERS[L.maxTier(at(D.ACADEMY_TOP))-1]);
+  /* And the last tier lands EXACTLY on the building's last level. ACADEMY_TOP derives from
+     TIERS.length × ACADEMY_PER_TIER, so adding a tier or changing the step moves it — and this is
+     what fires if BUILDINGS.academy.max is not moved to match. */
+  ok('the ladder ends exactly where the building does',
+     L.academyForTier(D.TIERS.length) === D.BUILDINGS.academy.max
+       && D.ACADEMY_TOP === D.BUILDINGS.academy.max,
+     'Tier X at ' + L.academyForTier(D.TIERS.length) + ', building maxes at '
+       + D.BUILDINGS.academy.max);
   ok('and it never promises a tier past X', L.maxTier(at(99)) === D.TIERS.length);
   ok('the level a tier needs is nameable, for when the panel refuses',
-     L.academyForTier(2) === 3 && L.academyForTier(9) === 24
+     L.academyForTier(1) === 0 && L.academyForTier(2) === 6
        && L.academyForTier(10) === D.ACADEMY_TOP,
-     'Tier II at ' + L.academyForTier(2) + ', IX at ' + L.academyForTier(9)
-       + ', X at ' + L.academyForTier(10));
-  /* Every level the tier ladder skips must still pay, and the run from 24 to 30 is the longest
-     dry spell in the game — the honest cost of making the last tier a climb. */
-  ok('the six levels between Tier IX and Tier X are reachable and none is the top',
-     D.ACADEMY_TOP - L.academyForTier(9) === 6, String(D.ACADEMY_TOP - L.academyForTier(9)));
+     'Tier I free, II at ' + L.academyForTier(2) + ', X at ' + L.academyForTier(10));
 
   /* Every level pays, including the two out of three that open no tier. */
   const p = a => { const s = at(a); s.t = { spearman:100 }; s.tier = { spearman:1 }; return L.tierPower(s, 'spearman'); };
