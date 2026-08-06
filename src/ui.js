@@ -2587,7 +2587,11 @@ export function render(){
      guessed because it wraps to two rows at some widths and one at others, and a hardcoded
      offset would clip or gap depending on the phone. */
   const hdr = document.querySelector('header');
-  if(hdr) document.documentElement.style.setProperty('--hdr', hdr.offsetHeight + 'px');
+  const root = document.documentElement;
+  // guarded: this runs against a stub DOM in verify-ui, and a missing setProperty took the
+  // entire suite down with a TypeError rather than failing one assertion
+  if(hdr && hdr.offsetHeight && root.style && root.style.setProperty)
+    root.style.setProperty('--hdr', hdr.offsetHeight + 'px');
 
   /* Centre the frontier on your own hold the first time it is drawn. Re-centring on every
      render would yank the view back mid-swipe, four times a second. */

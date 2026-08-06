@@ -41,7 +41,12 @@ const ctx2d = new Proxy({}, { get:(t, k) => {
   return typeof k === 'string' ? (() => {}) : undefined;
 }, set: () => true });
 
-const el = () => ({ style:{}, dataset:{}, classList:{ add(){}, remove(){}, toggle(){} },
+/* `style` is a real CSSStyleDeclaration in a browser, with methods. Leaving it as a bare {}
+   meant render() crashed the whole suite the moment it published the header's height as a custom
+   property — offsetHeight also needs to exist, or the value written is "undefinedpx". */
+const el = () => ({ style:{ setProperty(){}, removeProperty(){}, getPropertyValue: () => '' },
+  offsetHeight:0, offsetWidth:0,
+  dataset:{}, classList:{ add(){}, remove(){}, toggle(){} },
   appendChild(){}, addEventListener(){}, removeEventListener(){}, setAttribute(){},
   querySelectorAll: () => [], querySelector: () => null, innerHTML:'', textContent:'',
   width:360, height:360, parentNode:null, remove(){},
@@ -152,9 +157,17 @@ try {
      never draws. */
   ok('but the Alliance panel is still on the page, folded into the Ledger',
      /found or join one/.test(full));
-  const active = [...full.matchAll(/<div class="tabpane" data-pane="([a-z]+)">/g)].map(m => m[1]);
+  /* Matched on the `on` marker rather than an exact class string. The old pattern demanded
+     `class="tabpane"` verbatim, so it silently matched nothing the moment panes gained base/sheet
+     classes — and "nothing" collapsed to a Set of size 0, which is not 1, which is how a
+     structural change surfaced as a mystery assertion failure. */
+  const active = [...full.matchAll(/class="tabpane [^"]*\bon\b[^"]*" data-pane="([a-z]+)"/g)]
+    .map(m => m[1]);
   ok('exactly one tab is active at a time', new Set(active).size === 1,
-     'active: ' + [...new Set(active)].join(', ') || 'none');
+     'active: ' + ([...new Set(active)].join(', ') || 'none'));
+  /* And the hold is always the base beneath it — that is the whole arrangement. */
+  ok('the hold is always present as the base view',
+     /class="tabpane base[^"]*" data-pane="hold"/.test(full));
   ok('and the bar offers every tab it should', ['hold','war','world','court','ledger']
      .every(t => full.includes('data-act="tab" data-key="' + t + '"')));
   /* The panels themselves must survive — hidden, not removed. */
