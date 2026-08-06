@@ -9,7 +9,7 @@ import {
   ARENA_HEROES, STAR_POWER, starNeed, TEMPERS, temperFor,
   BEASTS, BEAST_ROAM_MS, PET_POOL, PET_MAX_LVL, petXpNeed, petBondNeed,
 } from './defs.js';
-import { TIERS, SUPPLY_RES } from './defs.js';
+import { TIERS, SUPPLY_RES, DECREES, DECREE_MS } from './defs.js';
 import {
   TILE_TYPES, MAP_W, MAP_H, CX, CY, TRAVEL_MS_PER_TILE, GATHER_MS,
   tileDist, marchSlots, tileBusy, marchPower, campPower, gatherYield, startMarch,
@@ -23,6 +23,7 @@ import {
   fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor, capFor, isUnlocked,
   activeTrainings, trainQueue, woundedTotal, woundedCap, woundShare, healCost, healTime,
   prodPerSec, prodMult, upkeepPerSec, supplyPerSec, shortFrac, supplyMult, buildCost, buildTime, canAfford, armyPower,
+  decreeOf, decreeLeft, canDecree, wallWear, wallMendPerSec,
   armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
   valorQuota, valorToday, isRested, QUEUE_KEYS, buildSlots, activeQueues, freeSlot, townhallReq, townhallPath,
   maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost,
@@ -308,6 +309,16 @@ function renderMuster(S){
   h += '<div class="stat-note">Also draws '+SUPPLY_RES.map(r =>
         supplyPerSec(S,r).toFixed(1)+' '+r+'/s of your +'+prodPerSec(S,r).toFixed(1)).join(' and ')
     + ' — arrows, shafts and shoes</div>';
+  /* The wall's condition. Only shown when it is not whole, because a line that always
+     reads "100%" is noise — but a wall quietly at 70% with no explanation would be the
+     same silent-power-loss trap the supply warning exists to prevent. */
+  if(wallWear(S) > 0.005 && S.b.wall > 0){
+    const pct = Math.round((1 - wallWear(S)) * 100);
+    const stone = wallMendPerSec(S);
+    h += '<p class="d-warn">\ud83e\uddf1 The wall stands at <b>' + pct + '%</b> — masons are drawing '
+      + stone.toFixed(1) + ' stone/s to mend it'
+      + (S.res.stone < stone * 5 ? ', and the Quarry cannot keep up.' : '.') + '</p>';
+  }
   const dry = SUPPLY_RES.filter(r => shortFrac(S,r) > 0.02);
   if(dry.length){
     const worst = Object.keys(TROOPS).map(k => ({k, m: supplyMult(S,k)}))
@@ -658,10 +669,38 @@ function renderSettings(S){
     + '</div></div>';
 }
 
+/* Decrees. Shown as a pair of columns per option — what it gives, what it takes — because
+   the whole design rests on the player reading both before they spend. A panel that led
+   with the bonus and buried the cost would turn a trade into an upgrade. */
+function renderDecrees(S){
+  const live = decreeOf(S);
+  let h = '<section class="panel"><h2>Decrees <span>' +
+    (live ? DECREES[live.key].icon + ' ' + DECREES[live.key].name + ' · ' + ftime(decreeLeft(S)) + ' left'
+          : 'none standing') + '</span></h2>';
+  h += '<p class="hmeta">A standing order, paid for in Valor and never in money. One at a '
+    + 'time, and every one of them costs you something — announcing the wrong decree for '
+    + 'your season is a real mistake, which is what makes announcing the right one worth '
+    + 'something.</p>';
+  for(const [k, d] of Object.entries(DECREES)){
+    const on = live && live.key === k;
+    const afford = canDecree(S, k);
+    h += '<div class="trow" style="align-items:flex-start;gap:.5rem">'
+      + '<span class="tname" style="min-width:8.4rem">' + d.icon + ' ' + d.name
+      + '<span class="hmeta" style="display:block">' + d.why + '</span></span>'
+      + '<span class="spacer"><span class="hmeta" style="color:var(--good)">' + d.fx.split(';')[0] + '</span>'
+      + '<span class="hmeta" style="display:block;color:var(--bad)">'
+      + (d.fx.split(';')[1] || '').trim() + '</span></span>'
+      + '<button data-act="decree" data-key="' + k + '"' + ((on || !afford) ? ' disabled' : '')
+      + '>' + (on ? 'standing' : d.cost + ' \u2726') + '</button></div>';
+  }
+  return h + '</section>';
+}
+
 function renderStore(S){
   if(!storeOpen) return '';
   const ch = charted(S.isle || {cells:[]}), ml = masteryLvl(S);
   let h = '<div class="overlay" data-act-bg="storeClose"><div class="card codex">'
+    + '<button class="sheet-x" data-act="storeClose" aria-label="Close">✕</button>'
     + '<h1 style="font-size:1.3rem">THE STORE</h1><div class="rule"></div>'
     + '<p class="sub">Everything here is visible to other people and changes no number. '
     + 'If deleting a purchase would alter any battle, it is not sold.</p>';
@@ -1914,7 +1953,8 @@ function renderDetail(S){
 function renderLore(S){
   if(!loreOpen) return '';
   const cur = seasonNo(Date.now());
-  let h = '<div class="overlay"><div class="card codex lorebook">'
+  let h = '<div class="overlay" data-act-bg="lore"><div class="card codex lorebook">'
+    + '<button class="sheet-x" data-act="lore" aria-label="Close">✕</button>'
     + '<h1 style="font-size:1.4rem">THE ANNALS OF THE REACH</h1><div class="rule"></div>';
   for(const e of CHRONICLE){
     h += '<article class="chron"><h3>'+e.title+'</h3>'
@@ -1950,7 +1990,8 @@ function renderCodex(S){
     if(!d.prod) continue;
     prodRows += '<tr><td>'+d.icon+' '+d.name+'</td><td>+'+d.rate+' '+d.prod+'/s per level</td></tr>';
   }
-  return '<div class="overlay"><div class="card codex">'
+  return '<div class="overlay" data-act-bg="codex"><div class="card codex">'
+    + '<button class="sheet-x" data-act="codex" aria-label="Close">✕</button>'
     + '<h1 style="font-size:1.4rem">THE CODEX</h1><div class="rule"></div>'
     + '<p class="sub">Every rule in the game. Nothing hidden, nothing sold.</p>'
 
@@ -2237,6 +2278,27 @@ function drawMap(S){
     ctx.fillRect(x*C+1, y*C+1, C-2, C-2);
   }
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+  /* Your own hold, at the middle of its own map. genWorld has always kept these nine
+     cells clear for it — twice, in two separate loops — and nothing ever drew anything
+     there, so the frontier was a ring of targets around a hole. Every distance in the
+     world is measured from this square (tileDist, tileBase, the gather yields), which
+     makes it the one tile the player most needs to see. */
+  {
+    const hx = CX*C + C/2, hy = CY*C + C/2;
+    const glow = ctx.createRadialGradient(hx, hy, 2, hx, hy, C*0.9);
+    glow.addColorStop(0, 'rgba(217,164,65,.22)');
+    glow.addColorStop(1, 'rgba(217,164,65,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect((CX-1)*C, (CY-1)*C, C*3, C*3);
+    ctx.strokeStyle = '#d9a441'; ctx.lineWidth = 2;
+    ctx.strokeRect(CX*C+3, CY*C+3, C-6, C-6);
+    ctx.font = IF+'px serif';
+    ctx.fillText('🏰', hx, hy-4);
+    ctx.fillStyle = '#e6d6b0'; ctx.font = 'bold '+LF+'px sans-serif';
+    ctx.fillText('HOLD', hx, hy+18);
+  }
+
   const marchTargets = new Set(S.marches.map(m=>m.tile));
   S.world.tiles.forEach((t,i)=>{
     const cx = t.x*C+C/2, cy = t.y*C+C/2;
@@ -2288,7 +2350,7 @@ export function render(){
   app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
     + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderPets(S) + renderRegalia(S) + renderSpoils(S)
-      + renderDaily(S) + renderIsle(S) + renderEvent(S) + renderRift(S) + renderRally(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderMusterRoll(S) + renderWatch(S) + renderRaid(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
+      + renderDecrees(S) + renderDaily(S) + renderIsle(S) + renderEvent(S) + renderRift(S) + renderRally(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderMusterRoll(S) + renderWatch(S) + renderRaid(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
       + renderAchievements(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
   fx.innerHTML = renderFx(S) + renderLore(S) + renderStore(S) + renderSettings(S)

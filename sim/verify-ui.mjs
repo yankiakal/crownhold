@@ -27,11 +27,17 @@ const ok = (name, cond, note='') => { cond ? pass++ : fail++;
   console.log((cond ? '  ✓ ' : '  ✗ ') + name + (note ? '  — ' + note : '')); };
 
 /* ── a DOM with just enough surface for ui.js and the isometric renderer ── */
+/* The stub records fillText, so the suite can assert what the canvas was ASKED to draw.
+   Everything else about a canvas is unobservable here, which is why the map went for
+   versions without the player's own hold on it: drawMap threw no error, rendered nothing
+   checkable, and the only witness was a screenshot nobody took. */
+const drawn = [];
 const ctx2d = new Proxy({}, { get:(t, k) => {
   if(k === 'canvas') return { width:360, height:360 };
   if(k === 'measureText') return () => ({ width:10 });
   if(k === 'createLinearGradient' || k === 'createRadialGradient') return () => ({ addColorStop(){} });
   if(k === 'getImageData') return () => ({ data:new Uint8ClampedArray(4) });
+  if(k === 'fillText') return (txt, x, y) => { drawn.push({ txt:String(txt), x, y }); };
   return typeof k === 'string' ? (() => {}) : undefined;
 }, set: () => true });
 
@@ -74,6 +80,7 @@ try {
   const L  = await from('logic.js');
   const ST = await from('state.js');
   const UI = await from('ui.js');
+  const W  = await from('world.js');
 
   /* A mid-game hold with a captain of every troop class, two seasons in so the
      seasonal systems are live. Skills are left unequipped: writing them straight
@@ -104,6 +111,19 @@ try {
      which is exactly what this suite does. */
   ok('the build stamp is rendered', /build (dev|[0-9a-f]{6,})/.test(full),
      (full.match(/build [^<]{0,24}/) || ['(absent)'])[0]);
+
+  /* ── the frontier draws the player's own hold ──
+     It did not, for every version up to this one. genWorld keeps the middle nine cells
+     clear for it in two separate loops, every distance in the world is measured from that
+     square, and drawMap never put anything there — so the map was a ring of targets around
+     a hole. Asserted against the canvas calls, because that is the only thing observable
+     from here. */
+  const C = 56;
+  const home = drawn.find(d => d.txt === '\u{1F3F0}' &&
+    Math.abs(d.x - (W.CX*C + C/2)) < 2 && Math.abs(d.y - (W.CY*C + C/2 - 4)) < 2);
+  ok('the frontier shows your hold at its centre', !!home,
+     home ? 'at ' + home.x + ',' + home.y : 'nothing drawn at ' + (W.CX*C + C/2) + ',' + (W.CY*C + C/2 - 4));
+  ok('and labels it', drawn.some(d => d.txt === 'HOLD'));
 
   /* ── the column composer: three captains, four classes ──
      The party covers spearman/archer/knight and leaves the ballista uncovered,

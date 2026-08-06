@@ -32,7 +32,7 @@
 // not two.
 
 import { TROOPS, RES_META } from './defs.js';
-import { armyBreakdown, takeWounds, pushLog, gainShield, watchCasualties,
+import { armyBreakdown, takeWounds, pushLog, gainShield, watchCasualties, batterWall,
          showBanner, gainValor, gainMastery, powerShares, matchupEdge, watchTroops } from './logic.js';
 import { scoreDeed } from './events.js';
 
@@ -127,6 +127,8 @@ export function resolveRaid(att, def, col, now, rand = Math.random){
   }
   // the Watch bleeds beside the wall it came to hold
   const watchHurt = watchCasualties(def, defFrac * 0.8, rand);
+  // and the stonework takes it hardest when it did not hold
+  batterWall(def, won ? 3 : 1.5);
 
   /* Loot. Only the four base stores, only the share the Warehouse leaves exposed, and
      never more than the column can carry. */

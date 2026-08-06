@@ -9,6 +9,8 @@ import {
   COURT_BASE, COURT_PER_TH, COURT_MAX, seasonNo, CLASS_AFFINITY, MARCH_HEROES,
   LOAD, HOLDS, NEEDS, EXPOSED_LOSS, BEATS, MATCHUP,
   SUPPLY, SUPPLY_RES, SUPPLY_PENALTY, SHORT_RAMP, SHORT_MEND, SUPPLY_FROM_TH, SUPPLY_FULL_TH,
+  WALL_WEAR_PER_HIT, WALL_WEAR_MAX, WALL_MEND_RATE, wallMendCost,
+  DECREES, DECREE_MS,
   ARENA_HEROES, STAR_POWER, starCap, starNeed, DEEDS, temperFor,
   PET_POOL, PET_MAX_LVL, petXpNeed, petBondNeed,
   WAVE_TYPES, STANCES, COUNTER_BONUS, COUNTER_PENALTY, COUNTER_CASUALTY, SCREEN,
@@ -172,8 +174,41 @@ export function seatHero(s, id, now){
    The Lord's Regalia is folded in here rather than plumbed to four separate
    call sites, so production, Valor, troop power and casualties all pick it up
    wherever they are already computed. */
+/* ── decrees ── */
+export function decreeOf(s){
+  const d = s.decree;
+  if(!d || !DECREES[d.key]) return null;
+  if((d.until || 0) <= (s.now || 0)) return null;
+  return d;
+}
+export function decreeLeft(s){
+  const d = decreeOf(s);
+  return d ? Math.max(0, d.until - (s.now || 0)) : 0;
+}
+/* Both halves of the trade land on the same modifier keys everything else uses, so no rule
+   anywhere needs to know decrees exist — the give and the take arrive through heroBonus
+   exactly as a court passive would. */
+export function decreeBonus(s, key){
+  const d = decreeOf(s);
+  if(!d) return 0;
+  const def = DECREES[d.key];
+  return (def.up[key] || 0) + (def.down[key] || 0);
+}
+export function canDecree(s, key){
+  return !!DECREES[key] && (s.valor || 0) >= DECREES[key].cost;
+}
+export function announceDecree(s, key, now){
+  s.now = now;
+  const def = DECREES[key];
+  if(!def || (s.valor || 0) < def.cost) return false;
+  s.valor -= def.cost;
+  s.decree = { key, until: now + DECREE_MS };
+  pushLog(s, def.icon + ' Decree: ' + def.name + '. ' + def.fx + ' (−' + def.cost + ' Valor)', 'gold');
+  return true;
+}
+
 export function heroBonus(s, key){
-  let b = regaliaBonus(s, key) + skillCourt(s, key);
+  let b = regaliaBonus(s, key) + skillCourt(s, key) + decreeBonus(s, key);
   for(const id of courtActive(s)){
     const d = HERO_POOL[id];
     if(d && d.bonus[key]) b += d.bonus[key]*effLvl(s,id) * (s.captain===id ? 2 : 1); // the Captain's passive counts double
@@ -801,6 +836,24 @@ export function watchCasualties(s, lossFrac, rand){
   return hurt;
 }
 
+/* ── the wall, and what it costs to keep standing ── */
+export function wallWear(s){ return Math.max(0, Math.min(WALL_WEAR_MAX, s.wallWear || 0)); }
+export function wallIntact(s){ return 1 - wallWear(s); }
+export function wallPower(s){
+  const full = (18 + techFlat(s,'fortification'))*s.b.wall + heroBonus(s,'wallPower');
+  return full * wallIntact(s);
+}
+/* Stone per second the masons want right now. Zero when the wall is whole, which is the
+   normal state — this is a bill for being attacked, not a standing tax. */
+export function wallMendPerSec(s){
+  if(!(s.b.wall > 0) || wallWear(s) <= 0) return 0;
+  return WALL_MEND_RATE * wallMendCost(s.b.wall);
+}
+export function batterWall(s, hits = 1){
+  if(!(s.b.wall > 0)) return;
+  s.wallWear = Math.min(WALL_WEAR_MAX, (s.wallWear || 0) + WALL_WEAR_PER_HIT * hits);
+}
+
 export function armyBreakdown(s){
   /* Cover applies at the wall too, and the wall itself is most of it — archers behind
      stonework are sound; the same archers with no line and no wall are not. */
@@ -815,7 +868,7 @@ export function armyBreakdown(s){
   const guests = watchHere(s);
   const mult = guests.reduce((m, g) => Math.max(m, g.mult || 0), mine);
   const gbase = guests.reduce((a, g) => a + (g.base || 0), 0);
-  const wall = (18 + techFlat(s,'fortification'))*s.b.wall + heroBonus(s,'wallPower');
+  const wall = wallPower(s);
   return { base, mult, ownMult: mine, cover, watch: gbase, watchers: guests.length,
            lifted: mult > mine + 1e-9, wall,
            total: Math.round((base + gbase)*mult + wall) };
@@ -1474,6 +1527,7 @@ export function resolveWave(s, now, rand=Math.random){
     for(const h of Object.values(s.heroes)) h.xp += (12+3*w)*(isWB?2:1);
     gainMastery(s, (8+2*w)*(isWB?2:1), now);
     s.wavesWon++; s.wave++; s.streak = 0;
+    batterWall(s);   // even a wave you threw back left marks on the stonework
     scoreDeed(s, 'waveWon', 1, now);
     if(isWB) scoreDeed(s, 'warbandWon', 1, now);
     s.winStreak = (s.winStreak||0) + 1;
@@ -1489,6 +1543,7 @@ export function resolveWave(s, now, rand=Math.random){
     s.streak++;
     s.winStreak = 0;
     s.wavesLost = (s.wavesLost||0)+1;
+    batterWall(s, 2.5);   // a wall that was actually breached needs far more masonry
     s.nextWave = now + WAVE_MS*2; // a loss buys a longer breather
     const protect = Math.min(0.6, 0.04*(s.b.warehouse||0)); // the Warehouse hides part of your stores
     for(const [k, l] of Object.entries(casualtySplit(s.t, 0.2, rand)))
@@ -1545,6 +1600,20 @@ export function tick(s, now, dt, rand=Math.random){
       s.short[r] = Math.max(0, (s.short[r] || 0) - dt*1000*SHORT_MEND);
     }
   }
+  /* The masons. They work at WALL_MEND_RATE and are paid in stone; if the Quarry cannot
+     keep up they work more slowly, and the wall simply stands damaged in the meantime.
+     Nothing collapses and nothing is lost — the wall is just worth less until it is paid
+     for, which is the same bargain the supply rule strikes with the army. */
+  if(wallWear(s) > 0 && s.b.wall > 0){
+    const want = WALL_MEND_RATE * dt;                       // fraction we would like to fix
+    const price = wallMendCost(s.b.wall);                   // stone for a whole repair
+    const afford = price > 0 ? Math.min(want, Math.max(0, s.res.stone) / price) : want;
+    if(afford > 0){
+      s.res.stone = Math.max(0, s.res.stone - afford * price);
+      s.wallWear = Math.max(0, wallWear(s) - afford);
+      if(s.wallWear <= 1e-6) s.wallWear = 0;
+    }
+  }
   if(s.res.food < 0){
     s.res.food = 0;
     s.famineAcc = (s.famineAcc||0) + dt;
@@ -1557,6 +1626,12 @@ export function tick(s, now, dt, rand=Math.random){
       if(lost) pushLog(s, 'Famine! '+lost+' troops desert an unfed muster — raise your Farms or let raids thin the ranks.', 'loss');
     }
   } else s.famineAcc = 0;
+
+  if(s.decree && s.decree.until <= now){
+    const def = DECREES[s.decree.key];
+    s.decree = null;
+    if(def) pushLog(s, def.icon + ' The decree of ' + def.name + ' has run its course.', 'gold');
+  }
 
   for(const q of QUEUE_KEYS){
     if(s[q] && now >= s[q].end){

@@ -152,6 +152,73 @@ export const SUPPLY = {
    instead of switched at a threshold, because a cliff in a cost is the same mistake as
    the win/loss cliff in the raid curve — full weight by Town Hall 8, nothing before 3. */
 export const SUPPLY_FROM_TH = 3, SUPPLY_FULL_TH = 8;
+
+/* ── stone, and the wall that eats it ──
+   Supply gave the Lumberyard and the Iron Mine a permanent job. It did nothing for the
+   Quarry, which was still running a +23/s surplus at a maxed hold — stone's only sinks
+   were one-off building costs and the Runeworks' modest appetite.
+
+   A wall that has been hit needs stone. That is the honest sink: it scales with how big
+   your wall is AND with how often you are attacked, so the Quarry matters in proportion to
+   how much wall you are actually asking to hold. And it costs the same thing the wall cost
+   to raise, which is the only currency that makes sense for repairing it.
+
+   Deliberately the same shape as the supply rule rather than a new kind of penalty: wear
+   is continuous, it is capped so a wall is never worthless, nothing is ever destroyed, and
+   it mends itself as fast as the Quarry can pay for it. A player who keeps up never sees
+   it; a player who over-builds the wall and under-builds the Quarry fights on a wall that
+   is half rubble. */
+export const WALL_WEAR_PER_HIT = 0.05;     // knocked loose by one assault
+export const WALL_WEAR_MAX = 0.50;         // a breached wall still counts for half
+export const WALL_MEND_RATE = 0.0016;      // fraction restored per second, stone allowing
+/* Stone for a full repair, at this level. Quadratic like the wall's own build cost — a
+   level 30 curtain is not four times the work of a level 15 one, it is nine. */
+export function wallMendCost(lvl){ return 26 * lvl * lvl; }
+
+/* ── decrees: a standing order, and what it costs you ──
+   The one thing the game had no version of: a lever you pull to change how your hold runs
+   for a while. Taken from the idea of a gold-and-decrees system, minus the gold — that
+   currency is the premium currency in Kingshot and Whiteout Survival and the whole P2W
+   spine, and an unsellable copy of it would just duplicate what steel and runestone
+   already do. So decrees run on VALOR, which is earned only by playing and is already the
+   thing you spend.
+
+   Every decree is a TRADE, never a bonus. That is the rule that keeps this from being a
+   power ratchet: each one names what it gives AND what it takes, on a different axis, so
+   announcing one is a read of your situation rather than an upgrade. Nothing here can be
+   bought, and a player who never announces a decree is not behind — they are unspecialised,
+   which against the wrong season is sometimes correct.
+
+   One at a time, deliberately. Two would let you stack the gives and split the takes across
+   axes you do not care about, and a menu of stacking modifiers is how "choice" quietly
+   becomes "arithmetic with one answer" — the same failure the troop ladder had.
+
+   Every field below lands on a modifier key the game ALREADY reads through heroBonus, so a
+   decree needs no plumbing at the point of use: the same lesson the Muster Roll learned by
+   reading counters that already existed. */
+export const DECREE_MS = 10 * 60 * 1000;
+export const DECREES = {
+  march:  {name:'Forced March',  icon:'🥁', cost:40,
+           fx:'Columns ride 30% faster — and carry a quarter less home.',
+           why:'For when the frontier matters more than the haul.',
+           up:{speed:0.30},      down:{haul:-0.25}},
+  ration: {name:'Rationing',     icon:'🍲', cost:35,
+           fx:'Upkeep falls by a third; the drill yards run a quarter slower.',
+           why:'For a muster larger than your farms.',
+           up:{upkeep:0.33},     down:{trainTime:-0.25}},
+  levy:   {name:'The Levy',      icon:'📯', cost:45,
+           fx:'Drilling is a third faster; the fields give 15% less.',
+           why:'For rebuilding a muster in a hurry.',
+           up:{trainTime:0.35},  down:{production:-0.15}},
+  harvest:{name:'Full Granaries',icon:'🌾', cost:35,
+           fx:'Production rises a fifth; every soldier fights 10% weaker.',
+           why:'For a quiet fortnight spent growing.',
+           up:{production:0.20}, down:{troopPower:-0.10}},
+  blood:  {name:'Bloody Work',   icon:'🗡️', cost:50,
+           fx:'Troops hit 12% harder and take a quarter more casualties.',
+           why:'For a fight you intend to win whatever it costs.',
+           up:{troopPower:0.12}, down:{casualties:-0.25}},
+};
 export const SUPPLY_RES = ['wood', 'iron'];
 /* Running dry does NOT kill anybody. Desertion is right for hunger — an unfed soldier
    leaves — but wrong for equipment: blunt arrows and lame horses make an army weaker, not

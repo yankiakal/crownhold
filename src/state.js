@@ -42,7 +42,7 @@ export function freshState(now, seed){
     mxp:0, shields:0, shieldUntil:0, warbandsWon:0, streak:0, famineAcc:0,
     questIdx:0,
     patrolReady:0, caravan:null,
-    short:{wood:0, iron:0},
+    short:{wood:0, iron:0}, wallWear:0,
     log:[], banner:null,
     seenIntro:false,
     now, lastSeen:now,

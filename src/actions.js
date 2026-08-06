@@ -6,7 +6,7 @@ import {
   startUpgrade, startTraining, finishBuildNow, finishTrainNow, startResearch, finishResearchNow, claimEvent, claimDaily, startHealing, finishHealNow,
   expedition, setCaravan, setStance, setDefStance, setCaptain, seatHero, useOrder, raiseShield,
   chooseOption, rerollChoice, promote, saveFormation, deleteFormation, setArenaTeam,
-  startGear, finishGearNow, setPetOut, setSkill, equipCos,
+  startGear, finishGearNow, setPetOut, setSkill, equipCos, announceDecree,
 } from './logic.js';
 import { startMarch, startHunt, startVoyage } from './world.js';
 import { TROOPS } from './defs.js';
@@ -55,6 +55,7 @@ export const GAME_ACTIONS = {
   equipCos:     (s,p,now)      => equipCos(s, p.mode, p.key, now),
   saveForm:     (s,p,now)      => saveFormation(s, p.key, partyFrom(p), troopsFrom(p), now),
   deleteForm:   (s,p,now)      => deleteFormation(s, p.key, now),
+  decree: (s,p,now) => announceDecree(s, p.key, now),
   intro:        (s)            => { s.seenIntro = true; return true; },
 };
 

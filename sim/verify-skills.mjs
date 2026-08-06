@@ -544,6 +544,120 @@ console.log('\n── a pre-skills save is inert, not broken ──');
   }
 }
 
+/* ── the wall eats stone ──
+   Supply gave the Lumberyard and Iron Mine a permanent job and did nothing for the Quarry,
+   which still ran +23 stone/s spare at a maxed hold. A wall that has been hit needs
+   masonry, so stone drain now scales with how much wall you have AND how often you are
+   attacked. Same shape as supply on purpose: capped, continuous, self-mending, destroys
+   nothing. */
+{
+  console.log('\n── a wall that has been hit needs stone ──');
+  /* hold() raises no Wall, and batterWall correctly does nothing to a hold that has none —
+     so the first version of this block asserted against a wall of level 0 and reported
+     "138 → 138" as a failure to take damage. The 138 was heroes and fortification tech,
+     not stonework. */
+  const walled = () => { const h = hold(); h.b.wall = 20; return h; };
+  const s = walled();
+  const whole = L.wallPower(s);
+  ok('an untouched wall is at full strength', L.wallWear(s) === 0 && whole > 0, 'wall ' + Math.round(whole));
+  ok('and asks for no stone at all', L.wallMendPerSec(s) === 0);
+
+  L.batterWall(s);
+  ok('an assault knocks part of it loose', L.wallPower(s) < whole,
+     Math.round(whole) + ' → ' + Math.round(L.wallPower(s)));
+  ok('and the masons now want stone', L.wallMendPerSec(s) > 0,
+     L.wallMendPerSec(s).toFixed(1) + '/s');
+
+  for(let i = 0; i < 40; i++) L.batterWall(s);
+  ok('a battered wall still counts for half — never nothing',
+     Math.abs(L.wallWear(s) - D.WALL_WEAR_MAX) < 1e-9 && L.wallPower(s) > whole * 0.49,
+     'wear capped at ' + (D.WALL_WEAR_MAX*100) + '%, wall at ' + Math.round(L.wallPower(s)));
+  ok('and the wall itself was never demolished', s.b.wall === 20);
+
+  /* Against a CONTROL, not against "the stone went down" — the Runeworks eats stone every
+     tick regardless, so an undamaged hold also spends some, and the first version of this
+     passed on that alone. */
+  const damaged = walled(), control = walled();
+  L.batterWall(damaged, 4);
+  for(let i = 0; i < 400; i++){
+    L.tick(damaged, damaged.now + (i+1)*1000, 1);
+    L.tick(control, control.now + (i+1)*1000, 1);
+  }
+  ok('the masons mend it', L.wallWear(damaged) < 0.01, 'wear → ' + L.wallWear(damaged).toFixed(3));
+  ok('and are paid in stone the intact hold never spends', damaged.res.stone < control.res.stone * 0.999,
+     'repaired ' + Math.round(control.res.stone - damaged.res.stone) + ' stone more than the control');
+
+  /* No stone, no repair — but also no collapse. The failure mode has to be "it stays
+     damaged", never "it falls down". */
+  const broke = walled();
+  L.batterWall(broke, 3);
+  broke.res.stone = 0;
+  const wearThen = L.wallWear(broke);
+  for(let i = 0; i < 60; i++) L.tick(broke, broke.now + (i+1)*1000, 1);
+  ok('a hold with no stone keeps a damaged wall rather than losing it',
+     L.wallWear(broke) >= wearThen - 0.02 && broke.b.wall > 0 && L.wallPower(broke) > 0,
+     'wear ' + L.wallWear(broke).toFixed(3) + ', wall still level ' + broke.b.wall);
+}
+
+/* ── decrees ──
+   A standing order paid for in Valor. Every one is a TRADE — the rule that stops this
+   being a power ratchet — and every field lands on a modifier key heroBonus already
+   aggregates, so no rule at the point of use knows decrees exist. Both properties are
+   asserted, because a decree naming a key nothing reads would be silent. */
+{
+  console.log('\n── decrees are trades, and they land on keys the game already reads ──');
+  for(const [k, d] of Object.entries(D.DECREES)){
+    ok(d.name + ' gives and takes', Object.keys(d.up).length > 0 && Object.keys(d.down).length > 0,
+       Object.keys(d.up) + ' up / ' + Object.keys(d.down) + ' down');
+    ok('and never on the same axis, which would just be arithmetic',
+       !Object.keys(d.up).some(key => key in d.down));
+  }
+
+  /* Reachability: heroBonus is the seam every modifier flows through, so a decree's value
+     must show up there — for the take as well as the give. */
+  for(const [k, d] of Object.entries(D.DECREES)){
+    const s = hold();
+    s.valor = 999;
+    for(const [key, v] of Object.entries({ ...d.up, ...d.down })){
+      const before = L.heroBonus(s, key);
+      L.announceDecree(s, k, s.now);
+      const after = L.heroBonus(s, key);
+      ok(d.name + ' reaches heroBonus("' + key + '")', Math.abs((after - before) - v) < 1e-9,
+         before.toFixed(3) + ' → ' + after.toFixed(3));
+      s.decree = null;
+    }
+  }
+
+  const s = hold();
+  s.valor = 999;
+  s.t = { spearman:300, archer:200, knight:100, ballista:50 };
+  const upkeepBefore = L.upkeepPerSec(s);
+  ok('Rationing costs Valor', L.announceDecree(s, 'ration', s.now) && s.valor === 999 - D.DECREES.ration.cost,
+     'valor 999 → ' + s.valor);
+  ok('and actually lowers what the muster eats', L.upkeepPerSec(s) < upkeepBefore * 0.8,
+     upkeepBefore.toFixed(1) + ' → ' + L.upkeepPerSec(s).toFixed(1) + ' food/s');
+  ok('a second decree replaces the first — never stacks',
+     L.announceDecree(s, 'levy', s.now) && L.decreeOf(s).key === 'levy' &&
+     L.heroBonus(s, 'upkeep') === L.heroBonus(hold(), 'upkeep'),
+     'standing: ' + L.decreeOf(s).key);
+  ok('it cannot be announced without the Valor',
+     (() => { const p = hold(); p.valor = 0; return !L.announceDecree(p, 'blood', p.now); })());
+
+  /* And it runs out, out loud. A modifier that expires silently is a set of numbers that
+     changed for no visible reason. */
+  const logBefore = s.log.length;
+  L.tick(s, s.now + D.DECREE_MS + 2000, 1);
+  ok('a decree expires on its own', L.decreeOf(s) === null);
+  /* Searched, not indexed at 0: a tick long enough to expire a decree also resolves waves
+     and queues offers, so the newest entry is whatever happened last, not what we asked
+     about. Asserting log[0] made this fail on a hero-draft message. */
+  const said = s.log.find(e => /run its course/.test(e.txt));
+  ok('and says so in the chronicle', s.log.length > logBefore && !!said,
+     said ? said.txt.slice(0, 54) : 'not in the log');
+  ok('with the hold back to its unmodified self',
+     L.heroBonus(s, 'trainTime') === L.heroBonus(hold(), 'trainTime'));
+}
+
 /* ── an army eats more than bread ──
    The Lumberyard, Quarry and Iron Mine used to have no permanent job: at level 30 a hold
    made 48 wood/s against 8.5 eaten, and the surplus GREW. Arrows and shoes are upkeep now.
