@@ -1,0 +1,60 @@
+name: Deploy Pages
+
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One at a time, and let a running deploy finish rather than cancelling it. Cancelling
+# mid-deploy is how the branch route ended up with a run recorded as 'cancelled' and the
+# site left on a stale build.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The footer's version is read by walking commit subjects, so a shallow
+          # clone would stamp the page "v0".
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The full suite, not just the build — publishing a page that fails its own
+      # checks is worse than publishing nothing. verify:audio needs a browser and
+      # skips cleanly here.
+      - run: npm run check
+
+      - name: Confirm the built page carries a version
+        run: |
+          grep -qE 'class="vtag"[^>]*>v[0-9]+\.[0-9]+<' dist/index.html \
+            || { echo "the built page has no release number in its footer"; exit 1; }
+          grep -oE 'v[0-9]+\.[0-9]+' dist/index.html | head -1
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
