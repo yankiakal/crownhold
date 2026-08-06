@@ -1,0 +1,288 @@
+{
+ "townhall": {
+  "cell": [
+   98,
+   116
+  ],
+  "anchor": [
+   48.5,
+   68
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "townhall.png"
+ },
+ "farm": {
+  "cell": [
+   69,
+   48
+  ],
+  "anchor": [
+   35.5,
+   13
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "farm.png"
+ },
+ "lumberyard": {
+  "cell": [
+   57,
+   69
+  ],
+  "anchor": [
+   28.5,
+   39.5
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "lumberyard.png"
+ },
+ "quarry": {
+  "cell": [
+   59,
+   43
+  ],
+  "anchor": [
+   29,
+   9
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "quarry.png"
+ },
+ "ironmine": {
+  "cell": [
+   53,
+   40
+  ],
+  "anchor": [
+   26,
+   9
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "ironmine.png"
+ },
+ "barracks": {
+  "cell": [
+   70,
+   78
+  ],
+  "anchor": [
+   34.5,
+   48
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "barracks.png"
+ },
+ "range": {
+  "cell": [
+   52,
+   66
+  ],
+  "anchor": [
+   26,
+   39
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "range.png"
+ },
+ "stable": {
+  "cell": [
+   75,
+   77
+  ],
+  "anchor": [
+   37.5,
+   45
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "stable.png"
+ },
+ "siegeyard": {
+  "cell": [
+   57,
+   77
+  ],
+  "anchor": [
+   28.5,
+   47.5
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "siegeyard.png"
+ },
+ "embassy": {
+  "cell": [
+   62,
+   75
+  ],
+  "anchor": [
+   31,
+   49
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "embassy.png"
+ },
+ "watchtower": {
+  "cell": [
+   37,
+   92
+  ],
+  "anchor": [
+   18.5,
+   76.5
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "watchtower.png"
+ },
+ "tavern": {
+  "cell": [
+   62,
+   68
+  ],
+  "anchor": [
+   31,
+   41.5
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "tavern.png"
+ },
+ "granary": {
+  "cell": [
+   38,
+   61
+  ],
+  "anchor": [
+   18.5,
+   42
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "granary.png"
+ },
+ "academy": {
+  "cell": [
+   61,
+   65
+  ],
+  "anchor": [
+   30.5,
+   39.5
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "academy.png"
+ },
+ "hospital": {
+  "cell": [
+   62,
+   68
+  ],
+  "anchor": [
+   31,
+   41.5
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "hospital.png"
+ },
+ "command": {
+  "cell": [
+   51,
+   82
+  ],
+  "anchor": [
+   26.5,
+   57.5
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "command.png"
+ },
+ "warehouse": {
+  "cell": [
+   72,
+   71
+  ],
+  "anchor": [
+   36,
+   40.5
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "warehouse.png"
+ },
+ "library": {
+  "cell": [
+   70,
+   86
+  ],
+  "anchor": [
+   34.5,
+   56
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "library.png"
+ },
+ "forge": {
+  "cell": [
+   62,
+   75
+  ],
+  "anchor": [
+   31,
+   49
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "forge.png"
+ },
+ "runeworks": {
+  "cell": [
+   49,
+   75
+  ],
+  "anchor": [
+   25,
+   52.5
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "runeworks.png"
+ },
+ "kitchen": {
+  "cell": [
+   62,
+   64
+  ],
+  "anchor": [
+   31,
+   38
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "kitchen.png"
+ },
+ "crucible": {
+  "cell": [
+   49,
+   72
+  ],
+  "anchor": [
+   25,
+   49
+  ],
+  "tiers": 4,
+  "scale": 2,
+  "src": "crucible.png"
+ }
+}
