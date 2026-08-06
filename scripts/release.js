@@ -1,7 +1,7 @@
 // Turns Vite's full-document build into the artifact-ready fragment at ./index.html.
 // The artifact host wraps published files in its own doctype/head/body skeleton,
 // so the shipped file must carry content only (title/style/script/divs, no wrapper).
-import { readFileSync, writeFileSync, copyFileSync } from 'fs';
+import { readFileSync, writeFileSync, copyFileSync, existsSync, statSync } from 'fs';
 import { sha } from './build-stamp.js';
 
 // full document → dist/index.html, the deployable PWA (GitHub Pages, Netlify, …)
@@ -45,6 +45,21 @@ const ver = html.match(/"(v\d+\.\d+)"/);
 if (!ver)
   throw new Error('release: no release number was baked in — build-stamp.js found no vX.YY commit subject');
 console.log('release ' + ver[1]);
+
+/* Shout if sprite art is riding along. public/art/ is gitignored, so CI always builds the
+   clean procedural page — but a local `npm run sprites` leaves art on disk that Vite copies
+   into dist/, and the manifest's mere presence makes drawBuilding use sprites and skip the
+   procedural renderer entirely. That is how a build got shipped whose Mage Spire was still a
+   timber Siege Yard: the PNGs were sixteen hours older than the rename, and nothing said so.
+   Deliberately a warning and not an error — shipping art is a legitimate choice, it just has
+   to be a choice. */
+if (existsSync('dist/art/manifest.json')) {
+  const when = statSync('dist/art/manifest.json').mtime.toISOString().slice(0, 16).replace('T', ' ');
+  console.log('');
+  console.log('  ⚠ dist/art is present (generated ' + when + ') — the procedural renderer is');
+  console.log('    BYPASSED for every building that has a sprite. Any renderer change made since');
+  console.log('    then is invisible. `rm -rf public/art` to ship the procedural page instead.');
+}
 
 writeFileSync('index.html', html);
 console.log('index.html written (' + html.length + ' bytes)');
