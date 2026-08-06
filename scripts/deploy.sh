@@ -20,6 +20,40 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
+/usr/bin/env python3 - <<'PYWAIT'
+# Wait for the field to be clear before pushing.
+#
+# GitHub's deploy-pages step can take ten minutes, and starting a second deployment while
+# one is in flight makes them contend — the loser reports failure. Measured from the run
+# history: deploys at 11:41, 11:57, 12:12 and 12:26 all failed while the 12:01 one, which
+# happened to get a clear window, succeeded. Three versions sat unpublished because this
+# script pushed on top of its own previous deployment.
+#
+# Unauthenticated read of a public repo, so it needs no token. If the API cannot be reached
+# it proceeds rather than blocking a deploy on a network hiccup.
+import json, time, urllib.request
+
+API = 'https://api.github.com/repos/yankiakal/crownhold/deployments?environment=github-pages&per_page=3'
+def busy():
+    try:
+        deps = json.load(urllib.request.urlopen(API, timeout=20))
+        for d in deps:
+            st = json.load(urllib.request.urlopen(d['statuses_url'] + '?per_page=1', timeout=20))
+            if st and st[0]['state'] in ('in_progress', 'queued', 'pending'):
+                return d['id']
+    except Exception:
+        return None
+    return None
+
+for i in range(40):
+    who = busy()
+    if not who:
+        break
+    if i == 0:
+        print('deploy: deployment %s is still in flight — waiting for it rather than racing it' % who)
+    time.sleep(15)
+PYWAIT
+
 npm run build
 
 # what the footer of the page we are about to publish says about itself
