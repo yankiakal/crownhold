@@ -890,14 +890,29 @@ let lastCssW = 0;
 function resize(){
   if(!cv) return;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const cssW = cv.clientWidth || cv.parentElement?.clientWidth || 600;
-  if(cssW === lastCssW) return;      // reallocating the buffer clears it — only on real changes
-  lastCssW = cssW;
+  /* The CONTAINER's width, not the canvas's. Below 820px the canvas is deliberately wider than
+     its container and pans inside it, so reading cv.clientWidth would feed the canvas its own
+     width back and the scale would never settle. */
+  const boxW = cv.parentElement?.clientWidth || cv.clientWidth || 600;
   const w = GRID * TW, hgt = GRID * TH + 86;
-  scale = Math.min(1, cssW / w);
+
+  /* ── two modes ──
+     Wide: fit the width, as it always did — the hold sits in a column beside the rail.
+     Narrow: fill the HEIGHT and let it pan sideways, because fitting 576 logical pixels into a
+     393px phone left the walls 255px tall — a third of the screen, an illustration rather than
+     the subject. Whiteout Survival's city is bigger than the screen and you move it. */
+  const narrow = boxW < 820;
+  const wantH = narrow ? Math.max(300, Math.round(window.innerHeight * 0.46)) : 0;
+  const next = narrow ? Math.min(1.6, wantH / hgt) : Math.min(1, boxW / w);
+  if(boxW === lastCssW && Math.abs(next - scale) < 0.001) return;  // reallocating clears the buffer
+  lastCssW = boxW;
+  scale = next;
+
+  const cssW = Math.round(w * scale);
   dprNow = dpr;
   cv.width = Math.round(cssW * dpr);
   cv.height = Math.round(hgt * scale * dpr);
+  cv.style.width = cssW + 'px';
   cv.style.height = Math.round(hgt * scale) + 'px';
   ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
   originX = w/2;

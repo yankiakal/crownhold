@@ -773,12 +773,18 @@ function renderDecrees(S){
 function renderLesson(S){
   const l = lessonOf(S);
   if(!l) return '';
+  /* Compact when docked, roomier when it holds the screen. Measured on a real 852px phone, the
+     card was ~430px — half the screen, and on the Hold view it covered the walls entirely. Most
+     of that was a footer repeating "these stay in the Codex, turn them off in Settings" on every
+     single card: meta-text about the feature, printed twelve times, in the most expensive space
+     on the device. It belongs on the FIRST lesson and nowhere else. */
+  const first = Object.keys(S.taught || {}).length <= 1;
   const card = '<div class="card lesson">'
-    + '<h1 style="font-size:1.05rem">'+l.icon+' '+l.title+'</h1><div class="rule"></div>'
+    + '<h1>'+l.icon+' '+l.title+'</h1>'
     + '<p class="d-row" style="text-align:left">'+l.body+'</p>'
-    + '<button class="primary" data-act="closeLesson" style="margin-top:.7rem">Understood</button>'
-    + '<p class="hmeta" style="margin-top:.4rem">Every one of these stays in the Codex. '
-    + 'Turn them off in Settings.</p></div>';
+    + '<button class="primary" data-act="closeLesson">Understood</button>'
+    + (first ? '<p class="hmeta">These stay in the Codex, and Settings turns them off.</p>' : '')
+    + '</div>';
   return l.hold
     ? '<div class="overlay" data-act-bg="closeLesson">'+card+'</div>'
     : '<div class="lessondock">'+card+'</div>';
@@ -1546,7 +1552,7 @@ function renderFooter(){
 }
 
 let codexOpen = false, loreOpen = false, storeOpen = false, settingsOpen = false;
-let mapCentred = false;
+let mapCentred = false, sceneCentred = false;
 let resetArmedUntil = 0; // two-tap raze confirmation window
 let arenaStance = 'balanced', arenaFrac = 0.5;
 let listView = false, sceneMounted = false;
@@ -2602,6 +2608,12 @@ export function render(){
   }
 
   const slot = document.getElementById('scene-slot');
+  /* Centre the walls the first time they are drawn wider than the screen — the gatehouse is at
+     the bottom-middle of the grid, so an un-scrolled view starts on the left wall. */
+  if(slot && !sceneCentred && slot.scrollWidth > slot.clientWidth){
+    slot.scrollLeft = (slot.scrollWidth - slot.clientWidth) / 2;
+    sceneCentred = true;
+  }
   if(slot){
     if(sceneCanvas.parentNode !== slot) slot.appendChild(sceneCanvas);
     if(!sceneMounted){ mountScene(sceneCanvas, store); sceneMounted = true; }

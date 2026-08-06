@@ -73,7 +73,13 @@ for(const t of TABS){
   const h = document.createElement('h2');
   h.textContent = t.toUpperCase();
   const f = document.createElement('iframe');
-  f.width = 393; f.height = 1400;
+  /* A REAL phone's height, not a tall capture frame. It was 1400px so the whole scrolling page
+     would fit the screenshot — which silently broke every vh-based rule inside: the hold scene
+     asks for 46vh and got 644px, sized for a screen no phone has, and the harness then reported
+     it as "43% of the screen" against the 1400 rather than against a phone. Scroll depth is still
+     measured via scrollHeight; it just is not all visible in one picture, which is exactly the
+     player's situation too. */
+  f.width = 393; f.height = 852;
   box.append(h, f);
   rack.appendChild(box);
   frames.push({ t, f });
@@ -103,10 +109,25 @@ setTimeout(() => {
       const hd = d.querySelector('header'), th = d.querySelector('.threat');
       const chrome = (hd ? hd.getBoundingClientRect().height : 0)
                    + (th ? th.getBoundingClientRect().height : 0);
-      rows.push('  chrome ' + Math.round(chrome) + 'px of ' + 852 + ' ('
-        + Math.round(100*chrome/852) + '% of the first screen) — '
+      rows.push('  chrome ' + Math.round(chrome) + 'px of ' + w.innerHeight + ' ('
+        + Math.round(100*chrome/w.innerHeight) + '% of the first screen) — '
         + (hd ? Math.round(hd.getBoundingClientRect().height) : 0) + ' header + '
         + (th ? Math.round(th.getBoundingClientRect().height) : 0) + ' threat');
+      if(t === 'hold'){
+        /* How big the walls actually are. They were 255px tall at 393px wide — a third of the
+           screen, an illustration rather than the subject the tab is named after. */
+        const cv = d.getElementById('holdscene'), slot = d.getElementById('scene-slot');
+        if(cv && slot){
+          const r = cv.getBoundingClientRect();
+          rows.push('  the walls ' + Math.round(r.width) + '×' + Math.round(r.height)
+            + ' — ' + Math.round(100 * r.height / w.innerHeight) + '% of the screen'
+            + (r.height / w.innerHeight >= 0.35 ? ' ✓ the subject' : ' ✗ too small to be the subject')
+            + ' · slot ' + slot.clientWidth + '/' + slot.scrollWidth
+            + (slot.scrollWidth > slot.clientWidth + 1 ? ' pans ✓'
+               : (r.width > w.innerWidth + 1 ? ' ✗ CLIPPED — wider than the screen and cannot pan'
+                                             : ' fits')));
+        }
+      }
       if(t === 'world'){
         const cv = d.getElementById('worldmap'), wrap = d.getElementById('mapwrap');
         if(cv && wrap){
@@ -121,6 +142,16 @@ setTimeout(() => {
       /* Measure the OPEN SHEET when there is one. Sheets are position:fixed, so they add
          nothing to documentElement.scrollHeight — after the base-view change every tab reported
          an identical 2.0 screens, which was the hold measured six times over. */
+      /* The lesson card's share of the screen. It was ~430px of 852 — half the device, covering
+         the walls on the Hold view — and a notification that owns half the screen is a modal
+         wearing a corner. */
+      const les = d.querySelector('.lessondock .card.lesson') || d.querySelector('.card.lesson');
+      if(les){
+        const lh = les.getBoundingClientRect().height;
+        rows.push('  lesson card ' + Math.round(lh) + 'px — '
+          + Math.round(100*lh/w.innerHeight) + '% of the screen'
+          + (lh / w.innerHeight <= 0.4 ? ' ✓' : ' ✗ OWNS THE SCREEN'));
+      }
       const sheet = d.querySelector('.tabpane.sheet.on');
       /* The resource row must survive an open sheet. Covering it meant opening War hid what you
          have while you decide what to spend — and every game this borrows from keeps it visible

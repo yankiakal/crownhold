@@ -25,7 +25,7 @@ await new Promise(r => setTimeout(r, 900));
 
 mkdirSync('shots', { recursive: true });
 const args = ['--headless=new','--disable-gpu','--hide-scrollbars',
-  '--window-size=2450,1450','--virtual-time-budget=25000'];
+  '--window-size=2450,960','--virtual-time-budget=25000'];
 spawnSync(CHROME, [...args, '--screenshot=shots/screens.png',
   'http://localhost:' + PORT + '/tools/screens.html'], { encoding:'utf8' });
 
@@ -33,7 +33,7 @@ spawnSync(CHROME, [...args, '--screenshot=shots/screens.png',
    layout fits and says nothing about how it READS, which is the only reason to look at it. */
 for(const [name, tabs] of [['phone-a','hold,war,world'], ['phone-b','court,ledger']]){
   spawnSync(CHROME, ['--headless=new','--disable-gpu','--hide-scrollbars',
-    '--window-size=1290,1450','--force-device-scale-factor=2','--virtual-time-budget=25000',
+    '--window-size=1290,960','--force-device-scale-factor=2','--virtual-time-budget=25000',
     '--screenshot=shots/' + name + '.png',
     'http://localhost:' + PORT + '/tools/screens.html?tabs=' + tabs], { encoding:'utf8' });
   console.log('  shots/' + name + '.png  (' + tabs + ')');
@@ -62,6 +62,14 @@ if(chrome && Number(chrome[1]) > 45){
    one. 44px is the floor every mobile guideline agrees on. */
 if(/under the 44px/.test(body)){
   console.error('\n  ✗ the frontier map is below thumb size — see the cell measurement above.');
+  process.exit(1);
+}
+if(/OWNS THE SCREEN/.test(body)){
+  console.error('\n  ✗ the lesson card is taking too much of the screen — it is a notification.');
+  process.exit(1);
+}
+if(/CLIPPED/.test(body)){
+  console.error('\n  ✗ something is wider than the screen with no way to pan to the rest of it.');
   process.exit(1);
 }
 if(/COVERED by the sheet/.test(body)){
