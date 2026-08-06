@@ -734,7 +734,17 @@ function renderSettings(S){
     + '<p class="hmeta">Every sound is generated as it plays — there are no audio files to '
     + 'download, and nothing here is stored with your hold or sent to the server.</p>'
     + '<div class="rule"></div>'
-    + '<button class="primary" data-act="settings" style="margin-top:.5rem">Back to the walls</button>'
+    + '<div class="rule"></div>'
+    /* The footer is hidden on phones, so its rarely-touched items live here — reachable, and out
+       of the way of the thumb rather than occupying a permanent row. */
+    + '<p class="hmeta">'+VERSION+' · build '+BUILD+'</p>'
+    + '<div style="display:flex;gap:.5rem;flex-wrap:wrap;justify-content:center;margin-top:.5rem">'
+    + '<button data-act="about">About</button>'
+    + '<button data-act="reset"'+(Date.now() < resetArmedUntil
+        ? ' style="color:var(--bad);border-color:var(--bad)"' : '')+'>'
+    + (Date.now() < resetArmedUntil ? '⚠ Tap again to raze EVERYTHING' : 'Raze &amp; restart')
+    + '</button></div>'
+    + '<button class="primary" data-act="settings" style="margin-top:.7rem">Back to the walls</button>'
     + '</div></div>';
 }
 
@@ -788,6 +798,32 @@ function renderLesson(S){
   return l.hold
     ? '<div class="overlay" data-act-bg="closeLesson">'+card+'</div>'
     : '<div class="lessondock">'+card+'</div>';
+}
+
+/* ── the dock ──
+   Third structural piece of the Whiteout Survival arrangement: the utility buttons live as a
+   floating icon cluster over the world, not as a row of labelled buttons in a footer. Those games
+   put them at the mid-right edge because that is where a thumb rests, and because a footer on a
+   phone is ninety pixels spent on things you touch once a session.
+
+   Only drawn over the base view. If a sheet is open you are already inside a panel, and a
+   floating cluster on top of it is two navigations competing for the same thumb.
+
+   The version chip is here on purpose. The footer carries it on a desktop, and hiding the footer
+   on phones would have hidden the one piece of build metadata that exists specifically so you can
+   tell which build you are looking at — the whole reason it was added. */
+function renderDock(S){
+  if(tab !== 'hold') return '';
+  const b = (act, icon, label) => '<button data-act="'+act+'" title="'+label+'" aria-label="'+label
+    + '"><span>'+icon+'</span></button>';
+  return '<div class="dock">'
+    + b('account', net.accountName() ? '☁' : '☁', net.accountName() || 'Play online')
+    + b('store',   '🛍', 'Store — cosmetics only')
+    + b('codex',   '📖', 'Codex — all the rules')
+    + b('lore',    '📜', 'Annals — the story of the Reach')
+    + b('settings', sound.muted() ? '🔇' : '⚙', 'Settings')
+    + '<span class="vchip" title="build '+BUILD+'">'+VERSION+'</span>'
+    + '</div>';
 }
 
 function renderStore(S){
@@ -2582,7 +2618,7 @@ export function render(){
                       + renderLeaderboard(S) + renderMastery(S) + renderAchievements(S)
                       + renderChronicle(S))
     + '</div>'
-    + '</main>' + renderFooter() + renderTabBar();
+    + '</main>' + renderFooter() + renderDock(S) + renderTabBar();
   fx.innerHTML = renderFx(S) + renderLesson(S) + renderLore(S) + renderStore(S) + renderSettings(S)
     + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
   setSkinTint((HOLD_SKINS[(S.cos && S.cos.hold) || 'default'] || {}).tint);

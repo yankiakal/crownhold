@@ -64,6 +64,10 @@ if(/under the 44px/.test(body)){
   console.error('\n  ✗ the frontier map is below thumb size — see the cell measurement above.');
   process.exit(1);
 }
+if(/NO VERSION VISIBLE|under 44px|footer still taking space|BUTTONS BURIED/.test(body)){
+  console.error('\n  ✗ the dock is wrong — see the measurement above.');
+  process.exit(1);
+}
 if(/OWNS THE SCREEN/.test(body)){
   console.error('\n  ✗ the lesson card is taking too much of the screen — it is a notification.');
   process.exit(1);

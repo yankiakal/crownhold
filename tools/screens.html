@@ -145,6 +145,34 @@ setTimeout(() => {
       /* The lesson card's share of the screen. It was ~430px of 852 — half the device, covering
          the walls on the Hold view — and a notification that owns half the screen is a modal
          wearing a corner. */
+      if(t === 'hold'){
+        /* The dock replaces a footer that was hidden on phones — including the version chip, which
+           exists specifically so you can tell which build you are looking at. Losing it to a
+           layout change would defeat the entire point of having added it. */
+        const dock = d.querySelector('.dock');
+        const btns = dock ? dock.querySelectorAll('button') : [];
+        let small = 0;
+        btns.forEach(b => { const r = b.getBoundingClientRect(); if(Math.min(r.width, r.height) < 44) small++; });
+        /* Does the cluster sit on top of anything you need to press? In Whiteout Survival the
+           world behind it has no controls; here the road panel has Raise buttons on the right
+           edge, and the first version of this covered them. */
+        let buried = 0;
+        if(dock){
+          const dr = dock.getBoundingClientRect();
+          d.querySelectorAll('button[data-act]').forEach(el => {
+            if(el.closest('.dock') || el.closest('.tabbar') || el.closest('.card')) return;
+            const r = el.getBoundingClientRect();
+            if(r.width && r.right > dr.left && r.left < dr.right
+                       && r.bottom > dr.top && r.top < dr.bottom) buried++;
+          });
+        }
+        rows.push('  dock ' + btns.length + ' icons'
+          + (buried ? ' ✗ ' + buried + ' BUTTONS BURIED under it' : ' · buries nothing ✓')
+          + (small ? ' ✗ ' + small + ' under 44px' : ' ✓ all thumb-sized')
+          + (dock && dock.querySelector('.vchip') ? ' · version chip present ✓' : ' ✗ NO VERSION VISIBLE')
+          + (d.querySelector('footer') && d.querySelector('footer').offsetHeight
+              ? ' ✗ footer still taking space' : ' · footer hidden ✓'));
+      }
       const les = d.querySelector('.lessondock .card.lesson') || d.querySelector('.card.lesson');
       if(les){
         const lh = les.getBoundingClientRect().height;

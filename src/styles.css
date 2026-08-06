@@ -373,11 +373,17 @@ section.panel{
     margin-left:calc(var(--pad) * -1);margin-right:calc(var(--pad) * -1);
   }
   .tabpane.base > section.panel > h2{display:none}
+  /* Content keeps clear of the dock. The cluster floats at the mid-right edge, and the road
+     panel's Raise buttons live on that same edge — the first version put the icons straight on
+     top of two of them, which the harness now refuses. The walls themselves are exempt: they are
+     full-bleed and pan, and there is nothing to press on them at that edge. */
   .tabpane.base > section.panel > .queue-strip,
   .tabpane.base > section.panel > .stat-note,
   .tabpane.base > section.panel > .road{
-    margin-left:var(--pad);margin-right:var(--pad);
+    margin-left:var(--pad);margin-right:3.7rem;
   }
+  /* and so do the panels below the walls, for the same reason */
+  .tabpane.base .rail > section.panel{margin-right:3.2rem}
   /* the walls pan sideways, like the frontier — the canvas is wider than the phone on purpose */
   #scene-slot{
     margin-top:.5rem;
@@ -752,3 +758,26 @@ details.temper summary::-webkit-details-marker{display:none}
 details.temper summary::before{content:'▸ ';color:var(--ink-dim)}
 details.temper[open] summary::before{content:'▾ '}
 details.temper .tname{font-size:.92rem;color:var(--ink)}
+
+/* ── the dock: utility icons over the world, phone only ── */
+.dock{display:none}
+@media(max-width:820px){
+  footer{display:none}          /* ninety pixels of permanent row for once-a-session buttons */
+  .dock{
+    display:flex;flex-direction:column;align-items:center;gap:.4rem;
+    position:fixed;right:.5rem;top:50%;transform:translateY(-50%);z-index:70;
+  }
+  .dock button{
+    width:2.9rem;height:2.9rem;padding:0;border-radius:50%;   /* comfortably past 44px */
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(33,27,22,.92);border:1px solid var(--edge);
+    box-shadow:0 2px 10px rgba(0,0,0,.5);
+  }
+  .dock button span{font-size:1.15rem;line-height:1}
+  .dock button:active{border-color:var(--gold-deep)}
+  .dock .vchip{
+    font-family:var(--sans);font-size:.55rem;letter-spacing:.06em;
+    color:var(--gold);background:rgba(33,27,22,.92);
+    border:1px solid var(--gold-deep);border-radius:3px;padding:.05rem .25rem;
+  }
+}
