@@ -88,6 +88,15 @@ setTimeout(() => {
       const btn = d.querySelector('[data-act="tab"][data-key="' + t + '"]');
       if(btn) btn.click();
       const doc = d.documentElement;
+      /* How much of a phone screen is spent before any content: the header and the threat bar
+         sit OUTSIDE the tabs, so whatever they cost is paid on all six. */
+      const hd = d.querySelector('header'), th = d.querySelector('.threat');
+      const chrome = (hd ? hd.getBoundingClientRect().height : 0)
+                   + (th ? th.getBoundingClientRect().height : 0);
+      rows.push('  chrome ' + Math.round(chrome) + 'px of ' + 852 + ' ('
+        + Math.round(100*chrome/852) + '% of the first screen) — '
+        + (hd ? Math.round(hd.getBoundingClientRect().height) : 0) + ' header + '
+        + (th ? Math.round(th.getBoundingClientRect().height) : 0) + ' threat');
       rows.push(t + ': scrollWidth ' + doc.scrollWidth + '/' + w.innerWidth
         + (doc.scrollWidth > w.innerWidth + 1 ? ' ✗ OVERFLOWS' : ' ✓')
         + ' · ' + (doc.scrollHeight / w.innerHeight).toFixed(1) + ' screens'

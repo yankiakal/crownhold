@@ -12,7 +12,7 @@ import {
 /* LOAD and SCREEN already arrive through the main defs import above — this second one
    carries only what is not already in scope. */
 import { TIERS, SUPPLY_RES, SUPPLY, HOLDS, NEEDS, BEATS, MATCHUP,
-         DECREES, DECREE_MS, WAVE_LOSS_FLOOR, WAVE_LOSS_SPAN } from './defs.js';
+         DECREES, DECREE_MS, WAVE_LOSS_FLOOR, WAVE_LOSS_SPAN, WAVE_PLUNDER_FLOOR, WAVE_PLUNDER_SPAN } from './defs.js';
 import {
   TILE_TYPES, MAP_W, MAP_H, CX, CY, TRAVEL_MS_PER_TILE, GATHER_MS,
   tileDist, marchSlots, tileBusy, marchPower, campPower, gatherYield, startMarch,
@@ -135,7 +135,6 @@ function renderThreat(S){
       + '<span class="meta">scouts: <b>'+est+'</b></span>';
   }
   h += '<span class="meta" style="margin-left:auto">your power: <b>'+armyPower(S)+'</b></span>'
-    + '<span class="meta" title="A near loss costs the floor; an undefended hold costs the ceiling">defeat costs: <b>'+Math.round(WAVE_LOSS_FLOOR*100)+'–'+Math.round((WAVE_LOSS_FLOOR+WAVE_LOSS_SPAN)*100)+'% troops</b></span>'
     + '<span class="meta">writs: <b>'+S.shields+'/'+shieldCap(S)+'</b></span>'
     + (S.shields>0 && !shielded ? '<button class="valor-btn" data-act="raiseShield">🛡 Raise shield · 3m</button>' : '')
     + '</div>';
@@ -156,7 +155,12 @@ function renderThreat(S){
   h += '<span class="meta" style="display:block;margin-top:.3rem">Set it once and leave it. '
     + 'A stance that suits the raid is worth +20% and fewer casualties, but raids resolve '
     + 'themselves and none arrive while the game is closed — this is not something to watch.'
-    + '</span></details>';
+    + '</span>'
+    + '<span class="meta" style="display:block;margin-top:.3rem">A defeat costs <b>'
+    + Math.round(WAVE_LOSS_FLOOR*100)+'–'+Math.round((WAVE_LOSS_FLOOR+WAVE_LOSS_SPAN)*100)
+    + '%</b> of the muster and <b>'+Math.round(WAVE_PLUNDER_FLOOR*100)+'–'
+    + Math.round((WAVE_PLUNDER_FLOOR+WAVE_PLUNDER_SPAN)*100)+'%</b> of your stores — the floor '
+    + 'when it was close, the ceiling when you were flattened.</span></details>';
   h += '<div class="bar'+(shielded?'':' threat-fill')+'"><i style="width:'
     + (shielded ? Math.max(0,Math.min(100,100*(S.shieldUntil-now)/SHIELD_MS)) : pct)
     + '%"></i></div>';
@@ -173,14 +177,21 @@ function renderTemper(S, now){
   const fav = t.favours ? TROOPS[t.favours] : null;
   const cap = fav ? Object.entries(HERO_POOL).filter(([k,d]) => d.cls === t.favours && S.heroes[k]).length : 0;
   const top = Object.entries(t.waves).sort((a,b)=>b[1]-a[1])[0];
-  return '<div class="temper"><span class="tname">'+t.icon+' '+t.name+'</span>'
-    + '<span class="meta">'+t.blurb+'</span>'
-    + '<span class="meta" style="margin-left:auto">'
-    + Math.round(top[1]*100)+'% '+WAVE_TYPES[top[0]].name.toLowerCase()
-    + (fav ? ' · favours <b>'+fav.icon+' '+fav.plural+'</b>'
-        + (cap ? ' <span style="opacity:.7">('+cap+' captain'+(cap===1?'':'s')+' drafted)</span>'
-              : ' <span style="opacity:.7">(no captain of theirs yet)</span>') : '')
-    + '</span></div>';
+  /* Folded, like the standing order. Measured, the header and threat bar together took 434 of
+     852 pixels on a phone — 51% of the first screen, spent before any content, and paid on all
+     six tabs because both sit outside the panes. The season's temper is PLANNING material: it
+     tells you which troops to drill over the next fortnight, which is worth reading once, not
+     occupying a third of every screen forever. The name and the headline stay on the summary
+     line so it is still glanceable. */
+  return '<details class="temper"><summary><span class="tname">'+t.icon+' '+t.name+'</span> '
+    + '<span class="meta">'+Math.round(top[1]*100)+'% '+WAVE_TYPES[top[0]].name.toLowerCase()
+    + (fav ? ' · favours '+fav.icon+' '+fav.plural : '')+'</span></summary>'
+    + '<span class="meta" style="display:block">'+t.blurb+'</span>'
+    + (fav ? '<span class="meta" style="display:block;margin-top:.2rem">'
+        + (cap ? cap+' captain'+(cap===1?'':'s')+' of theirs drafted — a column they lead hits harder.'
+              : 'No captain of theirs drafted yet. One would make this fortnight considerably easier.')
+        + '</span>' : '')
+    + '</details>';
 }
 
 function queueStrip(S, q, label, finishAct, slot){

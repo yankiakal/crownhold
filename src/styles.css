@@ -96,6 +96,14 @@ html,body{overflow-x:hidden}
 /* the res row must be allowed to shrink and wrap; margin-left:auto alone stops it */
 .res-row{min-width:0;row-gap:.35rem}
 @media(max-width:560px){
+  /* The banner is decoration on a phone. "HOLD THE FRONTIER" under a wordmark is lovely on a
+     desktop and costs a row of a 852px screen here — and the header plus threat bar sit outside
+     the tab panes, so every pixel is paid six times. Measured: 51% of the first screen before
+     any content. The wordmark shrinks and the tagline goes; the resources get the top line. */
+  header{padding:.45rem 0 .5rem;gap:.5rem}
+  .brand{flex-direction:row;align-items:baseline;gap:.4rem}
+  .brand span{display:none}
+  .brand h1{font-size:.92rem;letter-spacing:.1em}
   .res-row{gap:.55rem;margin-left:0;width:100%}
   .res{font-size:.78rem}
   .res .lbl{display:none}          /* the icon carries it — this is why they were added */
@@ -646,3 +654,11 @@ footer button{font-size:.68rem;padding:.25rem .6rem}
 .stance-row summary::before{content:'▸ ';color:var(--ink-dim)}
 .stance-row[open] summary::before{content:'▾ '}
 .stance-row[open]{padding-bottom:.4rem}
+
+/* the season's temper, folded — planning material, not a permanent fixture */
+details.temper{margin-top:.5rem;border-top:1px solid var(--edge);padding-top:.4rem}
+details.temper summary{cursor:pointer;list-style:none;display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap}
+details.temper summary::-webkit-details-marker{display:none}
+details.temper summary::before{content:'▸ ';color:var(--ink-dim)}
+details.temper[open] summary::before{content:'▾ '}
+details.temper .tname{font-size:.92rem;color:var(--ink)}

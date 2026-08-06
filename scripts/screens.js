@@ -37,4 +37,14 @@ const body = m ? m[1].replace(/@@SCREENS@@|@@END@@/g,'').replace(/&quot;/g,'"').
 console.log('\n── every tab, 393px wide, mid-game hold ──');
 console.log(body || '(no report — the frames may not have booted)');
 console.log('\n  shots/screens.png');
+/* The chrome budget is a ceiling, not a report. The header and threat bar sit outside the tab
+   panes, so whatever they cost is paid on all six screens — it was 51% of a phone's first screen
+   before anyone measured it, and nothing would have complained. 45% is loose enough for real
+   design and tight enough that a new always-visible row cannot quietly eat the game. */
+const chrome = body.match(/\((\d+)% of the first screen\)/);
+if(chrome && Number(chrome[1]) > 45){
+  console.error('\n  ✗ chrome is ' + chrome[1] + '% of a phone screen — budget is 45%.');
+  console.error('    The header and threat bar are outside the tabs, so this is paid six times.');
+  process.exit(1);
+}
 if(/OVERFLOWS|undefined|unreadable/.test(body)) process.exit(1);
