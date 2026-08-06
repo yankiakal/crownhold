@@ -64,7 +64,14 @@ if(/under the 44px/.test(body)){
   console.error('\n  ✗ the frontier map is below thumb size — see the cell measurement above.');
   process.exit(1);
 }
-if(/NO VERSION VISIBLE|under 44px|footer still taking space|BUTTONS BURIED/.test(body)){
+/* Every tap target, not just the dock's. 44px is the floor every mobile guideline agrees on, and
+   between 24 and 44 elements per screen were under it before anyone counted. */
+const tiny = body.match(/under 44px: (\d+) of/);
+if(tiny && Number(tiny[1]) > 0){
+  console.error('\n  ✗ ' + tiny[1] + ' tap targets are under 44px — see the tally above.');
+  process.exit(1);
+}
+if(/NO VERSION VISIBLE|footer still taking space|BUTTONS BURIED/.test(body)){
   console.error('\n  ✗ the dock is wrong — see the measurement above.');
   process.exit(1);
 }

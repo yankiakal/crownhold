@@ -781,3 +781,27 @@ details.temper .tname{font-size:.92rem;color:var(--ink)}
     border:1px solid var(--gold-deep);border-radius:3px;padding:.05rem .25rem;
   }
 }
+
+/* ── 44px, everywhere a thumb lands ──
+   Measured across every tab: 24 to 44 of roughly 80 interactive elements were under the 44px
+   floor. That is what "chunky buttons like Whiteout Survival" actually means — not a gradient, a
+   dimension. The ⓘ inspectors were the worst offenders at ten per screen, then the +1/+5/+25
+   drill buttons at twelve, then the hero order buttons, the decree buttons and the folded
+   summaries.
+
+   Applied only below 820px: on a desktop a 44px minimum makes dense tables look inflated, and a
+   mouse does not need it. */
+@media(max-width:820px){
+  button{min-height:44px}
+  button.info-btn{
+    min-width:44px;min-height:44px;border-radius:50%;
+    display:inline-flex;align-items:center;justify-content:center;font-size:.85rem;
+  }
+  .stance-btn, .order-btn, .cara-btn, .valor-btn{min-height:44px;padding:.5rem .7rem}
+  .troopadj button, .trow button{min-width:44px}
+  /* the folded rows are tap targets too — the summary IS the control */
+  summary{min-height:44px;display:flex;align-items:center;flex-wrap:wrap}
+  .sheethead button{min-width:44px;min-height:44px}
+  /* the tab bar was already 3rem; make it unambiguous */
+  .tabbar button{min-height:3.1rem}
+}

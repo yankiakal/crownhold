@@ -173,6 +173,29 @@ setTimeout(() => {
           + (d.querySelector('footer') && d.querySelector('footer').offsetHeight
               ? ' ✗ footer still taking space' : ' · footer hidden ✓'));
       }
+      /* Every tappable thing on this screen, against the 44px floor. The dock was audited and
+         nothing else was — and "chunky buttons" is not a style, it is this number. */
+      {
+        const small = [];
+        d.querySelectorAll('button, summary, [data-act]').forEach(el => {
+          if(el.hasAttribute('data-act-bg')) return;              // a backdrop, not a target
+          if(el.disabled) return;                                // cannot be pressed anyway
+          const r = el.getBoundingClientRect();
+          if(!r.width || !r.height) return;                      // not rendered
+          if(Math.min(r.width, r.height) >= 44) return;
+          const what = el.tagName.toLowerCase()
+            + (el.className && typeof el.className === 'string' && el.className.trim()
+                ? '.' + el.className.trim().split(/\s+/)[0] : '')
+            + (el.dataset && el.dataset.act ? '[' + el.dataset.act + ']' : '');
+          small.push(what + ' ' + Math.round(r.width) + '×' + Math.round(r.height));
+        });
+        const tally = {};
+        for(const x of small){ const k = x.replace(/ \d+×\d+$/, ''); tally[k] = (tally[k]||0)+1; }
+        const worst = Object.entries(tally).sort((a,b) => b[1]-a[1]).slice(0, 6);
+        rows.push('  under 44px: ' + small.length + ' of '
+          + d.querySelectorAll('button, summary, [data-act]').length
+          + (small.length ? ' — ' + worst.map(([k,n]) => k + '×' + n).join(', ') : ' ✓'));
+      }
       const les = d.querySelector('.lessondock .card.lesson') || d.querySelector('.card.lesson');
       if(les){
         const lh = les.getBoundingClientRect().height;
