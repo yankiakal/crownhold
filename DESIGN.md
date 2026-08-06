@@ -520,7 +520,47 @@ whole penalty — *"the slowest sets the pace"* would have been a gotcha and a c
 the kind the raid curve just had removed. This delivers the Rise of Empires *feel* — cavalry
 are how you cover ground — with no purity reward anywhere.
 
-#### Measured, and honestly: narrowed, not closed
+#### Capacity is load, not headcount (v1.41) — and pace came back out
+
+Asked whether march speed should be uniform across troop types, as in the reference games,
+noting that some Whiteout Survival players run 0% cavalry.
+
+Checking that found the premise slightly off and something more useful underneath. **0%
+lancer is a fringe defence build**, not the meta — guides call it risky; the actual meta is
+varied ratios of all three (50/20/30, 40/20/40, 50/10/40). And the reason they *have* varied
+ratios is the structure, not the speed: **their three types are a triangle** — Infantry →
+Lancer → Marksman → Infantry, roughly equal in power, differentiated by what they counter.
+**Ours were a ladder**: power 3 → 5 → 11 → 24. A triangle makes composition a matchup
+question; a ladder plus headcount capacity makes it arithmetic with one answer.
+
+So differential march pace was never the cure — it was a restraint on a ladder. The cure is
+`LOAD = {spearman:1, archer:1, knight:2, ballista:4}`: capacity measures what a column
+*weighs* rather than how many bodies are in it.
+
+| | troops | power | of the best |
+|---|---|---|---|
+| all knights | 112 | 3,728 | **100%** |
+| all archers | 225 | 3,404 | 91% |
+| all ballistae | 56 | 3,306 | 89% |
+| even four ways | 112 | 3,263 | 88% |
+| all spearmen | 225 | 2,042 | 55% |
+
+Every fighting composition now lands within **13%** of the field, against a **2.1×**
+dominance before. The spearman sits at 55% and should — it is the screen, not a damage unit.
+Knights edge it only because `marshal` is a knight captain, which is the system working as
+designed: **your captains decide your best mix**, and the temper rotates which class counters
+this fortnight. That is their triangle, arrived at from our own parts.
+
+Pace was removed in the same pass. It was a second mechanic doing a job this one does
+properly, and one mechanic doing a job well beats two doing it badly. The screen fix stayed,
+because it does a different job — it decides *who* takes the casualties, not how many.
+
+Frontier balance held: the 8-hour run still reaches level-7 camps at wave 310. And the
+simulator's bot now *varies* its column — `all-in×420 | screened siege×51 | screened
+cavalry×4` — where before it chose all-in every single time. A live decision, visible in the
+data.
+
+#### Measured, and honestly: narrowed, not closed (v1.40, superseded above)
 
 | | power | pace | power × trips/hr | power per troop-cost lost |
 |---|---|---|---|---|

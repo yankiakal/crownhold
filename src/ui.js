@@ -5,7 +5,7 @@ import {
   HERO_POOL, HERO_SLOTS, SPOILS, RARITY, LEAD_FX, SEASON_ARCS, seasonNo, seasonEndsIn, SEASON_MS,
   WAVE_TYPES, STANCES, EXPEDITIONS,
   WAVE_MS, FIRST_WAVE_MS, SHIELD_MS, SECOND_QUEUE_TH, COURT_PER_TH, COURT_MAX,
-  MARCH_HEROES, CLASS_AFFINITY, CAP_PER_HERO, CAP_PER_LEVEL,
+  MARCH_HEROES, CLASS_AFFINITY, CAP_PER_HERO, CAP_PER_LEVEL, LOAD,
   ARENA_HEROES, STAR_POWER, starNeed, TEMPERS, temperFor,
   BEASTS, BEAST_ROAM_MS, PET_POOL, PET_MAX_LVL, petXpNeed, petBondNeed,
 } from './defs.js';
@@ -15,7 +15,7 @@ import {
   tileDist, marchSlots, tileBusy, marchPower, campPower, gatherYield, startMarch,
   heroCanLead, marchCapacity, fitColumn, bestLeaders, marchParty as partyOf,
   beastPower, beastBusy, marchSpeed,
-  isleReady, rationCost, voyageTime, voyageBlockedBy, refPower, columnPace,
+  isleReady, rationCost, voyageTime, voyageBlockedBy, refPower, columnLoad,
   tileReq, tileLocked, TILE_LVL_MAX,
   LONG_HAUL_WORK, LONG_HAUL_YIELD,
 } from './world.js';
@@ -1430,7 +1430,7 @@ function renderColumnComposer(S){
   marchParty = marchParty.filter(k => free.includes(k));      // someone may have ridden out
   const cap = marchCapacity(S, marchParty);
   const total = marchTotal();
-  const over = total > cap;
+  const over = false;   // capacity is judged on load now, computed below
 
   let h = '';
 
@@ -1492,15 +1492,20 @@ function renderColumnComposer(S){
   h += '</div>';
 
   // ── the column itself ──
-  h += '<p class="d-row" style="margin-top:.6rem">Column <b'+(over?' style="color:var(--bad)"':'')+'>'
-    + total+' / '+cap+'</b> <span class="hmeta">troops</span></p>'
-    + '<div class="capbar'+(over?' over':'')+'"><i style="width:'+Math.min(100, cap?100*total/cap:0)+'%"></i></div>';
+  /* Capacity is LOAD, not headcount: a siege engine takes four soldiers' worth of a
+     captain's attention. Both numbers are shown, because "82 troops" is what the player
+     is sending and "225 / 225" is what fills the column. */
+  const load = columnLoad(marchWant);
+  const overLoad = load > cap;
+  h += '<p class="d-row" style="margin-top:.6rem">Column <b'+(overLoad?' style="color:var(--bad)"':'')+'>'
+    + Math.round(load)+' / '+cap+'</b> <span class="hmeta">load — '+total+' troops</span></p>'
+    + '<div class="capbar'+(overLoad?' over':'')+'"><i style="width:'+Math.min(100, cap?100*load/cap:0)+'%"></i></div>';
   for(const [k,d] of Object.entries(TROOPS)){
     const owned = S.t[k]||0;
     if(!owned && !marchWant[k]) continue;
     const step = Math.max(1, Math.round(owned/10));
     h += '<div class="troopadj"><span class="tname">'+d.icon+' '+d.name+'</span>'
-      + '<span class="hmeta">'+owned+' at home'
+      + '<span class="hmeta">'+owned+' at home · '+(LOAD[k]||1)+(LOAD[k]>1?' load each':' load')
       + (lift[k] > 0 ? ' · <span class="led">'+pctLift(lift[k])+' led</span>'
                      : ((marchWant[k]||0) ? ' · <span class="unled">no captain</span>' : ''))
       + '</span><span class="spacer"></span>'
@@ -1515,27 +1520,21 @@ function renderColumnComposer(S){
     + '<button data-act="fillCol" data-key="1">Fill to capacity</button>'
     + '<button data-act="fillCol" data-key="0">Clear</button>'
     + '</div>';
-  /* Pace and cover. Both are properties of what you brought rather than bonuses for a
-     shape, so the player has to be able to see them while building — the same lesson the
-     captain-coverage strip taught: an invisible mechanic is an unused one. */
+  /* Whether the engines have anybody standing in front of them. Shown while building,
+     because an invisible mechanic is an unused one — the lesson the captain-coverage
+     strip taught. (Column pace lived here for one version; capacity-as-load does that
+     job properly, so a second mechanic doing it badly was removed.) */
   if(total > 0){
-    const pace = columnPace(marchWant);
     const cover = screenCover(marchWant);
     const engines = (marchWant.ballista||0) + (marchWant.knight||0);
-    h += '<div class="paceline">'
-      + '<span class="'+(pace < 0.95 ? 'good' : pace > 1.2 ? 'bad' : '')+'">'
-      + (pace < 0.95 ? '🐎 ' : pace > 1.2 ? '⚙️ ' : '🚶 ')
-      + 'Marches at ×'+pace.toFixed(2)+' '
-      + (pace < 0.95 ? '— cavalry cover ground' : pace > 1.2 ? '— a siege train is slow' : '— an ordinary pace')
-      + '</span>';
     if(engines > 0)
-      h += '<span class="'+(cover > 0.5 ? 'good' : cover < 0.2 ? 'bad' : '')+'">'
+      h += '<div class="paceline"><span class="'+(cover > 0.5 ? 'good' : cover < 0.2 ? 'bad' : '')+'">'
         + (cover > 0.5 ? '🛡️ Engines screened' : cover < 0.2 ? '⚠️ Engines unscreened' : '🛡️ Thin screen')
-        + ' <span class="hmeta">— losses fall on the front line, and there is '
-        + (cover < 0.2 ? 'nobody in front' : 'a line in front') + '</span></span>';
-    h += '</div>';
+        + ' <span class="hmeta">— casualties fall on whoever is in front, and right now there is '
+        + (cover < 0.2 ? 'nobody' : 'a line') + '</span></span></div>';
   }
-  if(over) h += '<p class="d-warn">Over capacity — the extra troops will stay home. Bring stronger leaders.</p>';
+  if(overLoad) h += '<p class="d-warn">Over capacity — the extra will stay home. Bring stronger captains, '
+    + 'or fewer engines: a ballista weighs '+LOAD.ballista+' where a spearman weighs 1.</p>';
   /* Stated as fact, not scolded. Riding uncovered is a legitimate call — you may
      want the bodies more than the bonus — so this reports the cost and stops. */
   const bare = kinds.filter(k => (marchWant[k]||0) > 0 && lift[k] <= 0);

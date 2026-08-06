@@ -392,15 +392,23 @@ export const WAVE_TYPES = {
 };
 // cheap troops screen the expensive ones: casualty weight by class
 export const SCREEN = {spearman:1.5, archer:1.2, knight:0.75, ballista:0.5};
-/* How fast each kind travels, as a multiplier on a column's march time. Cavalry cover
-   ground; a siege train does not. This is where Rise of Empires' "a full march of
-   knights moves faster" lands — but as a PROPERTY OF WHAT YOU BROUGHT rather than a
-   bonus for purity. Their version paid you for a mono-composition, and the result was
-   that everybody used knights: a reward for sameness deletes the other three choices
-   instead of adding one.
-   Share-weighted, so bringing a quarter siege costs a quarter of the difference and
-   there is no cliff at "one ballista ruins it". */
-export const PACE = {spearman:1.05, archer:1.0, knight:0.8, ballista:1.6};
+/* What each kind costs of a column's capacity. THE fix for composition, and the reason
+   troop pace was removed again a version after it was added.
+
+   Capacity used to be counted in bodies, so a ballista and a spearman took the same slot
+   while differing 6.5× in power — a ladder, and the top rung always wins. Whiteout
+   Survival and Kingshot do not have this problem because their three types are a
+   TRIANGLE: roughly equal power, differentiated by which one they counter, so the meta
+   there is varied ratios (50/20/30, 40/20/40) rather than one answer.
+
+   Counting capacity as LOAD levels power-per-slot at roughly 15 for archer, knight and
+   ballista, leaving the spearman as the cheap screen it is meant to be. Composition then
+   turns on the counter-class rotation and on screening — matchup questions, like theirs —
+   instead of on arithmetic with a single solution.
+
+   Differential march pace was a workaround for the ladder. With the ladder gone it was a
+   second mechanic doing a job this one does properly, so it went. */
+export const LOAD = {spearman:1, archer:1, knight:2, ballista:4};
 export const STANCES = {
   balanced:  {name:'Balanced',    icon:'⚖️', hint:'No bonus, no penalty'},
   shieldwall:{name:'Shield Wall', icon:'🛡️', hint:'Counters Riders'},

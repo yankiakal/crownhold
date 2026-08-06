@@ -485,27 +485,48 @@ console.log('\n── a pre-skills save is inert, not broken ──');
      L.screenCover(mixed) > L.screenCover(siege) && L.screenCover(siege) === 0,
      'cover ' + L.screenCover(mixed).toFixed(2) + ' vs ' + L.screenCover(siege).toFixed(2));
 
-  console.log('\n── pace comes from what you brought, not from being pure ──');
-  ok('cavalry cover ground faster than foot',
-     W.columnPace({ knight: 100 }) < W.columnPace({ spearman: 100 }),
-     '×' + W.columnPace({ knight: 100 }).toFixed(2) + ' vs ×' + W.columnPace({ spearman: 100 }).toFixed(2));
-  ok('a siege train is the slowest thing on the road',
-     W.columnPace({ ballista: 100 }) > W.columnPace({ spearman: 100 }),
-     '×' + W.columnPace({ ballista: 100 }).toFixed(2));
-  /* The property that separates this from the mechanic it is modelled on: there is no
-     bonus for purity. A mixed column pays exactly its share, with no cliff — one ballista
-     among two hundred knights must not cost the whole siege penalty. */
-  const oneRotten = W.columnPace({ knight: 199, ballista: 1 });
-  ok('one engine among two hundred cavalry barely matters',
-     Math.abs(oneRotten - W.columnPace({ knight: 200 })) < 0.01,
-     '×' + oneRotten.toFixed(3) + ' vs ×' + W.columnPace({ knight: 200 }).toFixed(3));
-  ok('and a quarter siege costs about a quarter of the difference',
-     Math.abs(W.columnPace({ knight: 150, ballista: 50 }) - (0.75*0.8 + 0.25*1.6)) < 0.01,
-     '×' + W.columnPace({ knight: 150, ballista: 50 }).toFixed(2));
-  ok('no shape is rewarded merely for being one shape',
-     W.columnPace({ spearman: 100, archer: 100 }) < W.columnPace({ spearman: 200 }),
-     'mixed foot ×' + W.columnPace({ spearman:100, archer:100 }).toFixed(2)
-       + ' beats pure spearmen ×' + W.columnPace({ spearman:200 }).toFixed(2));
+  /* ── the ladder, levelled ──
+     Capacity counted in bodies made the four types a LADDER whose top rung always won:
+     a ballista and a spearman took the same slot at 6.5× the power, so the optimal column
+     was 225 ballistae at 13,284 against a mixed column's 6,218. Whiteout Survival and
+     Kingshot do not have this because their three types are a TRIANGLE — roughly equal
+     power, differentiated by what they counter — which is why their meta is varied ratios
+     rather than one answer.
+
+     Counting capacity as LOAD is what levels it. These tests assert the property, not the
+     tuning: no composition may be far ahead of the field. */
+  console.log('\n── capacity is load, so no rung of the ladder wins outright ──');
+  {
+    const s2 = hold();
+    s2.b.command = 30;
+    s2.t = { spearman: 99999, archer: 99999, knight: 99999, ballista: 99999 };
+    const party = ['marshal','gatekeeper','forager'];
+    const cap = W.marchCapacity(s2, party);
+    const powerOf = mix => {
+      const want = {};
+      for(const k of Object.keys(D.TROOPS)) want[k] = mix[k] ? 99999 : 0;
+      const fit = W.fitColumn(s2, want, party);
+      return { p: W.marchPower(s2, fit.troops, party, 'camp'), n: fit.total, load: fit.load };
+    };
+    const pure = Object.keys(D.TROOPS).map(k => ({ k, ...powerOf({ [k]: 1 }) }));
+    const fighters = pure.filter(x => x.k !== 'spearman');   // the spearman is the screen
+    const best = Math.max(...fighters.map(x => x.p));
+    const worst = Math.min(...fighters.map(x => x.p));
+    ok('no fighting type is far ahead of the others', best / worst < 1.25,
+       fighters.map(x => x.k + ' ' + x.p).join(', ') + '  → ×' + (best/worst).toFixed(2) + ' spread');
+    ok('a siege column is far smaller in bodies than a foot one',
+       powerOf({ ballista:1 }).n * 3 < powerOf({ spearman:1 }).n,
+       powerOf({ ballista:1 }).n + ' ballistae vs ' + powerOf({ spearman:1 }).n + ' spearmen');
+    ok('but both fill the same column', Math.abs(powerOf({ ballista:1 }).load - cap) <= 4
+       && Math.abs(powerOf({ spearman:1 }).load - cap) <= 4,
+       'load ' + powerOf({ ballista:1 }).load + ' and ' + powerOf({ spearman:1 }).load + ' of ' + cap);
+    const mixed = powerOf({ spearman:1, archer:1, knight:1, ballista:1 });
+    ok('and a mixed column is competitive rather than a mistake', mixed.p / best > 0.8,
+       Math.round(100 * mixed.p / best) + '% of the best pure column');
+    ok('load is what a column is trimmed against, not headcount',
+       W.columnLoad({ ballista: 10 }) === 10 * D.LOAD.ballista,
+       '10 ballistae weigh ' + W.columnLoad({ ballista: 10 }));
+  }
 }
 
 /* ── the four rules of hold-against-hold ──

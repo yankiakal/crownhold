@@ -4,7 +4,7 @@
 
 import { TROOPS, TIME_SCALE, HERO_POOL, BEASTS, BEAST_UNLOCK, BEAST_COUNT, BEAST_ROAM_MS,
          BEAST_RESPAWN_MS,
-         MARCH_HEROES, MARCH_BASE_CAP, CAP_PER_HERO, CAP_PER_LEVEL, PACE, seasonNo } from './defs.js';
+         MARCH_HEROES, MARCH_BASE_CAP, CAP_PER_HERO, CAP_PER_LEVEL, LOAD, seasonNo } from './defs.js';
 import { ISLE_TH, VOYAGE_MS, RATION_COST, ISLE_SITES, genIsle, cellAt, revealAround } from './isle.js';
 import { scoreDeed } from './events.js';
 import { takeCasualties } from './logic.js';
@@ -227,26 +227,6 @@ export function marchSlots(s){
   return 1 + Math.floor((s.b.command || 0) / 5) + (s.b.townhall >= 10 ? 1 : 0);
 }
 export function marchSpeed(s){ return Math.max(0.5, 1 - 0.02 * (s.b.command || 0)); }
-/* What the column itself does to its own march time: the share-weighted pace of what is
-   in it. Cavalry are 20% quicker than foot; a siege train is 60% slower.
-
-   This is where Rise of Empires' "a full march of knights moves faster" lands, but as a
-   property of what you brought rather than a bonus for purity. Their version paid you for
-   a mono-composition, and everybody used knights — a reward for sameness deletes three
-   choices instead of adding one.
-
-   Share-weighted rather than "the slowest sets the pace", because the latter makes one
-   ballista among two hundred knights cost the entire penalty. That is a gotcha, and a
-   cliff of exactly the kind the raid cost curve just had taken out of it. */
-export function columnPace(troops){
-  let total = 0, sum = 0;
-  for(const k of Object.keys(TROOPS)){
-    const n = (troops && troops[k]) || 0;
-    total += n;
-    sum += n * (PACE[k] || 1);
-  }
-  return total > 0 ? sum / total : 1;
-}
 export function tileBusy(s, idx){ return (s.marches||[]).some(m => m.tile===idx); }
 
 /* A column's strength: the hold's standing bonuses, plus what its three leaders
@@ -262,7 +242,7 @@ export function marchPower(s, troops, heroes, against){
   for(const k of Object.keys(TROOPS))
     p += tierPower(s,k) * (troops[k]||0) * classMult(s, heroes, k);
   const total = Object.values(troops).reduce((a,b)=>a+(b||0), 0);
-  const atCap = total > 0 && total >= marchCapacity(s, heroes);
+  const atCap = total > 0 && columnLoad(troops) >= marchCapacity(s, heroes);
   return Math.round(p
     * (1 + heroBonus(s,'troopPower') + spoilBonus(s,'troopPower') + leadTotal(s, heroes, 'power'))
     * (1 + (perk(s,2)?0.06:0) + (perk(s,8)?0.08:0) + (perk(s,10)?0.15:0)
@@ -306,23 +286,33 @@ export function gatherYield(s, tile){
 /* Trim a requested column to what is actually available and commandable:
    never more of a troop than you own, never more in total than the leaders can
    hold. Trimming is proportional, so the mix the player chose is preserved. */
+/* What a column of these troops weighs. A siege engine takes four soldiers' worth of a
+   captain's attention and the road's width; a spearman takes one. */
+export function columnLoad(troops){
+  let load = 0;
+  for(const k of Object.keys(TROOPS)) load += ((troops && troops[k]) || 0) * (LOAD[k] || 1);
+  return load;
+}
+
 export function fitColumn(s, want, heroes){
   const cap = marchCapacity(s, heroes);
   const troops = {};
-  let total = 0;
+  let total = 0, load = 0;
   for(const k of Object.keys(TROOPS)){
     const n = Math.max(0, Math.min(Math.floor(want[k]||0), s.t[k]||0));
-    if(n > 0){ troops[k] = n; total += n; }
+    if(n > 0){ troops[k] = n; total += n; load += n * (LOAD[k] || 1); }
   }
-  if(total > cap){
-    const scale = cap / total;
-    total = 0;
+  /* Trimmed against LOAD rather than headcount. Trimming by bodies is what let a column
+     carry 225 ballistae for the price of 225 spearmen, at 6.5× the power. */
+  if(load > cap){
+    const scale = cap / load;
+    total = 0; load = 0;
     for(const k of Object.keys(troops)){
       const n = Math.floor(troops[k] * scale);
-      if(n > 0){ troops[k] = n; total += n; } else delete troops[k];
+      if(n > 0){ troops[k] = n; total += n; load += n * (LOAD[k] || 1); } else delete troops[k];
     }
   }
-  return { troops, total, cap };
+  return { troops, total, load, cap };
 }
 
 /* Hunt a beast. Shares everything with startMarch except the target: a beast is
@@ -339,7 +329,7 @@ export function startHunt(s, bi, want, now, heroes){
   const { troops, total } = fitColumn(s, want, party);
   if(total === 0) return false;
   for(const [k,n] of Object.entries(troops)) s.t[k] -= n;
-  const travel = Math.round(tileDist(b)*TRAVEL_MS_PER_TILE*marchSpeed(s)*columnPace(troops)
+  const travel = Math.round(tileDist(b)*TRAVEL_MS_PER_TILE*marchSpeed(s)
     * Math.max(0.4, 1 - leadTotal(s, party, 'speed') - petBonus(s, 'speed')));
   s.marches.push({
     beast: bi, troops, heroes: party, out: travel,
@@ -374,7 +364,7 @@ export function startMarch(s, idx, want, now, longHaul, heroes){
   const { troops, total } = fitColumn(s, want, party);
   if(total === 0) return false;
   for(const [k,n] of Object.entries(troops)) s.t[k] -= n;
-  const travel = Math.round(tileDist(tile)*TRAVEL_MS_PER_TILE*marchSpeed(s)*columnPace(troops)
+  const travel = Math.round(tileDist(tile)*TRAVEL_MS_PER_TILE*marchSpeed(s)
     * Math.max(0.4, (1 - leadTotal(s, party, 'speed')) * (1 - skillTotal(s, party, 'speed'))));
   const work = kind==='gather' ? (long ? LONG_HAUL_WORK : GATHER_MS) : kind==='ruin' ? RUIN_MS : 0;
   const boost = !!s.marchBoost;                   // Fair Winds, spent on this column
