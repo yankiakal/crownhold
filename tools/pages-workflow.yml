@@ -75,11 +75,11 @@ jobs:
       # which is why it is safe to run the whole thing.
       - run: npm run check
 
-      - name: Confirm the built page carries a version
-        run: |
-          grep -qE 'class="vtag"[^>]*>v[0-9]+\.[0-9]+<' dist/index.html \
-            || { echo "the built page has no release number in its footer"; exit 1; }
-          grep -oE 'v[0-9]+\.[0-9]+' dist/index.html | head -1
+      # No separate version check here on purpose. `npm run check` runs the build, and
+      # scripts/release.js asserts the release number survived it — against the string
+      # literal the bundle really contains, not against rendered markup. An earlier version
+      # of this step grepped for `class="vtag">v1.52<`, which the browser assembles at
+      # runtime and which is therefore never in the file. It failed the whole deploy.
 
       - uses: actions/upload-pages-artifact@v3
         with:

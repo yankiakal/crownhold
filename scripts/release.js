@@ -33,5 +33,18 @@ html = html
 if (/(src|href)\s*=\s*["']https?:/i.test(html))
   throw new Error('release: built page references an external URL — artifact CSP would block it');
 
+/* The release number has to have survived the build. Checked against what the file actually
+   CONTAINS — the version as a string literal in the bundle — and not against the rendered
+   markup: the footer is assembled by JavaScript at runtime, so `class="vtag">v1.52<` never
+   appears in this file at all. A CI step that looked for exactly that failed the whole
+   deploy, which is the second time today I have grepped a built page for something only the
+   browser ever produces. */
+if (!/class="vtag"/.test(html))
+  throw new Error('release: the footer lost its version tag');
+const ver = html.match(/"(v\d+\.\d+)"/);
+if (!ver)
+  throw new Error('release: no release number was baked in — build-stamp.js found no vX.YY commit subject');
+console.log('release ' + ver[1]);
+
 writeFileSync('index.html', html);
 console.log('index.html written (' + html.length + ' bytes)');
