@@ -261,16 +261,26 @@ console.log('\n── a pre-skills save is inert, not broken ──');
   // enough to make a correct label look wrong. Tolerance is absolute for the same
   // reason: this compares a difference of ratios, where a relative bound is noise.
   const N = 5000;
-  const powerOf = k => W.marchPower(s, { [k]: N }, party);
+  /* MARGINAL contribution, on top of a line thick enough to give full cover. The first
+     version compared a pure column of each type against a pure ballista column, which
+     stopped working the moment cover existed: a pure spearman column has cover 1 and a
+     pure ballista column has cover 0, so the ratio was reading COVER as affinity and
+     reported 146% for a 23% lift. Adding to a fixed spearman line holds cover at 1 in
+     every probe, so what is left is the class term. */
+  const LINE = 40000;                                  // enough that cover is 1 throughout
+  const floorP = W.marchPower(s, { spearman: LINE }, party);
+  const marginal = k => {
+    const troops = k === 'spearman' ? { spearman: LINE + N } : { spearman: LINE, [k]: N };
+    return (W.marchPower(s, troops, party) - floorP) / (L.tierPower(s, k) * N);
+  };
+  ok('the probe line really does give full cover',
+     L.coverOf({ spearman: LINE, ballista: N }, 0) === 1);
+  const bare = marginal('ballista');                   // nobody in the party covers ballistae
   for(const k of Object.keys(D.TROOPS)){
     const claimed = L.classLift(s, party, k);
-    // measured: strip the flat per-soldier power out, compare against a class
-    // nobody in the party covers (ballista here), whose lift is exactly 0.
-    const bare = powerOf('ballista') / (L.tierPower(s,'ballista') * N);
-    const mine = powerOf(k) / (L.tierPower(s,k) * N);
-    const measured = mine/bare - 1;
+    const measured = marginal(k) / bare - 1;
     ok(k + ': label ' + (claimed*100).toFixed(2) + '% = measured ' + (measured*100).toFixed(2) + '%',
-       Math.abs(measured - claimed) < 1e-3);
+       Math.abs(measured - claimed) < 2e-3);
   }
   ok('an uncovered class lifts by exactly nothing', L.classLift(s, party, 'ballista') === 0);
 
@@ -508,12 +518,17 @@ console.log('\n── a pre-skills save is inert, not broken ──');
       const fit = W.fitColumn(s2, want, party);
       return { p: W.marchPower(s2, fit.troops, party, 'camp'), n: fit.total, load: fit.load };
     };
-    const pure = Object.keys(D.TROOPS).map(k => ({ k, ...powerOf({ [k]: 1 }) }));
-    const fighters = pure.filter(x => x.k !== 'spearman');   // the spearman is the screen
-    const best = Math.max(...fighters.map(x => x.p));
-    const worst = Math.min(...fighters.map(x => x.p));
-    ok('no fighting type is far ahead of the others', best / worst < 1.25,
-       fighters.map(x => x.k + ' ' + x.p).join(', ') + '  → ×' + (best/worst).toFixed(2) + ' spread');
+    /* Pure columns are no longer expected to be near-equal — cover means a column with no
+       line SHOULD be worse, which is the whole point of interdependence. What load buys is
+       that no type is ahead on power per unit of capacity BEFORE cover is applied; the
+       worst-case floor test further down is what guards the meta. */
+    const perLoad = Object.keys(D.TROOPS).map(k => ({
+      k, per: L.tierPower(s2, k) / (D.LOAD[k] || 1),
+    })).filter(x => x.k !== 'spearman');
+    const bestPer = Math.max(...perLoad.map(x => x.per));
+    const worstPer = Math.min(...perLoad.map(x => x.per));
+    ok('no fighting type is ahead on power per unit of capacity', bestPer / worstPer < 1.25,
+       perLoad.map(x => x.k + ' ' + x.per.toFixed(1)).join(', ') + '  → ×' + (bestPer/worstPer).toFixed(2));
     ok('a siege column is far smaller in bodies than a foot one',
        powerOf({ ballista:1 }).n * 3 < powerOf({ spearman:1 }).n,
        powerOf({ ballista:1 }).n + ' ballistae vs ' + powerOf({ spearman:1 }).n + ' spearmen');
@@ -521,11 +536,85 @@ console.log('\n── a pre-skills save is inert, not broken ──');
        && Math.abs(powerOf({ spearman:1 }).load - cap) <= 4,
        'load ' + powerOf({ ballista:1 }).load + ' and ' + powerOf({ spearman:1 }).load + ' of ' + cap);
     const mixed = powerOf({ spearman:1, archer:1, knight:1, ballista:1 });
-    ok('and a mixed column is competitive rather than a mistake', mixed.p / best > 0.8,
-       Math.round(100 * mixed.p / best) + '% of the best pure column');
+    ok('a mixed column fills the same capacity', Math.abs(mixed.load - cap) <= 4,
+       'load ' + mixed.load + ' of ' + cap);
     ok('load is what a column is trimmed against, not headcount',
        W.columnLoad({ ballista: 10 }) === 10 * D.LOAD.ballista,
        '10 ballistae weigh ' + W.columnLoad({ ballista: 10 }));
+  }
+}
+
+/* ── interdependence, which is what actually stops a mono army ──
+   Levelling power-per-load stopped one TYPE dominating and then made something worse
+   optimal: pick one and pour everything in. Promoting one troop line to tier 5 costs 165
+   resources where all four cost 972, one troop building serves instead of four, and all
+   three captains can share a class — so three archer captains fielding only archers
+   measured 3,803 against a mixed column's 3,263. Six times cheaper AND stronger.
+
+   No percentage nudge answers a 6× cost advantage. Structure does, and it is what
+   Whiteout Survival actually uses: marksmen die without an infantry line, and the counter
+   triangle is decisive. */
+{
+  console.log('\n── ranged troops and engines need a line in front ──');
+  const s2 = hold();
+  ok('a column of engines has no cover at all', L.coverOf({ ballista: 50 }, 0) === 0);
+  ok('a column of pikes needs none', L.coverOf({ spearman: 50 }, 0) === 1);
+  ok('engines behind a line are covered',
+     L.coverOf({ spearman: 100, ballista: 25 }, 0) === 1,
+     'cover ' + L.coverOf({ spearman: 100, ballista: 25 }, 0).toFixed(2));
+  ok('an uncovered engine is worth half of a covered one',
+     Math.abs(L.coverMult('ballista', 0) - 0.5) < 1e-9 && L.coverMult('ballista', 1) === 1,
+     '×' + L.coverMult('ballista', 0) + ' bare vs ×' + L.coverMult('ballista', 1) + ' covered');
+  ok('a pike never cares either way',
+     L.coverMult('spearman', 0) === 1 && L.coverMult('spearman', 1) === 1);
+  /* A wall is a line. Archers behind stonework are sound; the same archers in a field are
+     not — which is why a defensive army and a marching column want different shapes. */
+  const bare = { ...s2, t:{ spearman:0, archer:200, knight:0, ballista:0 }, b:{ ...s2.b, wall:0 } };
+  const walled = { ...s2, t:{ spearman:0, archer:200, knight:0, ballista:0 }, b:{ ...s2.b, wall:12 } };
+  ok('a wall counts as the line for the hold behind it',
+     L.armyBreakdown(walled).cover > L.armyBreakdown(bare).cover,
+     'no wall ' + L.armyBreakdown(bare).cover.toFixed(2) + ' → wall 12 ' + L.armyBreakdown(walled).cover.toFixed(2));
+
+  console.log('\n── the triangle gives every specialist a predator ──');
+  const shares = k => ({ [k]: 1 });
+  ok('pikes stop cavalry', L.matchupEdge(shares('spearman'), shares('knight')) > 0.2);
+  ok('cavalry runs down archers', L.matchupEdge(shares('knight'), shares('archer')) > 0.2);
+  ok('archers shoot the slow line', L.matchupEdge(shares('archer'), shares('spearman')) > 0.2);
+  ok('and each of those is symmetric the other way',
+     L.matchupEdge(shares('knight'), shares('spearman')) < -0.2 &&
+     L.matchupEdge(shares('archer'), shares('knight')) < -0.2 &&
+     L.matchupEdge(shares('spearman'), shares('archer')) < -0.2);
+  const evenShare = { spearman:0.25, archer:0.25, knight:0.25, ballista:0.25 };
+  for(const k of ['spearman','archer','knight','ballista'])
+    ok('a balanced force is never ambushed by ' + k,
+       Math.abs(L.matchupEdge(evenShare, shares(k))) < 0.1,
+       (L.matchupEdge(evenShare, shares(k))*100).toFixed(0) + '%');
+  ok('while a specialist swings both ways',
+     L.matchupEdge(shares('knight'), shares('archer')) - L.matchupEdge(shares('knight'), shares('spearman')) > 0.5,
+     'cavalry: +' + Math.round(L.matchupEdge(shares('knight'), shares('archer'))*100)
+       + '% against archers, ' + Math.round(L.matchupEdge(shares('knight'), shares('spearman'))*100) + '% against pikes');
+
+  /* The frontier has to carry the triangle too, or the majority of play is PvE against a
+     featureless number and a mono army has no predator across most of the game. */
+  console.log('\n── camps hold their ground with something in particular ──');
+  const fresh = freshState(Date.now(), 42);
+  const camps = fresh.world.tiles.filter(t => t.type === 'camp');
+  ok('every camp is garrisoned', camps.length > 0 && camps.every(c => !!c.def),
+     camps.length + ' camps: ' + [...new Set(camps.map(c => c.def))].join(', '));
+  ok('and not all with the same thing', new Set(camps.map(c => c.def)).size >= 2);
+  {
+    const s3 = hold();
+    s3.t = { spearman:9999, archer:9999, knight:9999, ballista:9999 };
+    const party = ['marshal','gatekeeper','forager'];
+    const worst = mix => {
+      const want = {}; for(const k of Object.keys(D.TROOPS)) want[k] = mix[k] ? 9999 : 0;
+      const fit = W.fitColumn(s3, want, party);
+      return Math.min(...['spearman','archer','knight'].map(g => W.marchPower(s3, fit.troops, party, 'camp', g)));
+    };
+    const balanced = worst({ spearman:1, archer:1, knight:1, ballista:1 });
+    const monoBest = Math.max(...['spearman','archer','knight','ballista'].map(k => worst({ [k]: 1 })));
+    ok('a balanced column has the best guaranteed floor', balanced >= monoBest,
+       'balanced ' + balanced + ' vs the best mono floor ' + monoBest);
   }
 }
 

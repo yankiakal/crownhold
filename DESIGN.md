@@ -520,6 +520,66 @@ whole penalty — *"the slowest sets the pace"* would have been a gotcha and a c
 the kind the raid curve just had removed. This delivers the Rise of Empires *feel* — cavalry
 are how you cover ground — with no purity reward anywhere.
 
+#### Interdependence, which is what actually stops a mono army (v1.42)
+
+Levelling power-per-load stopped one *type* dominating and then made something worse
+optimal: **specialise.** Asked why bother with four types at all if all-archers is 91% of
+all-knights — just train one line and spend nothing on the others.
+
+Measured, and the answer was that specialising has economies I had not priced:
+
+- promoting **one** troop line to tier 5 costs **165** resources; all four cost **972**
+- one troop building instead of four
+- all three captains can share a class, so affinity triples on your only type
+
+Three archer captains fielding only archers measured **3,803** against a mixed column's
+**3,263**. Six times cheaper *and* stronger. No percentage nudge answers that — the counter
+bonus was capped at +15% against a 6× cost advantage.
+
+What answers it is **structure**, which is what Whiteout Survival actually uses: marksmen die
+without an infantry line, and the counter triangle is decisive. We modelled the first as a
+casualty *distribution* — which taxes nobody's power — and did not model the second at all.
+A raid compared two totals and never asked what either side was made of, so **composition was
+literally irrelevant in PvP** and a mono army had no predator anywhere.
+
+**Cover.** `HOLDS`/`NEEDS` per type: ranged troops and engines are worth up to half as much
+with nobody standing in front. A wall counts as the line, so archers behind stonework are
+sound and the same archers in a field are not — which is why a defensive army and a marching
+column now want different shapes. This is what makes the spearman worth training: at 55% of a
+knight's raw power, his job is to make the rest of the army work.
+
+**The triangle.** Pikes stop cavalry, cavalry runs down archers, archers shoot the slow line;
+ballistae have no field answer, which is why they need cover most. Weighted by each side's
+share of the fighting, so it is a matter of degree. Applied to raids *and* to camps — every
+camp now holds its ground with a particular kind of soldier, because most play is PvE and a
+triangle that only exists in PvP leaves the majority of the game without a predator.
+
+|  | best case | **worst case** |
+|---|---|---|
+| all knights | 4,846 | 2,609 |
+| **even four ways** | 2,882 | **2,616** |
+| archers behind a line | 3,046 | 2,276 |
+| all archers | 3,337 | 1,797 |
+| all ballistae | 1,653 | 1,653 |
+
+**Mono is now a gamble rather than a free win, and that is the intended end state** — not
+"mono is dead". The balanced column has the best guaranteed floor and can take any camp on the
+map; mono-knight peaks 67% higher but only against the third of camps that suit it, and in a
+raid it is betting blind, because the raid board shows a target's power and never its
+composition. Cheap-and-narrow against expensive-and-flexible is a real decision, and 0%-of-a-type
+builds exist in Whiteout Survival too — they are a build, not the meta.
+
+The battle report names the matchup afterwards, so the triangle is learnable without being
+handed over before the fight.
+
+*Three of my own tests failed on this change and all three were measuring the old model.* The
+`classLift` probe compared a pure spearman column against a pure ballista one — which have
+different cover now, so it was reading cover as affinity and reported 146% for a 23% lift. It
+measures a marginal contribution on top of a fixed line instead. And two v1.41 assertions
+demanded pure columns be near-equal in power, which interdependence deliberately breaks; the
+property they should have been guarding is power per unit of *capacity*, plus the worst-case
+floor.
+
 #### Capacity is load, not headcount (v1.41) — and pace came back out
 
 Asked whether march speed should be uniform across troop types, as in the reference games,

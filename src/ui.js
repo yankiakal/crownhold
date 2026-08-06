@@ -1051,14 +1051,21 @@ function renderRaid(S){
       + esc(l.against)+' ('+fmt(l.mine)+' vs '+fmt(l.theirs)+')'
       + (l.won && Object.keys(l.loot||{}).length ? ', hauling '+Object.entries(l.loot).map(([k,v])=>fmt(v)+' '+k).join(', ') : '')
       + '. '+(l.dead||0)+' of yours fell and '+l.hurt+' came home wounded; '+l.theirHurt+' of theirs wounded.'
-      + (l.theirWatchers ? ' '+l.theirWatchers+' allied column'+(l.theirWatchers===1?'':'s')+' stood with them.' : '')+'</div>';
+      + (l.theirWatchers ? ' '+l.theirWatchers+' allied column'+(l.theirWatchers===1?'':'s')+' stood with them.' : '')
+      + (Math.abs(l.edge||0) > 0.03
+          ? ' <b style="color:var(--'+(l.edge>0?'good':'bad')+')">The matchup was '
+            + (l.edge>0?'yours':'theirs')+' by '+Math.round(Math.abs(l.edge)*100)+'%</b> — pikes stop cavalry, '
+            + 'cavalry runs down archers, archers shoot the slow line.' : '')+'</div>';
   }
   if(r.lastDefence){
     const d = r.lastDefence;
     h += '<div class="stat-note">Last assault on you — '+esc(d.from)+' '+(d.held ? 'was thrown back' : 'broke through')
       + ' ('+fmt(d.mine)+' vs '+fmt(d.theirs)+'). '+d.hurt+' of yours wounded, none lost'
       + ((d.theirDead||0) ? ' — and '+d.theirDead+' of theirs will not be going home' : '')+'.'
-      + (d.lifted ? ' The Watch at your wall lifted your whole line.' : '')+'</div>';
+      + (d.lifted ? ' The Watch at your wall lifted your whole line.' : '')
+      + (Math.abs(d.edge||0) > 0.03
+          ? ' <b style="color:var(--'+(d.edge>0?'good':'bad')+')">Your line '+(d.edge>0?'answered':'suited')
+            + ' theirs by '+Math.round(Math.abs(d.edge)*100)+'%.</b>' : '')+'</div>';
   }
 
   if(r.me.cooldownIn > 0)
@@ -1627,9 +1634,14 @@ function renderDetail(S){
       body += '<p class="d-row">Distance '+tileDist(tile)+' — '+ftime(travel)+' each way.</p>';
       if(tt.kind==='gather')
         body += '<p class="d-delta">Yields ~'+fmt(gatherYield(S,tile))+' '+tt.res+' after '+ftime(GATHER_MS)+' of work.</p>';
-      else if(tt.kind==='camp')
-        body += '<p class="d-delta">Camp strength ≈'+campPower(S,tile)+'. Victory: loot, Valor, Mastery — and the camp burns.</p>'
-          + '<p class="d-warn">Defeat costs a third of the marchers.</p>';
+      else if(tt.kind==='camp'){
+        body += '<p class="d-delta">Camp strength ≈'+campPower(S,tile)+'. Victory: loot, Valor, Mastery — and the camp burns.</p>';
+        if(tile.def)
+          body += '<p class="d-row">Held by <b>'+TROOPS[tile.def].plural.toLowerCase()+'</b> '+TROOPS[tile.def].icon
+            + ' — bring what beats them. <span class="hmeta">Pikes stop cavalry, cavalry runs down archers, '
+            + 'archers shoot the slow line.</span></p>';
+        body += '<p class="d-warn">Defeat costs a third of the marchers.</p>';
+      }
       else
         body += '<p class="d-delta">Explorers return with Valor, Mastery, and a 20% chance of a Writ of Peace.</p>';
       const busy = tileBusy(S,k), full = S.marches.length >= marchSlots(S);
@@ -1643,7 +1655,7 @@ function renderDetail(S){
           // tell marchPower what it is facing, or Camp-Breaker would be missing
           // from the preview and present in the battle
           body += '<p class="d-delta">This column fights at <b>'
-            + marchPower(S, fit.troops, marchParty, tt.kind==='camp' ? 'camp' : null)+'</b>'
+            + marchPower(S, fit.troops, marchParty, tt.kind==='camp' ? 'camp' : null, tile.def)+'</b>'
             + (tt.kind==='camp' ? ' against ≈'+campPower(S,tile) : '')+'.</p>';
         const none = fit.total === 0;
         body += '<div style="display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap">'

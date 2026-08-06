@@ -10,6 +10,7 @@ import { scoreDeed } from './events.js';
 import { takeCasualties } from './logic.js';
 import {
   tierPower, heroBonus, spoilBonus, perk, wavePower, leadBonus, leadTotal, classMult, heroAway,
+  coverOf, coverMult, matchupEdge, powerShares,
   effLvl, addDeeds, petBonus, gainBond, gainPetXp,
   skillTotal, skillClass, skillCond,
   gainRes, gainValor, gainShield, gainMastery, pushLog, showBanner, fmt, ftime,
@@ -123,11 +124,20 @@ export function genWorld(seed){
     if(!any) break;
   }
 
+  /* Camps hold their ground with a particular kind of soldier, so the counter triangle
+     applies on the frontier and not only in PvP. Without this, most of the game is PvE
+     against a featureless number, and a mono army has no predator across the majority of
+     play — which is how levelling power-per-load merely moved the best build from siege
+     to cavalry. Now the frontier is a matchup: bring what beats what holds the ground. */
+  const GARRISONS = ['spearman', 'archer', 'knight'];
   const tiles = placed.map(({x, y}, i) => {
     const base = tileBase(x, y);
     // ±1 of jitter, so two tiles the same distance out are not interchangeable
     const lvl = Math.max(1, Math.min(TILE_LVL_MAX, base + (rng() < 0.34 ? (rng() < 0.5 ? -1 : 1) : 0)));
-    return { x, y, type: kinds[i] || 'woods', base, lvl, respawnAt:0 };
+    const type = kinds[i] || 'woods';
+    const t = { x, y, type, base, lvl, respawnAt:0 };
+    if(type === 'camp') t.def = GARRISONS[Math.floor(rng() * GARRISONS.length)];
+    return t;
   });
   return { seed, tiles, beasts: [], roamAt: 0 };
 }
@@ -237,10 +247,20 @@ export function tileBusy(s, idx){ return (s.marches||[]).some(m => m.tile===idx)
    and added into a bracket that already holds hero, spoil and lead bonuses, +0.12
    came out as +9.7%. Everything a skill claims is applied on its own factor so
    the number in the tooltip is the number you get. */
-export function marchPower(s, troops, heroes, against){
+export function marchPower(s, troops, heroes, against, enemy){
+  /* A column in the field has no wall to stand behind, so its line is whatever it brought.
+     This is what makes a spearman worth training: without one, the archers and engines
+     behind him fight at a fraction of their worth. */
+  const cover = coverOf(troops, 0);
   let p = 0;
   for(const k of Object.keys(TROOPS))
-    p += tierPower(s,k) * (troops[k]||0) * classMult(s, heroes, k);
+    p += tierPower(s,k) * (troops[k]||0) * classMult(s, heroes, k) * coverMult(k, cover);
+  /* What holds the ground decides part of the fight. `enemy` is a troop kind (a camp's
+     garrison) or a share map (another hold's army). */
+  if(enemy){
+    const theirs = typeof enemy === 'string' ? { [enemy]: 1 } : enemy;
+    p *= 1 + matchupEdge(powerShares(s, troops), theirs);
+  }
   const total = Object.values(troops).reduce((a,b)=>a+(b||0), 0);
   const atCap = total > 0 && columnLoad(troops) >= marchCapacity(s, heroes);
   return Math.round(p
@@ -450,7 +470,7 @@ function resolveArrival(s, m, now, rand){
   const guard = Math.max(0.25, (1 - leadTotal(s, party, 'guard')) * (1 - skillTotal(s, party, 'guard')));
   if(tt.kind==='camp'){
     const enemy = campPower(s, tile) * (0.88 + rand()*0.24);
-    const mine = marchPower(s, m.troops, party, 'camp');
+    const mine = marchPower(s, m.troops, party, 'camp', tile.def);
     if(mine >= enemy){
       const ratio = enemy/Math.max(mine,1);
       const lf = 0.25*ratio*ratio*guard;

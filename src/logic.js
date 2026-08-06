@@ -7,6 +7,7 @@ import {
   BUILDINGS, TROOPS, MASTERY, QUESTS, ACHIEVEMENTS, RES_META,
   HERO_POOL, HERO_SLOTS, SPOILS, RARITY,
   COURT_BASE, COURT_PER_TH, COURT_MAX, seasonNo, CLASS_AFFINITY, MARCH_HEROES,
+  LOAD, HOLDS, NEEDS, EXPOSED_LOSS, BEATS, MATCHUP,
   ARENA_HEROES, STAR_POWER, starCap, starNeed, DEEDS, temperFor,
   PET_POOL, PET_MAX_LVL, petXpNeed, petBondNeed,
   WAVE_TYPES, STANCES, COUNTER_BONUS, COUNTER_PENALTY, COUNTER_CASUALTY, SCREEN,
@@ -417,6 +418,63 @@ export function takeCasualties(s, k, n, pve){
   if(hurt) s.wounded[k] = (s.wounded[k] || 0) + hurt;
   return { dead: n - hurt, hurt };
 }
+/* ── cover ──
+   How much of a line the column has, against how much of one it wants. A wall counts: a
+   hold defending its own gate has the stonework standing in front, which is why a garrison
+   of archers behind a Wall 12 is sound and the same archers in open field are not. */
+export function coverOf(troops, wallLvl){
+  let holds = (wallLvl || 0) * 1.5, needs = 0;
+  for(const k of Object.keys(TROOPS)){
+    const l = (troops[k] || 0) * (LOAD[k] || 1);
+    holds += l * (HOLDS[k] || 0);
+    needs += l * (NEEDS[k] || 0);
+  }
+  if(needs <= 0) return 1;
+  return Math.min(1, holds / needs);
+}
+/* What a troop of this kind is actually worth at this much cover. A spearman never cares;
+   a ballista in the open is worth half of one behind a line. */
+export function coverMult(k, cover){
+  return 1 - (NEEDS[k] || 0) * EXPOSED_LOSS * (1 - Math.min(1, cover));
+}
+
+/* ── the counter triangle ──
+   Pikes stop cavalry, cavalry runs down archers, archers shoot the slow line. Weighted by
+   each side's share of the fighting, so it is a matter of degree rather than a coin toss
+   on whichever type happens to be largest.
+
+   Without this, composition was IRRELEVANT in PvP — a raid compared two totals and never
+   asked what either side was made of. That is what left a mono army with no predator, and
+   why levelling power-per-load merely moved the dominant build from siege to cavalry.
+   Now a specialist gambles: hard-countered by one thing, and hard-countering another. A
+   balanced force sits near zero — never advantaged, never ambushed. */
+export function powerShares(s, troops){
+  const share = {};
+  let total = 0;
+  for(const k of Object.keys(TROOPS)){
+    const p = tierPower(s, k) * ((troops && troops[k]) || 0);
+    share[k] = p; total += p;
+  }
+  if(total <= 0) return null;
+  for(const k of Object.keys(share)) share[k] /= total;
+  return share;
+}
+export function matchupEdge(mineShare, theirShare){
+  if(!mineShare || !theirShare) return 0;
+  let edge = 0;
+  for(const a of Object.keys(TROOPS)){
+    const sa = mineShare[a] || 0;
+    if(!sa) continue;
+    for(const d of Object.keys(TROOPS)){
+      const sd = theirShare[d] || 0;
+      if(!sd) continue;
+      if(BEATS[a] === d) edge += sa * sd * MATCHUP;
+      if(BEATS[d] === a) edge -= sa * sd * MATCHUP;
+    }
+  }
+  return edge;
+}
+
 /* ── the screen ──
    SCREEN's per-type weights used to be applied as INDEPENDENT MULTIPLIERS, which meant
    the total casualties a force took depended on its composition: a pure-ballista column
@@ -689,8 +747,11 @@ export function watchCasualties(s, lossFrac, rand){
 }
 
 export function armyBreakdown(s){
+  /* Cover applies at the wall too, and the wall itself is most of it — archers behind
+     stonework are sound; the same archers with no line and no wall are not. */
+  const cover = coverOf(s.t, s.b.wall || 0);
   let base = 0;
-  for(const k of Object.keys(TROOPS)) base += tierPower(s,k) * s.t[k];
+  for(const k of Object.keys(TROOPS)) base += tierPower(s,k) * s.t[k] * coverMult(k, cover);
   const mine = (1 + heroBonus(s,'troopPower') + spoilBonus(s,'troopPower')
                   + techBonus(s,'warcraft') + allyBonus(s,'troopPower'))
              * (1 + (perk(s,2)?0.06:0) + (perk(s,8)?0.08:0) + (perk(s,10)?0.15:0)
@@ -700,7 +761,7 @@ export function armyBreakdown(s){
   const mult = guests.reduce((m, g) => Math.max(m, g.mult || 0), mine);
   const gbase = guests.reduce((a, g) => a + (g.base || 0), 0);
   const wall = (18 + techFlat(s,'fortification'))*s.b.wall + heroBonus(s,'wallPower');
-  return { base, mult, ownMult: mine, watch: gbase, watchers: guests.length,
+  return { base, mult, ownMult: mine, cover, watch: gbase, watchers: guests.length,
            lifted: mult > mine + 1e-9, wall,
            total: Math.round((base + gbase)*mult + wall) };
 }

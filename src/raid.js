@@ -33,7 +33,7 @@
 
 import { TROOPS, RES_META } from './defs.js';
 import { armyBreakdown, takeWounds, pushLog, gainShield, watchCasualties,
-         showBanner, gainValor, gainMastery } from './logic.js';
+         showBanner, gainValor, gainMastery, powerShares, matchupEdge, watchTroops } from './logic.js';
 import { scoreDeed } from './events.js';
 
 /* Travel is what makes a raid a decision rather than a button: the troops you send
@@ -79,7 +79,14 @@ export function defenceOf(s){ return armyBreakdown(s); }
    may have ridden out elsewhere since, and a column should not weaken in transit. */
 export function resolveRaid(att, def, col, now, rand = Math.random){
   const d = defenceOf(def);
-  const mine = Math.max(1, Math.round((col.base || 0) * (col.mult || 1)));
+  /* The triangle. Before this, a raid compared two totals and never asked what either
+     side was made of, so composition was irrelevant in PvP and a mono army had no
+     predator anywhere in the game. */
+  const wall = watchTroops(def);
+  const theirTroops = { ...def.t };
+  for(const [k, n] of Object.entries(wall)) theirTroops[k] = (theirTroops[k] || 0) + n;
+  const edge = matchupEdge(powerShares(att, col.troops), powerShares(def, theirTroops));
+  const mine = Math.max(1, Math.round((col.base || 0) * (col.mult || 1) * (1 + edge)));
   const theirs = Math.max(1, d.total);
   const won = mine > theirs;
 
@@ -171,7 +178,7 @@ export function resolveRaid(att, def, col, now, rand = Math.random){
   }
 
   return { won, mine, theirs, loot, hauled, attHurt, attDead, defHurt, watchHurt, survivors,
-           lifted: d.lifted, watchers: d.watchers };
+           edge, lifted: d.lifted, watchers: d.watchers };
 }
 
 /* Refined and carried goods are unlootable by construction — asserted in the suite so

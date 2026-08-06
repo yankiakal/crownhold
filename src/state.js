@@ -94,6 +94,11 @@ export function applyOffline(s, awayMs){
 export function migrate(s, now){
     s.now = now;
     // the Watch: troops others have stationed here, and troops of ours standing elsewhere
+    // camps predate their garrisons: give any old tile one so the triangle applies there
+    if(s.world && Array.isArray(s.world.tiles))
+      for(const t of s.world.tiles)
+        if(t.type === 'camp' && !t.def)
+          t.def = ['spearman','archer','knight'][(t.x*7 + t.y*13) % 3];
     if(!Array.isArray(s.watch)) s.watch = [];
     if(!Array.isArray(s.watching)) s.watching = [];
     if(s.mxp==null) s.mxp = 0;

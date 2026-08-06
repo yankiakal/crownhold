@@ -667,7 +667,7 @@ function resolveRaids(now){
     }
     const out = resolveRaid(att.state, def.state, r, now, Math.random);
     r.outcome = { won: out.won, mine: out.mine, theirs: out.theirs, loot: out.loot,
-                  attHurt: out.attHurt, attDead: out.attDead,
+                  attHurt: out.attHurt, attDead: out.attDead, edge: out.edge,
                   defHurt: out.defHurt, watchHurt: out.watchHurt,
                   lifted: out.lifted, watchers: out.watchers };
     /* Kept on both holds, not only on the in-flight record — the register is emptied
@@ -675,13 +675,13 @@ function resolveRaids(now){
        not have had a result. Each side sees it from their own side. */
     att.state.lastRaid = { at: now, against: def.name, won: out.won,
                            mine: out.mine, theirs: out.theirs, loot: out.loot,
-                           hurt: out.attHurt, dead: out.attDead,
+                           hurt: out.attHurt, dead: out.attDead, edge: out.edge,
                            theirHurt: out.defHurt + out.watchHurt,
                            theirWatchers: out.watchers };
     def.state.lastDefence = { at: now, from: att.name, held: !out.won,
                               mine: out.theirs, theirs: out.mine, lost: out.loot,
                               hurt: out.defHurt + out.watchHurt,
-                              theirHurt: out.attHurt, theirDead: out.attDead,
+                              theirHurt: out.attHurt, theirDead: out.attDead, edge: -out.edge,
                               lifted: out.lifted, watchers: out.watchers };
     r.troops = out.survivors;
     r.hurt = out.attHurt;

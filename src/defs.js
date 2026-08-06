@@ -409,6 +409,30 @@ export const SCREEN = {spearman:1.5, archer:1.2, knight:0.75, ballista:0.5};
    Differential march pace was a workaround for the ladder. With the ladder gone it was a
    second mechanic doing a job this one does properly, so it went. */
 export const LOAD = {spearman:1, archer:1, knight:2, ballista:4};
+
+/* ── the front line, and who needs one ──
+   Levelling power-per-load stopped one type dominating, and then made a worse thing
+   optimal: specialise. Tier promotions are per line (one line to tier 5 costs 165
+   resources; all four cost 972), one troop building instead of four, and all three
+   captains on a single class — so three archer captains fielding only archers measured
+   3,803 against a mixed column's 3,263. Six times cheaper AND stronger.
+
+   Percentage nudges cannot answer a 6× cost advantage. What answers it is STRUCTURE, which
+   is what Whiteout Survival actually uses: marksmen die without an infantry line in front
+   of them. So ranged troops and engines only fight at full worth behind a line, and the
+   spearman — worth 55% of a knight in raw power — becomes the thing that makes the rest
+   of your army work. */
+export const HOLDS = {spearman:1, knight:0.7, archer:0.15, ballista:0};   // stands in front
+export const NEEDS = {spearman:0, knight:0.15, archer:0.8, ballista:1};   // wants one there
+export const EXPOSED_LOSS = 0.5;      // how much of its worth a wholly uncovered unit loses
+
+/* ── the counter triangle ──
+   Pikes stop cavalry, cavalry runs down archers, archers shoot the slow line. Ballistae
+   have no answer in the field, which is why they need cover most.
+   Without this, a raid compared raw power and composition was irrelevant in PvP — so a
+   mono army had no predator. A triangle gives every specialist one. */
+export const BEATS = {spearman:'knight', knight:'archer', archer:'spearman'};
+export const MATCHUP = 0.30;          // the edge a full counter is worth
 export const STANCES = {
   balanced:  {name:'Balanced',    icon:'⚖️', hint:'No bonus, no penalty'},
   shieldwall:{name:'Shield Wall', icon:'🛡️', hint:'Counters Riders'},
