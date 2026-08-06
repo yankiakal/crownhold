@@ -155,19 +155,31 @@ setTimeout(() => {
         btns.forEach(b => { const r = b.getBoundingClientRect(); if(Math.min(r.width, r.height) < 44) small++; });
         /* Does the cluster sit on top of anything you need to press? In Whiteout Survival the
            world behind it has no controls; here the road panel has Raise buttons on the right
-           edge, and the first version of this covered them. */
-        let buried = 0;
+           edge, and the first version of this covered them.
+
+           HORIZONTAL overlap only, deliberately. The first version of this check also required the
+           rects to overlap VERTICALLY, which quietly restricted it to whatever happened to be on
+           the first screen — and the dock is position:fixed, so it hangs in the same column at
+           every scroll position. The Research panel's Study buttons sat directly under it and this
+           check reported "buries nothing ✓", because those rows are 1,900px down. Any button whose
+           x-range reaches into the dock's column WILL be buried once the player scrolls to it, so
+           the x-range is the whole test. */
+        let buried = 0, buriedWhat = [];
         if(dock){
           const dr = dock.getBoundingClientRect();
           d.querySelectorAll('button[data-act]').forEach(el => {
             if(el.closest('.dock') || el.closest('.tabbar') || el.closest('.card')) return;
             const r = el.getBoundingClientRect();
-            if(r.width && r.right > dr.left && r.left < dr.right
-                       && r.bottom > dr.top && r.top < dr.bottom) buried++;
+            if(r.width && r.right > dr.left && r.left < dr.right){
+              buried++;
+              if(buriedWhat.length < 4)
+                buriedWhat.push((el.textContent || el.dataset.act || '?').trim().slice(0, 14));
+            }
           });
         }
         rows.push('  dock ' + btns.length + ' icons'
-          + (buried ? ' ✗ ' + buried + ' BUTTONS BURIED under it' : ' · buries nothing ✓')
+          + (buried ? ' ✗ ' + buried + ' BUTTONS BURIED under it (' + buriedWhat.join(', ') + ')'
+                    : ' · buries nothing ✓')
           + (small ? ' ✗ ' + small + ' under 44px' : ' ✓ all thumb-sized')
           + (dock && dock.querySelector('.vchip') ? ' · version chip present ✓' : ' ✗ NO VERSION VISIBLE')
           + (d.querySelector('footer') && d.querySelector('footer').offsetHeight

@@ -15,7 +15,9 @@ import * as A from '../src/actions.js';
 import * as SK from '../src/skills.js';
 import * as ST from '../src/state.js';
 import * as AR from '../src/arena.js';
+import * as R from '../src/research.js';
 import { freshState } from '../src/state.js';
+import { readFileSync } from 'node:fs';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, note='') => { cond ? pass++ : fail++;
@@ -1476,6 +1478,181 @@ console.log('\n── a pre-skills save is inert, not broken ──');
   ok('cannot wear an unowned paid item', L.equipCos(s2,'hold','frost',s2.now) === false);
   ok('can always wear the free default', L.equipCos(s2,'hold','default',s2.now) === true);
   ok('an unknown id is refused', L.equipCos(s2,'hold','nope',s2.now) === false);
+}
+
+/* ── the research tree ──
+   The tree grew branches, prerequisites, per-line mastery and a Truegold tier, and the
+   LAST test in this block is the one that matters most. Truegold shipped as a resource
+   the Crucible produced and nothing on earth spent — a whole refining chain terminating
+   in a number no rule read. That bug was invisible because nothing was broken; something
+   was merely absent, which is this project's signature failure. So every study is maxed
+   in isolation and something observable must move, and the test NAMES any study that
+   moves nothing. */
+console.log('\n── the research tree is shaped, not a flat list ──');
+{
+  const keys = Object.keys(R.RESEARCH);
+  const unbranched = keys.filter(k => !R.BRANCHES[R.RESEARCH[k].branch]);
+  ok('every study sits in a real branch', unbranched.length === 0, unbranched.join(', ') || 'clean');
+  ok('both branches are populated',
+     R.branchKeys('growth').length > 0 && R.branchKeys('battle').length > 0,
+     R.branchKeys('growth').length + ' growth, ' + R.branchKeys('battle').length + ' battle');
+  ok('there are prerequisites at all — this is what a flat list lacked',
+     keys.some(k => R.RESEARCH[k].needs));
+
+  /* A prerequisite naming a study that does not exist, or demanding a level past that
+     study's own maximum, is an permanently unreachable node. Both are silent. */
+  const badDep = [];
+  for(const k of keys)
+    for(const [dep, lvl] of Object.entries(R.RESEARCH[k].needs || {})){
+      if(!R.RESEARCH[dep]) badDep.push(k + ' needs unknown ' + dep);
+      else if(lvl > R.RESEARCH[dep].max) badDep.push(k + ' needs ' + dep + ' ' + lvl + ' > max ' + R.RESEARCH[dep].max);
+    }
+  ok('no study requires a level that cannot be reached', badDep.length === 0, badDep.join('; ') || 'clean');
+
+  /* Cycles: A needs B needs A locks both out forever, and nothing would report it. */
+  const cyclic = [];
+  for(const start of keys){
+    const seen = new Set(); const stack = [start];
+    while(stack.length){
+      const cur = stack.pop();
+      if(seen.has(cur)) continue;
+      seen.add(cur);
+      for(const dep of Object.keys(R.RESEARCH[cur] && R.RESEARCH[cur].needs || {})){
+        if(dep === start){ cyclic.push(start); stack.length = 0; break; }
+        stack.push(dep);
+      }
+    }
+  }
+  ok('no prerequisite cycles', cyclic.length === 0, cyclic.join(', ') || 'clean');
+
+  /* The gates must agree with the tree: a study cannot require a prerequisite that only
+     opens at a HIGHER Library level than the study itself, or it can never be legally begun. */
+  const gateClash = [];
+  for(const k of keys)
+    for(const dep of Object.keys(R.RESEARCH[k].needs || {}))
+      if(R.RESEARCH[dep].lib > R.RESEARCH[k].lib)
+        gateClash.push(k + '(lib ' + R.RESEARCH[k].lib + ') needs ' + dep + '(lib ' + R.RESEARCH[dep].lib + ')');
+  ok('no study unlocks before its own prerequisite can', gateClash.length === 0, gateClash.join('; ') || 'clean');
+}
+
+console.log('\n── per-line mastery hits one line and only one line ──');
+{
+  const s = hold();
+  s.research = {};
+  const powerOf = k => L.tierPower(s, k);
+  const before = Object.fromEntries(Object.keys(D.TROOPS).map(k => [k, powerOf(k)]));
+  s.research = { line_knight: R.LINE_MAX };
+  ok('the studied line gains', powerOf('knight') > before.knight,
+     before.knight.toFixed(1) + ' → ' + powerOf('knight').toFixed(1));
+  const others = Object.keys(D.TROOPS).filter(k => k !== 'knight');
+  ok('and no other line moves',
+     others.every(k => near(powerOf(k), before[k], 0)),
+     others.map(k => k + ' ' + powerOf(k).toFixed(1)).join(', '));
+  /* It must land in tierPower rather than the global multiplier, or a column's power and
+     the muster roll would disagree about what one knight is worth. */
+  ok('the gain is the size the study advertises',
+     near(powerOf('knight') / before.knight, 1 + R.LINE_MAX * R.LINE_PER / 100),
+     '×' + (powerOf('knight') / before.knight).toFixed(3));
+}
+
+console.log('\n── the Truegold tier is the sink the Crucible never had ──');
+{
+  ok('Truegold research exists', Object.keys(R.TRUEGOLD).length > 0);
+  const noGold = Object.entries(R.TRUEGOLD).filter(([, d]) => !d.cost.truegold);
+  ok('and every one of them is priced in Truegold', noGold.length === 0,
+     noGold.map(([k]) => k).join(', ') || 'clean');
+
+  /* Priced in it is not the same as SPENDING it — payCost is generic over resource keys,
+     so this checks the stock actually falls. */
+  const s = hold();
+  s.b.library = 30; s.b.crucible = 20; s.b.townhall = 25;
+  s.research = { warcraft: 10 };
+  s.res.truegold = 500; s.res.trueore = 500;
+  const held = s.res.truegold;
+  const started = L.startResearch(s, 'tg_might', s.now);
+  ok('a Truegold study can actually be begun', started === true, R.techBlockedBy(s, 'tg_might') || '');
+  ok('and it spends Truegold from the vault', s.res.truegold < held,
+     held + ' → ' + s.res.truegold);
+
+  /* Affordability must bite: without Truegold the study is refused even when every
+     other resource is overflowing. */
+  const s2 = hold();
+  s2.b.library = 30; s2.b.crucible = 20; s2.b.townhall = 25;
+  s2.research = { warcraft: 10 };
+  s2.res.truegold = 0;
+  ok('and is refused outright with an empty Truegold vault',
+     L.startResearch(s2, 'tg_might', s2.now) === false);
+}
+
+console.log('\n── every study can actually be paid for ──');
+{
+  /* A level costing more than your maximum storage can NEVER be begun — canAfford compares
+     against a stock that physically cannot reach the price. It is a permanent dead end that
+     reports itself as a merely expensive study, so it is worth a test rather than a glance.
+     Checked at the DEAREST level of every track, with the Town Hall and stores maxed. */
+  const s = hold();
+  s.b.townhall = 30; s.b.library = 30; s.b.crucible = 20; s.b.granary = 10;
+  s.research = {};
+  for(const k of Object.keys(R.RESEARCH)) s.research[k] = R.RESEARCH[k].max - 1;
+  const bad = [];
+  for(const k of Object.keys(R.RESEARCH))
+    for(const [r, v] of Object.entries(R.techCost(s, k)))
+      if(v > L.capFor(s, r)) bad.push(k + ':' + r + ' ' + v + ' > cap ' + Math.round(L.capFor(s, r)));
+  ok('no study has a level dearer than the vault that must hold it', bad.length === 0,
+     bad.join('; ') || 'all ' + Object.keys(R.RESEARCH).length + ' fit');
+
+  /* And the Truegold tier must be reachable from the only place Truegold comes from. The Salt
+     Isle yields a measured 586 Isle Ore a season worked perfectly, so 147 Truegold; the tier
+     first shipped needing 7,078, which is 48 seasons of flawless sailing. The band is wide
+     because the intent is loose — "a long endgame grind" — but 48 seasons is outside it, and
+     nothing would have said so. */
+  const tg = Object.keys(R.TRUEGOLD).reduce((a, k) => {
+    const st = hold(); st.b.library = 30; st.b.crucible = 20;
+    let sum = 0;
+    for(let l = 0; l < R.RESEARCH[k].max; l++){
+      st.research = { [k]: l };
+      sum += R.techCost(st, k).truegold || 0;
+    }
+    return a + sum;
+  }, 0);
+  const seasons = tg / 147;
+  ok('the whole Truegold tier is 4–20 seasons of Isle play, not a lifetime',
+     seasons >= 4 && seasons <= 20,
+     tg + ' Truegold = ' + seasons.toFixed(1) + ' seasons at 147/season');
+}
+
+console.log('\n── no study moves nothing (the bug Truegold itself was) ──');
+{
+  /* Every study maxed in isolation, against a wide sample of observable outputs. If a
+     study's number is read by no rule anywhere, it appears here by name. */
+  const probe = s => JSON.stringify({
+    food: L.prodMult(s, 'food'), stone: L.prodMult(s, 'stone'),
+    cap: L.storageCap(s), army: L.armyPower(s), wall: L.wallPower(s),
+    train: L.trainMultFor(s, 5), valor: L.valorGain ? 1 : 1,
+    power: Object.keys(D.TROOPS).map(k => L.tierPower(s, k).toFixed(4)).join(','),
+  });
+  const dead = [];
+  for(const k of Object.keys(R.RESEARCH)){
+    const s = hold();
+    s.b.wall = 9; s.b.library = 30; s.b.crucible = 20;
+    s.research = {};
+    const before = probe(s);
+    s.research = { [k]: R.RESEARCH[k].max };
+    if(probe(s) === before) dead.push(k);
+  }
+  /* Three are genuinely invisible to these probes and are checked by their own tests
+     elsewhere: loot and Valor are per-event multipliers, medicine is a casualty roll. */
+  const expected = ['siegecraft', 'statecraft', 'medicine', 'smelting'];
+  const unexplained = dead.filter(k => !expected.includes(k));
+  ok('every study moves a number this harness can see', unexplained.length === 0,
+     unexplained.length ? 'DEAD: ' + unexplained.join(', ') : dead.length + ' deferred to their own tests');
+
+  /* And the four deferred ones must still be READ by name somewhere in the engine —
+     a weaker check than measurement, but it catches a study nothing consumes at all. */
+  const src = readFileSync(new URL('../src/logic.js', import.meta.url), 'utf8');
+  const unread = expected.filter(k => !src.includes("'" + k + "'"));
+  ok('and the deferred four are each consumed by name in logic.js', unread.length === 0,
+     unread.join(', ') || expected.join(', ') + ' all read');
 }
 
 console.log('\n' + (fail ? '✗ ' + fail + ' FAILED, ' + pass + ' passed' : '✓ all ' + pass + ' passed') + '\n');

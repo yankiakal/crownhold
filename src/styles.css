@@ -379,6 +379,8 @@ section.panel{
      full-bleed and pan, and there is nothing to press on them at that edge. */
   .tabpane.base > section.panel > .queue-strip,
   .tabpane.base > section.panel > .stat-note,
+  .tabpane.base > section.panel > .trow,
+  .tabpane.base > section.panel > .order-row,
   .tabpane.base > section.panel > .road{
     margin-left:var(--pad);margin-right:3.7rem;
   }
@@ -442,6 +444,17 @@ section.panel{
 }
 .stat-note b{color:var(--ink)}
 .trow{flex-wrap:wrap}
+/* A study row carries an icon, a name, a full sentence of effect, a level count and a button.
+   At 393px that cannot be one line, and `flex-wrap:wrap` alone broke it in the ugliest available
+   place — the count pressed against the right edge and the button orphaned on a second line at the
+   far left. So the wrap is made deliberate instead: the effect sentence is ordered last and given
+   its own full-width line, which leaves name · count · button together on the first. */
+.trow.study .tmeta{order:9;flex-basis:100%;margin:.1rem 0 .15rem}
+.trow.study .spacer{order:5}
+.trow.study .count{order:6}
+.trow.study button{order:7}
+.trow.study .stag{font-family:var(--sans);font-size:.6rem;letter-spacing:.06em;
+  text-transform:uppercase;order:4}
 .tier-tag{font-family:var(--sans);font-size:.6rem;color:var(--gold);letter-spacing:.08em}
 .trow.mine{color:var(--gold)}
 .card.dsheet input{

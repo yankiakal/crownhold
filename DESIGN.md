@@ -1285,6 +1285,61 @@ an enormous pile of iron and wood, laundered through a Forge.
 Everything now runs to **Town Hall 30**, Mastery **30**, and a 30-step charter,
 with a 24-entry permanent achievement list underneath.
 
+### Truegold had no sink at all (v1.67)
+
+The Victualler packs Rations, Rations pay for a voyage, a voyage brings back Isle Ore,
+and the Crucible refines Isle Ore into Truegold. Four buildings and a whole second map,
+and **nothing in the game spent the Truegold**. It was produced, it was displayed, it
+counted toward nothing. Every hour anyone put into that chain bought them a number that
+no rule read.
+
+Nothing was broken, so nothing complained — this project's signature failure, the same
+shape as the frontier being unwinnable for two commits. The Truegold research tier below
+is the sink, and `verify-skills` now maxes **every** study in isolation and fails the run
+naming any whose number moves nothing observable.
+
+### The research tree grew a shape (v1.67)
+
+It was a flat list: ten tracks, gated on Town Hall and Library level only. The specific
+failure was that the Library capped *everything* at once, so all ten unlocked in lockstep
+as it rose — ten bars filling at the same rate, no tree and no decision. Kingshot and
+Whiteout both branch, and both gate study behind *other study*, which is the part that
+makes a tree a tree.
+
+- **Two branches**, Growth and Battle, sharing one queue — so investing in one is
+  genuinely not investing in the other.
+- **Prerequisites**, the thing the flat list lacked entirely. Masonry needs Husbandry 2;
+  Plunder needs Medicine 2.
+- **Per-line mastery** — Kingshot's per-troop-type battle research, translated. Our combat
+  model has one `power` per line rather than Whiteout's four stats per line, so the honest
+  version is four per-line power tracks, priced so you cannot max all four. It lands in
+  `tierPower`, the single place one soldier's worth is computed, so the muster roll, the
+  wall and a column on the road cannot disagree about it.
+- **The Truegold tier** — four studies, gated on the Crucible, the biggest bonuses in the
+  game and the deepest grind.
+
+100 levels became 240. Measured at Town Hall 25, identical buildings and troops: the
+general tracks alone are **×1.39** army, per-line takes it to **×1.77**, Truegold to
+**×2.40**. The wall rises *with* that rather than past it — 8% of total defence fully
+researched under the old tree, 9% under this one — so no amount of study makes a hold
+unraidable.
+
+**Two things measurement caught that judgement had not.** Truegold Bulwark first shipped at
++14 wall power per level, which is 3.5× the entire Fortification track where its three
+siblings are ~1.3×; it took a maxed wall from ×5 to ×21. And the tier was priced at 6
+Truegold a level, totalling 7,078 — against a Salt Isle that yields a measured 586 Isle Ore
+a season worked *perfectly*, that is 48 seasons of flawless sailing. Not a long grind, an
+unreachable one. At 1 Truegold a level it is 1,232, about 8 seasons at perfect play and
+roughly twice that for anyone living a normal life. Both figures are now held by tests,
+along with the one nobody would think to check: **no study may have a level dearer than the
+vault that has to hold the payment**, which would be a permanent dead end wearing the
+costume of an expensive study.
+
+What is deliberately *not* copied: in both those games the tree is where pay-to-win hides
+most quietly. The depth exists so research speedups have somewhere to be sold, and alliance
+research help is a whale lever. We sell neither, so the tree gains structure without gaining
+Whiteout's hundreds of filler levels.
+
 ## Pacing: can an addict finish it in a week? (v1.5)
 
 The honest failure the simulator exposed: with uncapped Valor, attention
@@ -1347,7 +1402,8 @@ prototype held about 200 hours of build queue and that launch would need build a
 training times multiplied a further 10–20×. Measured, that had been wrong for a long
 time: `TIME_SCALE` is already 10, and maxing every building is **2,544 hours of
 construction — 106 days of continuously busy queue**, or roughly 62 once the second crew
-opens at Town Hall 10. Research is a further 11 days on its own parallel queue.
+opens at Town Hall 10. Research is a further 74 days on its own parallel queue —
+11 of them the general tracks, 15 the per-line masteries, and 47 the Truegold tier.
 
 No player keeps a queue 100% busy, so the real figure is comfortably inside the intended
 six-to-twelve-month window. The multiplier does not need applying; it already was.

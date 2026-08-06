@@ -49,6 +49,7 @@ import {
 } from './arena.js';
 import {
   RESEARCH, techLvl, techCost, techTime, researchProgress, techCap, techBlockedBy,
+  BRANCHES, branchKeys, branchProgress, techNeeds,
 } from './research.js';
 import {
   EVENTS, EVENT_MS, currentEvent, eventEndsIn, eventState, eventCap,
@@ -1198,6 +1199,10 @@ function renderEvent(S){
   return h;
 }
 
+/* Which branch the Research panel is showing. A view preference, not hold state —
+   it lives here rather than in S for the same reason arenaStance does. */
+let researchBranch = 'growth';
+
 function renderResearch(S){
   const p = researchProgress(S);
   const lib = S.b.library || 0;
@@ -1213,11 +1218,38 @@ function renderResearch(S){
   }else{
     h += '<div class="stat-note">The scholars are idle — research runs on its own queue, so it never competes with your builders.</div>';
   }
-  for(const [k,d] of Object.entries(RESEARCH)){
+
+  /* Two branches, one queue — so the tabs are not merely tidying. Each shows its own
+     progress, because "43/120 Battle" is the number that tells you what kind of ruler
+     you have actually been. */
+  h += '<div class="order-row" style="margin-bottom:.4rem">';
+  for(const [br,b] of Object.entries(BRANCHES)){
+    const bp = branchProgress(S, br);
+    h += '<button class="stance-btn'+(researchBranch===br?' active':'')+'" data-act="researchBranch" '
+      + 'data-key="'+br+'" title="'+b.blurb+'">'+b.icon+' '+b.name+' '+bp.done+'/'+bp.total+'</button>';
+  }
+  h += '</div>';
+  h += '<div class="stat-note">'+BRANCHES[researchBranch].blurb+'</div>';
+
+  for(const k of branchKeys(researchBranch)){
+    const d = RESEARCH[k];
     const lvl = techLvl(S,k);
     const blocked = techBlockedBy(S,k);
-    h += '<div class="trow"><span>'+d.icon+'</span><span class="tname">'+d.name+'</span>'
+    /* Truegold rows are marked: they are priced in a resource most players will not
+       have seen yet, and an unmarked row that says "Needs Crucible 4" reads as a bug. */
+    /* `stag`, not `tmeta` — the narrow-width rule gives every .tmeta in a study row its own
+       full-width line, which is right for the effect sentence and the blocked reason and wrong
+       for a one-word badge that belongs beside the name.
+       Only Truegold gets one. A per-line study had "ONE LINE" here too, which was redundant with
+       its own effect text ("spearmen only — power") and cost enough width to wrap the longest
+       name's button onto a line of its own. Truegold earns the badge because nothing else in the
+       row warns you it is priced in a resource you may never have seen. */
+    const tag = d.tg ? '<span class="stag" style="color:var(--gold)">Truegold</span>' : '';
+    /* `study` is what the narrow-width rules hang off: these rows carry a long effect
+       description AND a button, which is the combination that wraps badly at 393px. */
+    h += '<div class="trow study"><span>'+d.icon+'</span><span class="tname">'+d.name+'</span>'
       + '<span class="tmeta">'+(lvl?'+'+(lvl*d.per)+(d.unit||'')+' ':'')+d.fx+'</span>'
+      + tag
       + '<span class="spacer"></span><span class="count">'+lvl+'/'+d.max+'</span>';
     if(blocked) h += '<span class="tmeta">'+blocked+'</span>';
     else h += '<button data-act="detail" data-dtype="tech" data-key="'+k+'">Study</button>';
@@ -2064,7 +2096,23 @@ function renderDetail(S){
     body += '<p class="d-fx">Each level: +'+d.per+(d.unit||'')+' '+d.fx+'</p>'
       + '<p class="d-row">Now: <b>+'+(lvl*d.per)+(d.unit||'')+'</b>'
       + (maxed ? '' : ' → next level <b>+'+((lvl+1)*d.per)+(d.unit||'')+'</b>')
-      + ' · fully mastered: +'+(d.max*d.per)+(d.unit||'')+'</p>';
+      + ' · fully mastered: +'+(d.max*d.per)+(d.unit||'')+'</p>'
+      + '<p class="d-row">'+BRANCHES[d.branch].icon+' '+BRANCHES[d.branch].name+' branch</p>';
+    /* Say what this stacks WITH. A per-line study next to Warcraft looks like a
+       duplicate unless the sheet states that both apply. */
+    if(d.line)
+      body += '<p class="d-row">Only '+TROOPS[d.line].plural+' — and it stacks on top of Warcraft, '
+        + 'which lifts every line. This is how you build an army that is a shape rather than a pile.</p>';
+    if(d.tg)
+      body += '<p class="d-row">Truegold study: the deepest in the Reach, and the only thing '
+        + '🏵️ Truegold is spent on. Your Crucible must reach '+d.cru+'.</p>';
+    /* The prerequisite gets its own line whether or not it is met — a tree you can only
+       read backwards from a locked button is the thing that makes these panels opaque. */
+    if(d.needs){
+      const parts = Object.entries(d.needs).map(([dep,n]) =>
+        RESEARCH[dep].name+' '+n+' ('+(techLvl(S,dep)>=n?'met':'at '+techLvl(S,dep))+')');
+      body += '<p class="d-row">Requires: '+parts.join(', ')+'</p>';
+    }
     const blocked = techBlockedBy(S,k);
     body += '<p class="d-row">The Great Library (level '+(S.b.library||0)+') caps this at <b>'+techCap(S,k)+'</b>.</p>';
     if(blocked) body += '<p class="d-warn">'+blocked+'.</p>';
@@ -2716,6 +2764,7 @@ const VIEW_ACTIONS = {
   },
   holdView:    () => { listView = !listView; sceneMounted = false; },
   arenaStance: b => { arenaStance = b.dataset.key; },
+  researchBranch: b => { researchBranch = b.dataset.key; },
   arenaFrac:   b => { arenaFrac = Number(b.dataset.key); },
   arenaAttack: b => {
     const target = b.dataset.key;

@@ -25,7 +25,7 @@ import {
   WAVE_MS, FIRST_WAVE_MS, masteryLvl,
 } from './defs.js';
 
-import { RESEARCH, techLvl, techBonus, techFlat, techCost, techTime, techAvailable } from './research.js';
+import { RESEARCH, techLvl, techBonus, techFlat, techLine, techCost, techTime, techAvailable } from './research.js';
 import { nextLesson, LESSON_BY_ID } from './lessons.js';
 import { REGALIA, WARGEAR, GEAR_MAX, gearCost, gearTime, regaliaBonus, regaliaTier,
          wargearTier, gearLevels } from './gear.js';
@@ -375,7 +375,8 @@ export function perk(s,n){ return masteryLvl(s)>=n; }
 export function shieldCap(s){ return 2 + (perk(s,7)?1:0) + (perk(s,14)?1:0) + spoilBonus(s,'shieldCap'); }
 export function storageCapFor(s, thLvl){
   return Math.round(800 * Math.pow(thLvl,1.7)
-    * (1 + 0.03*(s.b.granary||0) + techBonus(s,'logistics') + petBonus(s,'store') + skillCourt(s,'store'))
+    * (1 + 0.03*(s.b.granary||0) + techBonus(s,'logistics') + techBonus(s,'tg_hoard')
+         + petBonus(s,'store') + skillCourt(s,'store'))
     * (perk(s,4)?1.15:1) * (perk(s,13)?1.10:1));
 }
 export function storageCap(s){ return storageCapFor(s, s.b.townhall); }
@@ -396,6 +397,7 @@ export function prodMult(s, res){
   return 1 + heroBonus(s,'production') + (perk(s,1)?0.06:0) + (perk(s,8)?0.08:0) + (perk(s,11)?0.08:0)
        + (res==='food' ? 0.02*(s.b.granary||0) : 0)
        + soft + allyBonus(s,'production')
+       + techBonus(s,'tg_harvest')          // Truegold lifts every resource, not a pair
        + spoilBonus(s,resKey);
 }
 export function prodPerSec(s, res){
@@ -488,7 +490,12 @@ export function supplyMult(s, k){
    the seam means an unsupplied army is weaker everywhere at once and no call site can
    forget to ask, which is how the cover rule got missed on the frontier for a version. */
 export function tierPower(s,k){
-  return TROOPS[k].power * (1 + TIER_POWER*(tierOf(s,k)-1)) * supplyMult(s,k) * academyPower(s);
+  /* techLine is the per-line mastery study, and it belongs HERE rather than in
+     armyBreakdown's global multiplier — this is the one place a single troop's power
+     is computed, so putting it here means the muster roll, the wall and a column on
+     the road all agree about what one spearman is worth. */
+  return TROOPS[k].power * (1 + TIER_POWER*(tierOf(s,k)-1)) * supplyMult(s,k) * academyPower(s)
+       * (1 + techLine(s,k));
 }
 export function tierUpkeep(s,k){ return TROOPS[k].upkeep * (1 + TIER_UPKEEP*(tierOf(s,k)-1)); }
 export function tierCostMult(s,k){ return 1 + TIER_COST*(tierOf(s,k)-1); }
@@ -1069,7 +1076,8 @@ export function watchCasualties(s, lossFrac, rand){
 export function wallWear(s){ return Math.max(0, Math.min(WALL_WEAR_MAX, s.wallWear || 0)); }
 export function wallIntact(s){ return 1 - wallWear(s); }
 export function wallPower(s){
-  const full = (18 + techFlat(s,'fortification'))*s.b.wall + heroBonus(s,'wallPower');
+  const full = (18 + techFlat(s,'fortification') + techFlat(s,'tg_bulwark'))*s.b.wall
+             + heroBonus(s,'wallPower');
   return full * wallIntact(s);
 }
 /* Stone per second the masons want right now. Zero when the wall is whole, which is the
@@ -1090,7 +1098,7 @@ export function armyBreakdown(s){
   let base = 0;
   for(const k of Object.keys(TROOPS)) base += tierPower(s,k) * s.t[k] * coverMult(k, cover);
   const mine = (1 + heroBonus(s,'troopPower') + spoilBonus(s,'troopPower')
-                  + techBonus(s,'warcraft') + allyBonus(s,'troopPower'))
+                  + techBonus(s,'warcraft') + techBonus(s,'tg_might') + allyBonus(s,'troopPower'))
              * (1 + (perk(s,2)?0.06:0) + (perk(s,8)?0.08:0) + (perk(s,10)?0.15:0)
                   + (perk(s,12)?0.08:0) + (perk(s,20)?0.20:0));
   /* The best captain at the wall commands everyone at it — the host included. */
