@@ -1702,6 +1702,79 @@ console.log('\n── a save from before the Electrum rename carries over ──
      stale.join(', ') || 'clean');
 }
 
+console.log('\n── a study you can see is a study you can pay for ──');
+{
+  /* A study priced in a refined good whose refinery opens LATER than the study does is a Begin
+     button no hold in the game can press. It looks available, it is not, and nothing complains.
+     el_harvest shipped exactly like that: priced in runestone, which only the Runeworks makes at
+     Town Hall 22, while the Electrum tier gated at 18 — four Town Hall levels of a live button
+     that could never be afforded. Derived from REFINE so a new refined good is covered for free. */
+  const source = {};
+  for(const [b, d] of Object.entries(D.REFINE || {})) source[d.out] = b;
+  const bad = [];
+  for(const [k, d] of Object.entries(R.RESEARCH))
+    for(const res of Object.keys(d.cost)){
+      const b = source[res];
+      if(b && D.BUILDINGS[b].th > d.th)
+        bad.push(k + ' opens at TH' + d.th + ' but wants ' + res
+                 + ', and ' + D.BUILDINGS[b].name + ' is TH' + D.BUILDINGS[b].th);
+    }
+  ok('no study is priced in a resource its hold cannot yet make', bad.length === 0,
+     bad.join('; ') || 'all ' + Object.keys(R.RESEARCH).length + ' payable on unlock');
+
+  /* And the Electrum tier must open when the Crucible does, or the metal has a window with no
+     sink again — the original bug, in miniature. */
+  const early = Object.keys(R.ELECTRUM).filter(k => R.RESEARCH[k].th <= D.BUILDINGS.crucible.th);
+  ok('the Electrum tier opens with the Crucible that feeds it', early.length > 0,
+     early.length + ' of ' + Object.keys(R.ELECTRUM).length + ' at TH'
+       + D.BUILDINGS.crucible.th + ', so the metal always has somewhere to go');
+}
+
+console.log('\n── the scholars never run out of work waiting for Electrum ──');
+{
+  /* The question is whether a hold can finish every non-Electrum study and then sit idle until the
+     Electrum gates open. It cannot, and the reason is that research is far slower than the
+     buildings that gate it — but that is a claim about two independent curves, so it is measured
+     rather than asserted. */
+  const s = hold(); s.b.library = 30; s.b.crucible = 20;
+  const daysOf = br => {
+    let ms = 0;
+    for(const k of R.branchKeys(br)){
+      const d = R.RESEARCH[k];
+      for(let l = 0; l < d.max; l++){ s.research = { [k]: l }; ms += R.techTime(s, k); }
+    }
+    return ms / 86400000;
+  };
+  const nonElectrum = ['growth', 'battle', 'seafaring'].reduce((a, b) => a + daysOf(b), 0);
+
+  /* Walk a minimal legal path to the Electrum gates, paying the Town Hall's pair rule as it goes,
+     and total the build queue. Everything is affordable so this measures TIME, which is the
+     binding constraint here. */
+  const b = freshState(Date.now(), 1);
+  b.res = { food:1e12, wood:1e12, stone:1e12, iron:1e12, steel:1e12,
+            runestone:1e12, rations:1e12, isleore:1e12, electrum:1e12 };
+  let buildDays = 0, guard = 0;
+  const raise = k => { buildDays += L.buildTime(b, k) / 86400000; b.b[k] = (b.b[k] || 0) + 1; };
+  while(b.b.townhall < 18 && guard++ < 8000){
+    if(L.townhallReq(b).ok){ raise('townhall'); continue; }
+    const p = L.townhallPath(b);
+    const next = p.path && p.path[0] ? p.path[0].key : null;
+    if(!next) break;
+    raise(next);
+  }
+  while((b.b.library || 0) < R.EL_LIB) raise('library');
+  while((b.b.crucible || 0) < 1) raise('crucible');
+
+  ok('the Electrum gates are reached long before the other branches are exhausted',
+     buildDays < nonElectrum,
+     'gates at ' + buildDays.toFixed(1) + ' days of build queue against '
+       + nonElectrum.toFixed(1) + ' days of research still to run');
+  /* A comfortable margin, not a photo finish — if this ever narrows below a few days, a player
+     who rushes the Library really could out-research the tree. */
+  ok('and with room to spare, not by a hair', nonElectrum - buildDays > 5,
+     (nonElectrum - buildDays).toFixed(1) + ' days of slack');
+}
+
 console.log('\n── the tree draws as a tree ──');
 {
   /* The list view carried the same prerequisites and communicated almost none of them. The tree

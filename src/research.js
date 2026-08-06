@@ -204,15 +204,23 @@ export const ELECTRUM = {
   el_bulwark: {name:'Electrum Bulwark',  short:'Bulwark',  icon:'🛡️', branch:'electrum', max:20, per:5,  unit:'',
                fx:'wall power per level', cost:{electrum:1, stone:1400}, time:900, cru:4,
                needs:{fortification:10}},
+  /* th:22, alone among the four. It is priced in runestone, and runestone comes only from the
+     Runeworks at Town Hall 22 — so at the tier's default gate of 18 this study unlocked, showed a
+     Begin button, and could not be paid for by any hold in the game until four Town Hall levels
+     later. Keeping the cost and moving the gate is the better fix than the reverse: it ties the
+     deepest production study to the deepest refinery, and the other three still open with the
+     Crucible so Electrum never has a window without a sink. */
   el_harvest: {name:'Electrum Yield',    short:'Yield',    icon:'🌟', branch:'electrum', max:20, per:2,  unit:'%',
-               fx:'all production', cost:{electrum:1, runestone:40}, time:900, cru:1,
+               fx:'all production', cost:{electrum:1, runestone:40}, time:900, cru:1, th:22,
                needs:{husbandry:10}},
   el_hoard:   {name:'Electrum Vaults',   short:'Vaults',   icon:'🏰', branch:'electrum', max:20, per:3,  unit:'%',
                fx:'storage capacity', cost:{electrum:1, stone:1600}, time:900, cru:7,
                needs:{logistics:10}},
 };
 for(const [k, d] of Object.entries(ELECTRUM)){
-  RESEARCH[k] = {...d, el:true, th:18, lib:EL_LIB};
+  /* th defaults to 18 — the Crucible's own gate, so the sink opens exactly when the source does —
+     but a study may name a later one when its COST needs a building that opens later still. */
+  RESEARCH[k] = {...d, el:true, th: d.th || 18, lib:EL_LIB};
 }
 
 export const RESEARCH_COST_EXP = 1.9, RESEARCH_TIME_EXP = 1.5;
