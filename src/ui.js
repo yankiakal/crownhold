@@ -51,7 +51,7 @@ import {
 } from './events.js';
 import { dailyProgress, dailyState, DAILY_BONUS } from './daily.js';
 import * as net from './net.js';
-import { mountScene, sceneResize, pickBuilding, setSkinTint } from './iso.js';
+import { mountScene, sceneResize, pickBuilding, setSkinTint, setLabels, labelsShown } from './iso.js';
 import { store, freshState, save } from './state.js';
 
 const app = document.getElementById('app');
@@ -627,6 +627,8 @@ function renderSettings(S){
           'Taps, hammers, drums, and the horn that sounds just before a raid lands.')
     + row('amb', sound.ambientOn(), 'Wind',
           'A bed under everything that thickens as the next wave closes in.')
+    + row('labels', labelsShown(), 'Building names',
+          'Names and levels over every building in the hold, so you can read it at a glance.')
     + '<p class="hmeta">Every sound is generated as it plays — there are no audio files to '
     + 'download, and nothing here is stored with your hold or sent to the server.</p>'
     + '<div class="rule"></div>'
@@ -2285,6 +2287,7 @@ const VIEW_ACTIONS = {
   // toggling sound is a device preference; it never touches the hold, so it stays here
   sfx: () => { sound.setPref('sfx', sound.muted()); },
   amb: () => { sound.setPref('amb', !sound.ambientOn()); },
+  labels: () => { setLabels(!labelsShown()); },
   codex: () => { codexOpen = !codexOpen; },
   lore: () => { loreOpen = !loreOpen; },
   store: () => { storeOpen = true; },

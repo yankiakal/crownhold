@@ -910,8 +910,27 @@ export function sceneResize(){ resize(); }
 /* What the static layer depends on. If this string is unchanged, the cached
    bitmap is still correct and nothing needs redrawing — which is what buys the
    detail budget. Cheap to build: 23 levels and two flags. */
+/* Name plates on or off. A view preference, so it lives on the device like the sound
+   toggles and never enters `s` — and it has to be part of the static layer's cache key,
+   because that layer is baked once and reused until the key changes. Toggling a setting
+   that the key ignores does nothing at all until the next building finishes, which is a
+   bug that looks exactly like a dead button. */
+const LABELS_KEY = 'crownhold-labels';
+let labelsOn = true;
+try {
+  const raw = localStorage.getItem(LABELS_KEY);
+  if(raw != null) labelsOn = raw === '1';
+} catch {}
+
+export function labelsShown(){ return labelsOn; }
+export function setLabels(on){
+  labelsOn = !!on;
+  try { localStorage.setItem(LABELS_KEY, labelsOn ? '1' : '0'); } catch {}
+  staticKey = null;                  // rebake now, not whenever something else changes
+}
+
 function keyOf(S, threat){
-  let k = (artLoaded()?'a':'p') + '|' + (S.b.wall||0) + '|' + (threat?1:0) + '|' + (skinTint ? skinTint.h+','+skinTint.s+','+skinTint.l : '-');
+  let k = (artLoaded()?'a':'p') + '|' + (labelsOn?'L':'-') + '|' + (S.b.wall||0) + '|' + (threat?1:0) + '|' + (skinTint ? skinTint.h+','+skinTint.s+','+skinTint.l : '-');
   for(const b of Object.keys(PLOTS)) k += '|' + (S.b[b] || 0);
   for(const q of QUEUE_KEYS) k += '|' + (S[q] ? S[q].key : '');
   return k + '|' + cv.width + 'x' + cv.height;
@@ -985,6 +1004,88 @@ function renderStatic(S, threat){
     c.fill();
     c.fillRect(g.sx - 7, g.sy + TH*0.9, 14, 6);
   }
+
+  if(labelsOn) drawLabels(c, S);
+}
+
+/* ── name plates ──
+   A hold at Town Hall 20 is twenty-three buildings that all read as "brown roof",
+   and knowing which is the Runeworks meant tapping them one at a time. So each
+   raised building carries its name and level.
+
+   Drawn in a pass of their own, AFTER the wall and the gate, because a label that
+   is depth-sorted with the geometry gets buried by the next building along — which
+   is exactly what happened to the trees, twice. Depth is still used for the ORDER
+   within the pass, so where two plates collide the nearer one lands on top and stays
+   readable; the far one loses, which is the right one to lose. */
+const PLATE_FONT = '600 8px ui-monospace, monospace';
+
+function drawLabels(ctx, S){
+  const plates = [];
+  for(const key of Object.keys(PLOTS)){
+    const plot = PLOTS[key], look = LOOK[key], def = BUILDINGS[key];
+    if(!plot || !look || !def) continue;
+    const lvl = S.b[key] || 0;
+    const underway = QUEUE_KEYS.some(q => S[q] && S[q].key === key);
+    if(lvl <= 0 && !underway) continue;          // nothing there yet: nothing to name
+    const { sx, sy } = iso(plot[0], plot[1]);
+    // the same height curve drawBuilding uses, so the plate sits just clear of the roof
+    const grow = Math.pow(Math.max(lvl, 1), 0.42);
+    const h = look.h * (0.62 + 0.62 * grow / 1.9);
+    plates.push({ d: plot[0] + plot[1], sx, sy: sy - h - 14,
+                  txt: def.name + (lvl > 0 ? ' ' + lvl : ' …'), underway });
+  }
+  plates.sort((a, b) => a.d - b.d);
+
+  ctx.save();
+  ctx.font = PLATE_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  /* Nudge plates apart. Twenty-three names over a nine-by-nine grid collide badly, and
+     half-hidden text is worse than no text — it does not read as occlusion, it reads as a
+     different word. The first pass at this rendered "Great Library" as "Meat Library" and
+     turned "Archery Range" into "Range", both of which look like data bugs rather than
+     overlaps.
+
+     Each plate takes its natural spot if free and otherwise searches nearby, preferring up
+     (everything above a roof is sky) and trying a little down before giving up. The Town
+     Hall is the case that forced a wider search: it sits dead centre on the tallest roof
+     with a neighbour on every side, so it exhausted a five-step ladder and settled for an
+     overlap that ate the Archery Range's first word. */
+  const placed = [];
+  const hits = (x0, y0, x1, y1) => placed.some(r =>
+    x0 < r.x1 + 2 && x1 > r.x0 - 2 && y0 < r.y1 + 1 && y1 > r.y0 - 1);
+  const OFFSETS = [0, -11, -22, -33, -44, -55, 12, 24, -66];
+  for(const p of plates){
+    p.w = ctx.measureText(p.txt).width + 6;
+    const home = p.sy;
+    for(let i = 0; i < OFFSETS.length; i++){
+      const y = home + OFFSETS[i];
+      if(i === OFFSETS.length - 1 || !hits(p.sx - p.w/2, y - 6, p.sx + p.w/2, y + 6)){
+        p.sy = y; break;
+      }
+    }
+    placed.push({ x0: p.sx - p.w/2, y0: p.sy - 6, x1: p.sx + p.w/2, y1: p.sy + 6 });
+  }
+
+  /* Two passes: every pill, then every name. A single pass draws each plate's background
+     over whatever text is already down, so the one collision that does survive the search
+     silently deletes a word. Backing first means the worst case is text over text, which
+     still reads as two overlapping labels rather than as a wrong one. */
+  for(const p of plates){
+    ctx.fillStyle = 'rgba(12,9,7,.78)';
+    ctx.beginPath();
+    // roundRect is not in every engine this runs through (the stub DOM among them)
+    if(ctx.roundRect) ctx.roundRect(p.sx - p.w/2, p.sy - 6, p.w, 12, 3);
+    else ctx.rect(p.sx - p.w/2, p.sy - 6, p.w, 12);
+    ctx.fill();
+  }
+  for(const p of plates){
+    ctx.fillStyle = p.underway ? '#8fd0a0' : '#e6d6b0';
+    ctx.fillText(p.txt, p.sx, p.sy);
+  }
+  ctx.restore();
 }
 
 function frame(now){
