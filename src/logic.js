@@ -25,6 +25,7 @@ import {
 } from './defs.js';
 
 import { RESEARCH, techLvl, techBonus, techFlat, techCost, techTime, techAvailable } from './research.js';
+import { nextLesson, LESSON_BY_ID } from './lessons.js';
 import { REGALIA, WARGEAR, GEAR_MAX, gearCost, gearTime, regaliaBonus, regaliaTier,
          wargearTier, gearLevels } from './gear.js';
 import { SKILLS, SKILL_SLOTS, COND_FX, slotsOpen, skillLegal, equipped } from './skills.js';
@@ -176,6 +177,11 @@ export function seatHero(s, id, now){
    call sites, so production, Valor, troop power and casualties all pick it up
    wherever they are already computed. */
 /* ── decrees ── */
+/* Dismiss the card. The lesson is already recorded as taught when it was raised, so closing
+   it can never cause it to reappear — and it stays readable in the Codex. */
+export function closeLesson(s){ if(!s.lesson) return false; s.lesson = null; return true; }
+export function lessonOf(s){ return s.lesson ? LESSON_BY_ID[s.lesson] || null : null; }
+
 export function decreeOf(s){
   const d = s.decree;
   if(!d || !DECREES[d.key]) return null;
@@ -1848,6 +1854,18 @@ export function tick(s, now, dt, rand=Math.random){
       if(lost) pushLog(s, 'Famine! '+lost+' troops desert an unfed muster — raise your Farms or let raids thin the ranks.', 'loss');
     }
   } else s.famineAcc = 0;
+
+  /* First Light. Once per tick, at most one lesson, and only ever a card — nothing here
+     blocks input or seizes a tap. The predicate reads state the game already keeps, so a
+     lesson cannot silently fail to fire the way a missed counter increment would. */
+  if(!(s.teachOff)){
+    const l = nextLesson(s, { thBlocked: !townhallReq(s).ok });
+    if(l){
+      s.taught = s.taught || {};
+      s.taught[l.id] = now;
+      s.lesson = l.id;
+    }
+  }
 
   if(s.pq && now >= s.pq.end) finishPromote(s, now);
 

@@ -33,6 +33,7 @@ import {
 } from './logic.js';
 import { applyAction, isGameAction } from './actions.js';
 import * as sound from './audio.js';
+import { lessonOf } from './logic.js';
 import { CHRONICLE, SEASON_LORE } from './lore.js';
 import { REGALIA, WARGEAR, GEAR_MAX, GEAR_PER_LEVEL, gearCost, gearTime,
          regaliaTier, wargearTier, wargearTotal, gearLevels, costLabel } from './gear.js';
@@ -700,6 +701,9 @@ function renderSettings(S){
           'A bed under everything that thickens as the next wave closes in.')
     + row('labels', labelsShown(), 'Building names',
           'Names and levels over every building in the hold, so you can read it at a glance.')
+    + row('teach', !store.s.teachOff, 'Lessons',
+          'A card the first time each rule starts to matter — cover, the counter triangle, '
+        + 'supply. All of them stay readable in the Codex either way.')
     + '<p class="hmeta">Every sound is generated as it plays — there are no audio files to '
     + 'download, and nothing here is stored with your hold or sent to the server.</p>'
     + '<div class="rule"></div>'
@@ -732,6 +736,25 @@ function renderDecrees(S){
       + '>' + (on ? 'standing' : d.cost + ' \u2726') + '</button></div>';
   }
   return h + '</section>';
+}
+
+/* A lesson card. `hold` lessons sit in the middle of the screen because a player who
+   dismisses "an army eats" without reading it will starve; the rest sit out of the way. Either
+   way it is a card with a close button — nothing here blocks input or demands a specific tap.
+   Whiteout Survival's tutorial seizes the screen because a longer funnel sells more, and we
+   have nothing to sell. */
+function renderLesson(S){
+  const l = lessonOf(S);
+  if(!l) return '';
+  const card = '<div class="card lesson">'
+    + '<h1 style="font-size:1.05rem">'+l.icon+' '+l.title+'</h1><div class="rule"></div>'
+    + '<p class="d-row" style="text-align:left">'+l.body+'</p>'
+    + '<button class="primary" data-act="closeLesson" style="margin-top:.7rem">Understood</button>'
+    + '<p class="hmeta" style="margin-top:.4rem">Every one of these stays in the Codex. '
+    + 'Turn them off in Settings.</p></div>';
+  return l.hold
+    ? '<div class="overlay" data-act-bg="closeLesson">'+card+'</div>'
+    : '<div class="lessondock">'+card+'</div>';
 }
 
 function renderStore(S){
@@ -2453,7 +2476,7 @@ export function render(){
                       + renderChronicle(S))
     + '</div>'
     + '</main>' + renderFooter() + renderTabBar();
-  fx.innerHTML = renderFx(S) + renderLore(S) + renderStore(S) + renderSettings(S)
+  fx.innerHTML = renderFx(S) + renderLesson(S) + renderLore(S) + renderStore(S) + renderSettings(S)
     + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
   setSkinTint((HOLD_SKINS[(S.cos && S.cos.hold) || 'default'] || {}).tint);
   drawMap(S);
@@ -2473,6 +2496,8 @@ const VIEW_ACTIONS = {
   about: () => { store.s.seenIntro = false; },
   settings: () => { settingsOpen = !settingsOpen; },
   tab: b => { tab = b.dataset.key; window.scrollTo(0, 0); },
+  // teaching is a device preference like the sound toggles: it never touches the hold
+  teach: () => { store.s.teachOff = !store.s.teachOff; },
   // toggling sound is a device preference; it never touches the hold, so it stays here
   sfx: () => { sound.setPref('sfx', sound.muted()); },
   amb: () => { sound.setPref('amb', !sound.ambientOn()); },

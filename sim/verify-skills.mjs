@@ -586,6 +586,70 @@ console.log('\n── a pre-skills save is inert, not broken ──');
      Object.values(z).every(v => v === 0), JSON.stringify(z));
 }
 
+/* ── First Light: the game teaching itself ──
+   The 36 quests onboard the economy and teach nothing about combat, which is where every rule
+   worth learning lives. A player could reach Town Hall 10 without discovering that a
+   battlemage with no line in front is worth half.
+
+   The guards below are the two ways a triggered-lesson system fails silently: a lesson whose
+   `when` can never be true (so it is written and never seen), and a lesson that fires twice
+   (so it nags). Both are invisible in play until a player complains. */
+{
+  console.log('\n── First Light: lessons fire once, when the rule starts to matter ──');
+  const LS = await import('../src/lessons.js');
+
+  ok('every lesson has an id, a title, a body and a trigger',
+     LS.LESSONS.every(l => l.id && l.title && l.body && typeof l.when === 'function'),
+     LS.LESSONS.length + ' lessons');
+  ok('and no two share an id',
+     new Set(LS.LESSONS.map(l => l.id)).size === LS.LESSONS.length);
+  ok('the first few hold the screen, the rest do not',
+     LS.LESSONS.filter(l => l.hold).length >= 3 && LS.LESSONS.some(l => !l.hold),
+     LS.LESSONS.filter(l => l.hold).map(l => l.id).join(', ') + ' hold');
+
+  /* Reachability. A hold that has done everything must have triggered every lesson — a `when`
+     that can never fire is a lesson written and never read. */
+  const rich = hold();
+  rich.seenIntro = true;
+  rich.valor = 500; rich.shields = 2; rich.warbandsWon = 3; rich.wavesWon = 20;
+  rich.wallWear = 0.2; rich.marches = [{}]; rich.taught = {};
+  const fired = [];
+  for(let i = 0; i < LS.LESSONS.length + 4; i++){
+    const l = LS.nextLesson(rich, { thBlocked: true });
+    if(!l) break;
+    rich.taught[l.id] = 1; rich.lesson = l.id; fired.push(l.id);
+    rich.lesson = null;
+  }
+  const never = LS.LESSONS.filter(l => !fired.includes(l.id)).map(l => l.id);
+  ok('a hold that has done everything sees every lesson', never.length === 0,
+     fired.length + ' of ' + LS.LESSONS.length + (never.length ? ' — never fires: ' + never.join(', ') : ''));
+
+  /* Fires once. The tick records `taught` as it raises the card, so dismissing can never
+     resurrect it — the failure would be a card that reappears every second. */
+  const s = freshState(Date.now(), 7);
+  s.seenIntro = true;
+  let raised = 0;
+  for(let i = 0; i < 30; i++){
+    L.tick(s, s.now + (i+1)*1000, 1);
+    if(s.lesson){ raised++; L.closeLesson(s); }
+  }
+  ok('a dismissed lesson never comes back', raised <= LS.LESSONS.length,
+     raised + ' cards raised over 30 ticks');
+  ok('and closing one clears the card', s.lesson === null);
+
+  /* Off means off. */
+  const quiet = freshState(Date.now(), 7);
+  quiet.seenIntro = true; quiet.teachOff = true;
+  for(let i = 0; i < 20; i++) L.tick(quiet, quiet.now + (i+1)*1000, 1);
+  ok('turning lessons off raises none', !quiet.lesson && !Object.keys(quiet.taught || {}).length);
+
+  /* And nothing before the intro — the opening screen is already a wall of text. */
+  const fresh = freshState(Date.now(), 7);
+  fresh.t = { spearman: 50 };
+  ok('nothing is taught before the intro is dismissed',
+     LS.nextLesson(fresh, { thBlocked: true }) === null);
+}
+
 /* ── the War Academy is never a dull upgrade ──
    Nine levels, one thing each, and after the ninth it was finished furniture. Now a tier
    every third level (so Tier X is a late-game achievement, not something you hold by Town

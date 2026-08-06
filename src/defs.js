@@ -696,12 +696,16 @@ export const HERO_SLOTS = [
 export const SPOILS = {
   banner:  {name:'Banner of the Bloodied', icon:'🚩', fx:'+6% troop power',             stack:true,  bonus:{troopPower:0.06}},
   granary: {name:'Granary Charter',        icon:'🌾', fx:'+8% food production',         stack:true,  bonus:{foodProd:0.08}},
-  sawmill: {name:'Sawmill Rights',         icon:'🪚', fx:'+8% wood production',         stack:true,  bonus:{woodProd:0.08}},
-  veins:   {name:'Deep Vein Maps',         icon:'🗺️', fx:'+8% stone & iron production', stack:true,  bonus:{stoneProd:0.08, ironProd:0.08}},
+  sawmill: {name:'Sawmill Rights',         icon:'🪚', fx:'+8% wood — raises the army timber supports', stack:true, bonus:{woodProd:0.08}},
+  veins:   {name:'Deep Vein Maps',         icon:'🗺️', fx:'+8% stone & iron — iron caps your cavalry', stack:true, bonus:{stoneProd:0.08, ironProd:0.08}},
   mason:   {name:"Mason's Oath",           icon:'🧱', fx:'−10% build time',             stack:true,  bonus:{buildTime:0.10}},
   drill:   {name:'Drill Manual',           icon:'📖', fx:'−8% training time',           stack:true,  bonus:{trainTime:0.08}},
   tollroad:{name:'Toll Road',              icon:'🛣️', fx:'+25% patrol yield',           stack:true,  bonus:{patrolYield:0.25}},
-  larder:  {name:'Iron Larder',            icon:'🥩', fx:'−8% army upkeep',             stack:true,  bonus:{upkeep:0.08}},
+  /* "Army upkeep" now means food AND the wood and iron a muster draws — supplyPerSec applies
+     the same relief term, on the reasoning that a quartermaster who stretches the rations
+     stretches the arrows too. So this is a stronger pick than its old text implied, and the
+     text said only "upkeep", which a player would reasonably read as food. */
+  larder:  {name:'Iron Larder',            icon:'🥩', fx:'−8% upkeep: food, timber and iron', stack:true, bonus:{upkeep:0.08}},
   ledger:  {name:'Writ Ledger',            icon:'📜', fx:'+1 Writ of Peace capacity',   stack:false, bonus:{shieldCap:1}},
   trophies:{name:'War Trophies',           icon:'🏆', fx:'+15% raid loot',              stack:true,  bonus:{loot:0.15}},
 };

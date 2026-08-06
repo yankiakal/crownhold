@@ -44,7 +44,7 @@ export function freshState(now, seed){
     patrolReady:0, caravan:null,
     short:{wood:0, iron:0}, wallWear:0,
     log:[], banner:null,
-    seenIntro:false,
+    seenIntro:false, taught:{}, lesson:null,
     now, lastSeen:now,
   };
 }

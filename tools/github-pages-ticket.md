@@ -1,4 +1,4 @@
-# GitHub Support ticket — Pages deployments never complete
+1 # GitHub Support ticket — Pages deployments never complete
 
 Paste this at https://support.github.com/request (category: Pages). Everything below was
 verified rather than assumed; the point of writing it down is that support should not have to
