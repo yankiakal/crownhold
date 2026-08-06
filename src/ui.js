@@ -9,7 +9,7 @@ import {
   ARENA_HEROES, STAR_POWER, starNeed, TEMPERS, temperFor,
   BEASTS, BEAST_ROAM_MS, PET_POOL, PET_MAX_LVL, petXpNeed, petBondNeed,
 } from './defs.js';
-import { TIERS, SUPPLY_RES, DECREES, DECREE_MS } from './defs.js';
+import { TIERS, SUPPLY_RES, DECREES, DECREE_MS, WAVE_LOSS_FLOOR, WAVE_LOSS_SPAN } from './defs.js';
 import {
   TILE_TYPES, MAP_W, MAP_H, CX, CY, TRAVEL_MS_PER_TILE, GATHER_MS,
   tileDist, marchSlots, tileBusy, marchPower, campPower, gatherYield, startMarch,
@@ -132,21 +132,28 @@ function renderThreat(S){
       + '<span class="meta">scouts: <b>'+est+'</b></span>';
   }
   h += '<span class="meta" style="margin-left:auto">your power: <b>'+armyPower(S)+'</b></span>'
-    + '<span class="meta">defeat costs: <b>20% troops · 15% stores</b></span>'
+    + '<span class="meta" title="A near loss costs the floor; an undefended hold costs the ceiling">defeat costs: <b>'+Math.round(WAVE_LOSS_FLOOR*100)+'–'+Math.round((WAVE_LOSS_FLOOR+WAVE_LOSS_SPAN)*100)+'% troops</b></span>'
     + '<span class="meta">writs: <b>'+S.shields+'/'+shieldCap(S)+'</b></span>'
     + (S.shields>0 && !shielded ? '<button class="valor-btn" data-act="raiseShield">🛡 Raise shield · 3m</button>' : '')
     + '</div>';
-  // the stance line: your standing answer to whatever comes up the road
+  /* The stance is a STANDING ORDER, and the row now says so. It used to sit open with a
+     verdict beside it — "✓ right answer", "✗ wrong stance" — which read as a puzzle to re-solve
+     every 75 seconds. Measured, it is not worth solving: the bot that reads every scout and
+     counters every wave finished a 4-hour run at army 5,310 against 5,494 for the bot that
+     never touched it. Demanding attention that buys nothing is the tiresome part of this genre,
+     so the row is folded away by default and the copy tells the truth about what it is worth. */
   const cm = counterMult(S);
-  h += '<div class="stance-row"><span class="meta">stance:</span>';
+  h += '<details class="stance-row"><summary><span class="meta">standing order: <b>'
+    + STANCES[S.stance].icon+' '+STANCES[S.stance].name+'</b>'
+    + (scouted && cm>1 ? ' — suits this raid' : '')+'</span></summary>';
   for(const [k,st] of Object.entries(STANCES)){
     h += '<button class="stance-btn'+(S.stance===k?' active':'')+'" data-act="stance" data-key="'+k+'" title="'+st.hint+'">'
       + st.icon+' '+st.name+'</button>';
   }
-  h += '<span class="meta" style="margin-left:auto">'
-    + (scouted ? (cm>1?'✓ right answer: +20% power, fewer casualties':cm<1?'✗ wrong stance for '+wt.name+': −8%':'no counter to find')
-               : 'scouts blind — stance is a guess')
-    + '</span></div>';
+  h += '<span class="meta" style="display:block;margin-top:.3rem">Set it once and leave it. '
+    + 'A stance that suits the raid is worth +20% and fewer casualties, but raids resolve '
+    + 'themselves and none arrive while the game is closed — this is not something to watch.'
+    + '</span></details>';
   h += '<div class="bar'+(shielded?'':' threat-fill')+'"><i style="width:'
     + (shielded ? Math.max(0,Math.min(100,100*(S.shieldUntil-now)/SHIELD_MS)) : pct)
     + '%"></i></div>';

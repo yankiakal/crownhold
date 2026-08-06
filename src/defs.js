@@ -662,6 +662,27 @@ export const STANCES = {
 };
 export const COUNTER_BONUS = 1.2, COUNTER_PENALTY = 0.92, COUNTER_CASUALTY = 0.6;
 
+/* ── what a lost wave costs ──
+   Waves are AMBIENT. They arrive every 75 seconds, resolve themselves with whatever stance you
+   last set, and none of them happen while the game is closed — on returning, every missed wave
+   is discarded and the next is 60 seconds out. So a player is never obliged to attend one.
+
+   A flat 20% of the muster was the wrong bill for that. The winning branch has always scaled
+   casualties by how close the fight was (0.30 × ratio²); only the loss branch was flat, which
+   put a cliff at the boundary — a hold that lost 51-to-49 paid exactly what an empty one did.
+   That is the same fault the raid curve had before v1.39, in the one place it survived.
+
+   It matters most for the thing you actually want to do: send troops to the frontier. A full
+   column takes about 29% of your defence with it, and measured against the wave curve that is
+   free until roughly wave 80 and decisive by 120. Leaving a real garrison behind should be
+   cheap; leaving nothing behind should not. Continuous in the margin does that on its own.
+
+   The Infirmary and the medicine research now apply on a loss as well. They always applied
+   when you won, and there was never a reason for a hospital to stop mattering the moment a
+   fight went badly. */
+export const WAVE_LOSS_FLOOR = 0.04, WAVE_LOSS_SPAN = 0.16;   // troops, 4% → 20%
+export const WAVE_PLUNDER_FLOOR = 0.05, WAVE_PLUNDER_SPAN = 0.10;  // stores, 5% → 15%
+
 /* ── Expeditions: three routes, one choice, real trade-offs ── */
 export const EXPEDITION_CD = 45000;
 export const EXPEDITIONS = {

@@ -13,6 +13,7 @@ import * as L from '../src/logic.js';
 import * as W from '../src/world.js';
 import * as A from '../src/actions.js';
 import * as SK from '../src/skills.js';
+import * as ST from '../src/state.js';
 import * as AR from '../src/arena.js';
 import { freshState } from '../src/state.js';
 
@@ -584,6 +585,86 @@ console.log('\n── a pre-skills save is inert, not broken ──');
   const z = L.musterDraw(none);
   ok('an empty muster draws nothing at all',
      Object.values(z).every(v => v === 0), JSON.stringify(z));
+}
+
+/* ── a lost wave charges by the margin, not a flat rate ──
+   Waves are ambient: they resolve themselves, and none arrive while the game is closed. A flat
+   20% of the muster was the wrong bill for an event nobody is asked to attend — and it put a
+   cliff at the boundary, where a hold that lost 51-to-49 paid exactly what an empty one did.
+   The winning branch had always scaled by the margin; this was the one place the fault from
+   v1.39 survived.
+
+   It matters for the thing a player most wants to do: send a column to the frontier. That
+   takes roughly 29% of the defence with it. */
+{
+  console.log('\n── a lost wave charges by how outmatched you were ──');
+  /* Deterministic, and the near-loss point is FOUND rather than guessed.
+     Two earlier passes picked wave 150 as "edged out" and wave 900 as "flattened" — but 600
+     spearmen are routed at both, so `over` capped at 1 in each and the only difference left was
+     the ±12% luck roll. The comparison flipped between runs and told me nothing. tick takes an
+     injectable rand for exactly this reason; the margin is now bisected for. */
+  const mk = (garrison, wave, hospital = 0) => {
+    const now = D.SEASON_EPOCH + 2 * D.SEASON_MS;
+    const s = freshState(now, 42);
+    Object.assign(s.b, { townhall:20, academy:27, barracks:10, farm:25,
+                         wall:0, warehouse:0, hospital });
+    s.tier = { spearman:5, archer:5, knight:5, ballista:5 };
+    s.t = { spearman: garrison, archer:0, knight:0, ballista:0 };
+    s.wave = wave; s.nextWave = now; s.seenIntro = true; s.streak = 0;
+    /* Stores seeded UNDER the storage cap. Seeding 9e5 put them far above what Town Hall 20
+       can hold, so the first tick clamped them and the clamp swamped the plunder entirely —
+       both a near loss and a rout measured "87% of stores gone", which is the cap, not the
+       raid. */
+    const room = Math.floor(L.storageCap(s) * 0.5);
+    s.res = { food:room, wood:room, stone:room, iron:room,
+              steel:0, runestone:0, rations:0, trueore:0, truegold:0 };
+    return { s, now };
+  };
+  const beaten = (garrison, wave, hospital = 0) => {
+    const { s, now } = mk(garrison, wave, hospital);
+    const resBefore = s.res.food;
+    L.tick(s, now + 1000, 1, () => 0.5);       // fixed luck: no coin flip in the measurement
+    return { frac: (garrison - (s.t.spearman || 0)) / garrison,
+             plunder: 1 - s.res.food / Math.max(1, resBefore),
+             lost: (s.wavesLost || 0) > 0 };
+  };
+
+  /* The smallest wave that still beats a 600-strong garrison — a genuine near thing. */
+  let lo = 1, hi = 2000;
+  for(let i = 0; i < 20; i++){
+    const mid = Math.floor((lo + hi) / 2);
+    if(beaten(600, mid).lost) hi = mid; else lo = mid;
+  }
+  const edge = beaten(600, hi), rout = beaten(600, hi * 6);
+  ok('found the wave that only just beats this garrison', edge.lost && !beaten(600, lo).lost,
+     'wave ' + hi + ' loses, wave ' + lo + ' holds');
+  ok('a near defeat costs a fraction of what a rout does', edge.frac * 1.5 < rout.frac,
+     (100*edge.frac).toFixed(1) + '% edged out vs ' + (100*rout.frac).toFixed(1) + '% routed');
+  ok('and stores follow the same shape', edge.plunder < rout.plunder - 0.01,
+     (100*edge.plunder).toFixed(1) + '% vs ' + (100*rout.plunder).toFixed(1) + '%');
+
+  ok('the floor is a scratch next to the old flat 20%',
+     D.WAVE_LOSS_FLOOR <= 0.05 && D.WAVE_LOSS_FLOOR > 0,
+     (D.WAVE_LOSS_FLOOR*100) + '% at parity');
+  ok('and the ceiling is exactly the rate it replaced',
+     Math.abs((D.WAVE_LOSS_FLOOR + D.WAVE_LOSS_SPAN) - 0.20) < 1e-9,
+     (100*(D.WAVE_LOSS_FLOOR+D.WAVE_LOSS_SPAN)) + '% when flattened');
+
+  /* The Infirmary now applies on a loss too — it always did when you won, and there was never
+     a reason for a hospital to stop mattering the moment a fight went badly. */
+  const bare = beaten(600, hi * 6, 0), warded = beaten(600, hi * 6, 20);
+  ok('an Infirmary softens a defeat, not only a victory', warded.frac < bare.frac,
+     (100*bare.frac).toFixed(1) + '% bare vs ' + (100*warded.frac).toFixed(1) + '% with a ward');
+
+  /* And nothing at all happens while the game is closed — the property the whole "ambient"
+     argument rests on. */
+  const away = hold();
+  away.t = { spearman: 200, archer: 0, knight: 0, ballista: 0 };
+  const troopsBefore = away.t.spearman, waveBefore = away.wave;
+  ST.applyOffline(away, 6 * 3600 * 1000);
+  ok('six hours away costs no troops and no waves',
+     away.t.spearman === troopsBefore && away.wave === waveBefore,
+     'troops ' + away.t.spearman + ', wave ' + away.wave);
 }
 
 /* ── how long the game is ──

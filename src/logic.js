@@ -14,6 +14,7 @@ import {
   ARENA_HEROES, STAR_POWER, starCap, starNeed, DEEDS, temperFor,
   PET_POOL, PET_MAX_LVL, petXpNeed, petBondNeed,
   WAVE_TYPES, STANCES, COUNTER_BONUS, COUNTER_PENALTY, COUNTER_CASUALTY, SCREEN,
+  WAVE_LOSS_FLOOR, WAVE_LOSS_SPAN, WAVE_PLUNDER_FLOOR, WAVE_PLUNDER_SPAN,
   EXPEDITIONS, EXPEDITION_CD,
   COST_EXP, TIME_EXP, TIERS, TIER_POWER, TIER_UPKEEP, TIER_COST, ACADEMY_PER_TIER, ACADEMY_POWER,
   PROMOTE_MS_PER_TROOP, PROMOTE_MS_MIN,
@@ -1774,11 +1775,19 @@ export function resolveWave(s, now, rand=Math.random){
     batterWall(s, 2.5);   // a wall that was actually breached needs far more masonry
     s.nextWave = now + WAVE_MS*2; // a loss buys a longer breather
     const protect = Math.min(0.6, 0.04*(s.b.warehouse||0)); // the Warehouse hides part of your stores
-    for(const [k, l] of Object.entries(casualtySplit(s.t, 0.2, rand)))
+    /* Continuous in how outmatched you were, not flat. A near thing costs the floor; an
+       undefended hold costs what the flat rate used to charge everyone. `over` is how far past
+       your strength the band came — 0 at parity, 1 once they are twice your power. */
+    const over = Math.min(1, Math.max(0, enemy/Math.max(mine,1) - 1));
+    const relief = Math.max(0.15, 1 - heroBonus(s,'casualties') - 0.04*(s.b.hospital||0)
+      - techBonus(s,'medicine') - (perk(s,15)?0.10:0));
+    const bleed = (WAVE_LOSS_FLOOR + WAVE_LOSS_SPAN * over) * relief;
+    for(const [k, l] of Object.entries(casualtySplit(s.t, bleed, rand)))
       takeCasualties(s, k, l, true);
     // and the Watch takes the same beating it would have if it were home
-    const wHurt = watchCasualties(s, 0.2, rand);
-    for(const r of Object.keys(RES_META)) s.res[r] = Math.floor((s.res[r]||0)*(1 - 0.15*(1-protect)));
+    const wHurt = watchCasualties(s, bleed, rand);
+    const plunder = WAVE_PLUNDER_FLOOR + WAVE_PLUNDER_SPAN * over;
+    for(const r of Object.keys(RES_META)) s.res[r] = Math.floor((s.res[r]||0)*(1 - plunder*(1-protect)));
     gainValor(s, 2);
     gainMastery(s, 3, now);
     gainShield(s, 1);
