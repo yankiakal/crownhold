@@ -586,6 +586,59 @@ console.log('\n── a pre-skills save is inert, not broken ──');
      Object.values(z).every(v => v === 0), JSON.stringify(z));
 }
 
+/* ── how long the game is ──
+   DESIGN.md warned for weeks that launch would need build times multiplied a further 3-10x or
+   "everything caps in 40 hours". Measured, that was stale by an order of magnitude: TIME_SCALE
+   is already 10 and maxing every building is 2,544 hours of queue. Nobody knew, because
+   nothing checked.
+
+   This is a BAND, not a target. Too short and the game is over in a fortnight; too long and it
+   is disrespectful. It exists so that a change to COST_EXP, TIME_EXP, buildTimeCap or
+   TIME_SCALE cannot quietly turn a six-month game into a weekend or a decade. */
+{
+  console.log('\n── the game is as long as it is meant to be ──');
+  const probe = () => {
+    const s = freshState(Date.now(), 1);
+    for(const k of Object.keys(D.BUILDINGS)) s.b[k] = 0;
+    let ms = 0;
+    for(const [k, d] of Object.entries(D.BUILDINGS)){
+      for(let l = 0; l < d.max; l++){ s.b[k] = l; ms += L.buildTime(s, k); }
+      s.b[k] = d.max;
+    }
+    return ms;
+  };
+  const days = probe() / 86400000;
+  ok('maxing every building is months of queue, not days', days > 45 && days < 400,
+     days.toFixed(0) + ' days of continuously busy queue at TIME_SCALE ' + D.TIME_SCALE);
+
+  /* The second crew has to matter, or Town Hall 10 is a hollow milestone. */
+  ok('a second crew opens partway up, not at the end',
+     D.SECOND_QUEUE_TH > 5 && D.SECOND_QUEUE_TH < D.BUILDINGS.townhall.max / 2,
+     'Town Hall ' + D.SECOND_QUEUE_TH + ' of ' + D.BUILDINGS.townhall.max);
+
+  /* Valor has to stay worth roughly the same amount of time however the scale is dialled —
+     finishCost divides by TIME_SCALE precisely so that stretching the game does not silently
+     make instant-finishing cheaper or dearer in real terms. */
+  const now = Date.now();
+  const oneHour = L.finishCost(now + 3600000, now);
+  ok('Valor prices a timer by its length, not by the scale it was set at',
+     oneHour > 0 && oneHour < 200, oneHour + ' Valor to skip an hour');
+
+  /* And the fast loop must stay fast — the muster answers raids on a 75s cadence, so training
+     deliberately does NOT scale. A change that swept TIME_SCALE into training would make the
+     game unplayable long before anyone noticed the total length had moved. */
+  /* Measured through startTraining rather than by re-deriving the formula — there is no
+     exported trainTime, and copying the arithmetic into the test is exactly how the building
+     detail sheet ended up carrying two drifted copies of the wall's defence curve. */
+  const s = hold();
+  const t0 = s.now;
+  ok('a drill order is accepted', L.startTraining(s, 'spearman', 10, t0));
+  const dur = s.tq.spearman ? s.tq.spearman.end - t0 : Infinity;
+  ok('training stays on the fast cadence, unscaled by TIME_SCALE', dur < 600000,
+     (dur / 1000).toFixed(0) + 's for ten spearmen — construction would be '
+     + D.TIME_SCALE + '× longer');
+}
+
 /* ── First Light: the game teaching itself ──
    The 36 quests onboard the economy and teach nothing about combat, which is where every rule
    worth learning lives. A player could reach Town Hall 10 without discovering that a

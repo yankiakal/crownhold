@@ -820,10 +820,21 @@ export const WAVE_MS = 75000, FIRST_WAVE_MS = 120000, PATROL_MS = 25000, SHIELD_
    of it — but they should not finish the game in a week. So progression is
    gated by real time (long late-game builds), Valor earning has a daily quota
    past which it trickles, and anyone who has been away comes back Rested. */
-/* The launch curve. TIME_SCALE stretches CONSTRUCTION only. Training, raids,
-   expeditions and the arena stay on their fast cadence — those are the loop you
-   actually play, and the muster has to answer raids that arrive every 75s.
-   It is the building queue that paces the game. Dial this one number to retune. */
+/* The launch curve. TIME_SCALE stretches CONSTRUCTION and RESEARCH only. Training, raids,
+   expeditions, healing and the arena stay on their fast cadence — those are the loop you
+   actually play, and the muster has to answer raids that arrive every 75s. It is the building
+   queue that paces the game. Dial this one number to retune.
+
+   MEASURED at 10, one crew, no speed bonuses: 2,544 hours of construction to max every
+   building — 106 days of continuously busy queue, or roughly 62 once the second crew opens at
+   Town Hall 10. Research is 11 days on its own parallel queue. No real player keeps a queue
+   100% busy, so that lands inside the intended six-to-twelve-month window with room to spare.
+
+   DESIGN.md carried a note for weeks saying launch would need this multiplied by a further
+   3–10× or "everything caps in 40 hours". That note predated the deep economy and this
+   constant, and measuring it was the only way to find out it had gone stale. The pacing test
+   in verify-skills.mjs now holds the real figure to a band, so the next person to change a
+   cost curve or a time exponent finds out immediately rather than in a playtest. */
 export const TIME_SCALE = 10;
 // Build times cap per level, not globally: a level-3 hut is minutes, a level-28
 // keep is a day. This makes the queue — not your stamina — the wall.

@@ -1342,10 +1342,22 @@ speedups. What heavy play still buys is everything the calendar does not gate:
 a bigger army, arena rating, achievements, waves survived, and keeping the build
 queue full (worth roughly a Town Hall level a month over a one-hour player).
 
-**Absolute pace still needs the launch multiplier.** The prototype holds about
-200 hours of total build queue, so everyone caps within a month here. Multiply
-build and training times 10–20× at launch and that becomes the intended 6–12
-months — still an order of magnitude short of Kingshot's multi-year VIP grind.
+**Absolute pace — the note that was stale for weeks.** This section used to say the
+prototype held about 200 hours of build queue and that launch would need build and
+training times multiplied a further 10–20×. Measured, that had been wrong for a long
+time: `TIME_SCALE` is already 10, and maxing every building is **2,544 hours of
+construction — 106 days of continuously busy queue**, or roughly 62 once the second crew
+opens at Town Hall 10. Research is a further 11 days on its own parallel queue.
+
+No player keeps a queue 100% busy, so the real figure is comfortably inside the intended
+six-to-twelve-month window. The multiplier does not need applying; it already was.
+
+Nobody knew, because nothing checked — the note simply aged past the code. `verify-skills`
+now holds the measured length to a band (45–400 days), so a change to `COST_EXP`,
+`TIME_EXP`, `buildTimeCap` or `TIME_SCALE` cannot quietly turn a six-month game into a
+weekend or a decade. It also asserts that training stays UNSCALED, because the muster has
+to answer raids on a 75-second cadence and a change that swept `TIME_SCALE` into training
+would make the game unplayable long before anyone noticed the total length had moved.
 
 ### How long to max, measured
 
