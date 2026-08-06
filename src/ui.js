@@ -31,6 +31,7 @@ import {
   effLvl, heroStarCap, arenaTeam, setArenaTeam, gearBlockedBy, petBonus, screenCover,
 } from './logic.js';
 import { applyAction, isGameAction } from './actions.js';
+import * as sound from './audio.js';
 import { CHRONICLE, SEASON_LORE } from './lore.js';
 import { REGALIA, WARGEAR, GEAR_MAX, GEAR_PER_LEVEL, gearCost, gearTime,
          regaliaTier, wargearTier, wargearTotal, gearLevels, costLabel } from './gear.js';
@@ -609,6 +610,30 @@ function renderDaily(S){
 /* The store. Cosmetic only — the catalogue has no field for a stat, so there is
    nothing here for a rule to read. Prices are real and shown in real money; there
    is no gem layer to obscure them, which is the point. */
+/* Settings. Deliberately only what belongs to this device: sound is a property of the
+   room you are in, not of your hold, so none of it is saved with the game or synced.
+   The two toggles are separate because they fail differently — effects are feedback you
+   asked for by tapping, the bed is atmosphere you did not, and plenty of people want
+   one without the other. */
+function renderSettings(S){
+  if(!settingsOpen) return '';
+  const row = (act, on, label, note) =>
+    '<button data-act="'+act+'" style="width:100%;text-align:left;margin-top:.5rem">'
+    + (on ? '🔊 ' : '🔇 ') + label + ' — <b>' + (on ? 'on' : 'off') + '</b></button>'
+    + '<p class="hmeta" style="margin:.15rem 0 .4rem">' + note + '</p>';
+  return '<div class="overlay" data-act-bg="settings"><div class="card dsheet">'
+    + '<h1 style="font-size:1.15rem">⚙ Settings</h1><div class="rule"></div>'
+    + row('sfx', !sound.muted(), 'Sound effects',
+          'Taps, hammers, drums, and the horn that sounds just before a raid lands.')
+    + row('amb', sound.ambientOn(), 'Wind',
+          'A bed under everything that thickens as the next wave closes in.')
+    + '<p class="hmeta">Every sound is generated as it plays — there are no audio files to '
+    + 'download, and nothing here is stored with your hold or sent to the server.</p>'
+    + '<div class="rule"></div>'
+    + '<button class="primary" data-act="settings" style="margin-top:.5rem">Back to the walls</button>'
+    + '</div></div>';
+}
+
 function renderStore(S){
   if(!storeOpen) return '';
   const ch = charted(S.isle || {cells:[]}), ml = masteryLvl(S);
@@ -1355,12 +1380,13 @@ function renderFooter(){
     + '<button data-act="codex">📖 Codex — all the rules</button>'
     + '<button data-act="lore">📜 Annals — the story of the Reach</button>'
     + '<button data-act="store">🛍 Store — cosmetics only</button>'
+    + '<button data-act="settings">'+(sound.muted() ? '🔇' : '🔊')+' Settings</button>'
     + '<button data-act="about">About</button>'
     + '<button data-act="reset"'+(armed?' style="color:var(--bad);border-color:var(--bad)"':'')+'>'
     + (armed?'⚠ Tap again to raze EVERYTHING':'Raze &amp; restart')+'</button></footer>';
 }
 
-let codexOpen = false, loreOpen = false, storeOpen = false;
+let codexOpen = false, loreOpen = false, storeOpen = false, settingsOpen = false;
 let resetArmedUntil = 0; // two-tap raze confirmation window
 let arenaStance = 'balanced', arenaFrac = 0.5;
 let listView = false, sceneMounted = false;
@@ -2225,13 +2251,19 @@ function drawMap(S){
 
 export function render(){
   const S = store.s;
+  /* One call, before anything is drawn: sound.watch diffs the state it was last shown
+     and fires at most one cue. Here rather than in the tick loop because this is the
+     single funnel every change passes through — a local action, a server pull and an
+     offline fast-forward all end in a render, and none of them would remember to ring
+     a bell on their own. */
+  sound.watch(S);
   app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
     + '<main>' + renderHold(S)
     + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderPets(S) + renderRegalia(S) + renderSpoils(S)
       + renderDaily(S) + renderIsle(S) + renderEvent(S) + renderRift(S) + renderRally(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderMusterRoll(S) + renderWatch(S) + renderRaid(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
       + renderAchievements(S) + renderChronicle(S) + '</div>'
     + '</main>' + renderFooter();
-  fx.innerHTML = renderFx(S) + renderLore(S) + renderStore(S)
+  fx.innerHTML = renderFx(S) + renderLore(S) + renderStore(S) + renderSettings(S)
     + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
   setSkinTint((HOLD_SKINS[(S.cos && S.cos.hold) || 'default'] || {}).tint);
   drawMap(S);
@@ -2249,6 +2281,10 @@ export function render(){
 // so they never travel to the server.
 const VIEW_ACTIONS = {
   about: () => { store.s.seenIntro = false; },
+  settings: () => { settingsOpen = !settingsOpen; },
+  // toggling sound is a device preference; it never touches the hold, so it stays here
+  sfx: () => { sound.setPref('sfx', sound.muted()); },
+  amb: () => { sound.setPref('amb', !sound.ambientOn()); },
   codex: () => { codexOpen = !codexOpen; },
   lore: () => { loreOpen = !loreOpen; },
   store: () => { storeOpen = true; },
@@ -2410,8 +2446,8 @@ const VIEW_ACTIONS = {
     const now = Date.now();
     if(now < resetArmedUntil){
       resetArmedUntil = 0;
-      if(net.isOnline()) net.resetHold().then(s => { store.s = s; render(); }).catch(()=>{});
-      else { store.s = freshState(now); save(store.s, now); }
+      if(net.isOnline()) net.resetHold().then(s => { sound.forget(); store.s = s; render(); }).catch(()=>{});
+      else { sound.forget(); store.s = freshState(now); save(store.s, now); }
     }else{
       resetArmedUntil = now + 5000;
     }
@@ -2429,18 +2465,22 @@ function paramsOf(btn){
 function runAction(btn){
   if(btn.disabled) return;
   const act = btn.dataset.act;
-  if(VIEW_ACTIONS[act]){ VIEW_ACTIONS[act](btn); render(); return; }
+  if(VIEW_ACTIONS[act]){ sound.cue('tap'); VIEW_ACTIONS[act](btn); render(); return; }
   if(!isGameAction(act)) return;
   const params = paramsOf(btn);
   if(act === 'march' || act === 'hunt' || act === 'voyage'){ detail = null; marchParty = []; marchWant = {}; }
   if(act === 'skill') skillSlotOpen = null;   // a choice made folds the menu away
   if(net.isOnline()){
-    // the server rules on it, then hands back the truth
+    /* Optimistic: the tap is acknowledged now and corrected to a refusal only if the
+       server disagrees. Waiting for the round trip would put the click sound 80ms
+       behind the click, which reads as lag rather than as feedback. */
+    sound.cueAction(act);
     net.sendAction(act, params)
       .then(s => { store.s = s; render(); })
-      .catch(err => { acctMsg = err.message; renderAccount(); });
+      .catch(err => { sound.cueAction(act, false); acctMsg = err.message; renderAccount(); });
   }else{
-    applyAction(store.s, act, params, Date.now());
+    // offline the rules answer immediately, so the sound can tell the truth first time
+    sound.cueAction(act, applyAction(store.s, act, params, Date.now()));
   }
   render();
 }
@@ -2559,6 +2599,9 @@ function submitAccount(mode){
   const fn = mode === 'register' ? net.register : net.login;
   fn(name, pw)
     .then(s => {
+      // a different hold entirely: drop the sound baseline so the swap is not heard
+      // as three hundred buildings finishing at once
+      sound.forget();
       store.s = s;
       acctOpen = false; acctMsg = '';
       renderAccount(); render();
@@ -2613,7 +2656,17 @@ export function wire(){
       return;
     }
     const btn = e.target.closest('button[data-act]');
-    if(btn) runAction(btn);
+    if(btn){ runAction(btn); return; }
+    /* Tapping the dark outside a sheet closes it. Three sheets have carried a
+       `data-act-bg` attribute since they were written and nothing ever read it, so the
+       backdrop was decorative — the Store, the inspector and now Settings all get the
+       behaviour from this one branch. `e.target === bg` matters: without it a tap
+       anywhere inside the card would bubble up and close the sheet under your thumb. */
+    const bg = e.target.closest('[data-act-bg]');
+    if(bg && e.target === bg){
+      const act = bg.dataset.actBg;
+      if(VIEW_ACTIONS[act]){ sound.cue('tap'); VIEW_ACTIONS[act](bg); render(); }
+    }
   });
   // keyboard activation arrives as click with detail 0
   document.addEventListener('click', e => {
@@ -2621,4 +2674,8 @@ export function wire(){
     const btn = e.target.closest('button[data-act]');
     if(btn) runAction(btn);
   });
+  /* Audio has to be built inside a real gesture or the browser hands back a context
+     that is permanently suspended. Bound on the document rather than on the buttons
+     because the first thing a player touches is often the map, not a button. */
+  document.addEventListener('pointerdown', () => sound.unlock(), { passive: true });
 }

@@ -64,7 +64,9 @@ const dir = mkdtempSync(join(tmpdir(), 'crownhold-ui-'));
 cpSync(new URL('../src', import.meta.url), join(dir, 'src'), { recursive:true });
 appendFileSync(join(dir, 'src', 'ui.js'),
   '\nexport { renderColumnComposer as _composer };' +
-  '\nexport function _pick(ids, want){ marchParty = ids.slice(); marchWant = want; }\n');
+  '\nexport function _pick(ids, want){ marchParty = ids.slice(); marchWant = want; }' +
+  // the settings sheet is behind a footer tap, and its open flag is module-local
+  '\nexport function _openSettings(){ settingsOpen = true; }\n');
 const from = f => import(pathToFileURL(join(dir, 'src', f)).href);
 
 try {
@@ -280,6 +282,61 @@ try {
   ok('no class is lit', !/class="aff on"/.test(empty));
   ok('and no uncovered warning, since nothing was committed',
      !/ride without a captain/.test(empty));
+
+  /* ── sound ──
+     There is no AudioContext in this stub DOM, which is the point: the whole layer has
+     to be inert and silent rather than throwing, because that is also what happens in
+     a browser that blocks audio and on a server rendering the page.
+
+     The name check is the one that matters. This codebase has three times shipped a
+     name that matched nothing on the other side — a building with no plot entry, a
+     sprite tier that round-tripped to the wrong level, and a `rand` passed to a
+     function that had no such parameter. A cue name is exactly that shape, and a
+     missing one is silence, which no test of "did it throw" would ever catch. */
+  console.log('\n── sound is inert without an AudioContext, and every cue name resolves ──');
+  const A = await from('audio.js');
+  ok('no AudioContext in this environment', typeof globalThis.AudioContext === 'undefined');
+  ok('unlock() is a no-op rather than a throw', (() => { try { A.unlock(); return true; }
+                                                        catch { return false; } })());
+  ok('cue() reports that it played nothing', A.cue('win') === false);
+  ok('an unknown cue name is refused, not thrown', A.cue('no-such-sound') === false);
+
+  const names = Object.keys(A.CUES);
+  ok('there are cues to play', names.length >= 10, names.length + ': ' + names.join(', '));
+  for(const [act, name] of Object.entries(A.ACT_CUE || {}))
+    ok('the cue for action "' + act + '" exists', !!A.CUES[name], name);
+  ok('every cue is a function', names.every(n => typeof A.CUES[n] === 'function'));
+  ok('deny and tap exist, since runAction calls them by name',
+     !!A.CUES.deny && !!A.CUES.tap);
+
+  /* The watcher's own names, checked the same way, plus the guarantee that it never
+     writes to the state it is given — it runs inside render(), so a stray mutation
+     there would be a rule changed by a sound. */
+  A.forget();
+  const before = JSON.stringify(s);
+  ok('the first watch only takes a baseline', A.watch(s) === null);
+  const s2 = JSON.parse(before);
+  s2.b = { ...s2.b, farm: s2.b.farm + 1 };
+  ok('a finished building is noticed', A.watch(s2) === 'done');
+  s2.banner = { txt:'x', cls:'loss', until: s2.now + 4000 };
+  ok('being attacked outranks everything else', A.watch(s2) === 'loss');
+  ok('and nothing changed in the state it was shown',
+     JSON.stringify(s) === before);
+  ok('an unchanged state fires nothing', A.watch(s2) === null);
+
+  ok('mute is readable without a context', typeof A.muted() === 'boolean');
+
+  /* Reachability, against the real render. A mute toggle nobody can find is the same
+     bug as no mute at all, and `render()` above is the only honest witness to whether
+     the button is actually on the page. */
+  ok('Settings is reachable from the footer', /data-act="settings"/.test(full));
+  UI._openSettings();
+  UI.render();
+  const sheet = (nodes.fx && nodes.fx.innerHTML) || '';
+  ok('the sheet offers a sound-effects toggle', /data-act="sfx"/.test(sheet));
+  ok('the sheet offers a wind toggle', /data-act="amb"/.test(sheet));
+  ok('and a way back out', /data-act="settings"/.test(sheet));
+  ok('no "undefined" in the settings sheet', !/undefined/.test(sheet));
 } finally {
   rmSync(dir, { recursive:true, force:true });
 }

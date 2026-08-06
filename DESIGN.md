@@ -481,6 +481,84 @@ Three lessons, in order of how much they cost:
    suspicious of. Reproduce first, theorise second. The check that settled it took
    one command: run it twice, unchanged.
 
+### Sound (v1.44) — synthesised, because assets are a blocker and silence is worse
+
+The game had thirty systems and no audio at all: no `Audio`, no `AudioContext`, not one
+file. A kingdom-defence game where a raid lands in silence reads as unfinished more
+loudly than any missing feature does.
+
+**Every sound is generated at runtime.** Same reasoning as the procedural renderer and
+the same reason the sprite pipeline shipped with no art in it: an asset pipeline blocks
+on sourcing, licensing and file size, and this one would have blocked on the same person
+the sprite art is blocked on. WebAudio has oscillators, filters and somewhere to put a
+noise buffer, which is a synthesiser. Thirteen cues and an ambient bed in ~230 lines,
+adding nothing to the bundle. Real recorded audio can replace any cue later; the cue
+names are the seam.
+
+Four decisions carry the design:
+
+1. **The context is built on the first gesture, never at import.** Every browser suspends
+   an AudioContext created before the user has touched the page, and a suspended context
+   does not error — it plays nothing, for ever.
+2. **Mute is a device preference, not game state.** It lives in localStorage, never enters
+   `s`, so it does not ride in a save or sync to the server. Whether this room is quiet
+   is not a fact about your hold.
+3. **Cues fire from state diffs, not from logic.js.** The rules layer does not know sound
+   exists, so the simulator stays silent and pure. `watch()` only ever reads — asserted,
+   because a sound that could change a rule would be a genuine disaster.
+4. **One cue per tick, by priority.** Eight watched signals can land in one frame; being
+   attacked outranks a building finishing, and the losers are dropped rather than queued,
+   because feedback that arrives late is a lie. A same-name debounce lets the button and
+   the watcher both speak honestly without either knowing about the other.
+
+Settings shipped with it. Sound with no mute is hostile, and there was no settings panel
+of any kind before this.
+
+#### `verify:audio` — the tests could not hear anything either
+
+`verify-ui.mjs` runs in Node, which has no audio, so every assertion it can make is about
+*not throwing*. Nothing in it would notice a cue that produces silence — and silence is
+the likeliest failure in synthesised audio: a gain ramp that ends where it started, a node
+never connected, an oscillator stopped before its envelope opens. All three are silent
+successes. I also cannot listen to the output, so measuring was the only verification
+available at all.
+
+So the cues are rendered through an `OfflineAudioContext` in headless Chrome and the
+waveform is measured — peak, RMS and onset per cue, with the shipped bundle carrying no
+test hooks (the harness copies `src/` and appends the reset to the copy, as `verify-ui`
+does for the composer).
+
+**It immediately found something no amount of reading would have.** The ambient wind
+measured a peak of **0.003** — 34 dB under the loudest cue, inaudible on a phone. The gains
+in `startBed` looked reasonable next to the cues' gains, but the bed runs through a 260 Hz
+lowpass at Q 0.8, which discards most of white noise's energy: the amplitude that reaches
+the ear is about 0.3× the gain. `BED_QUIET`/`BED_LOUD` went from 0.010/0.042 to 0.05/0.15,
+and the wind now rests at 0.018 and reaches 0.054 at full threat — ×0.43 of the loudest
+cue, present but subordinate.
+
+Getting the harness to work cost four wrong turns, all the same species:
+
+- **`--dump-dom` emits the inline `<script>` source too**, so searching the whole dump for
+  a marker finds the *page's own code* before the rendered payload. It reported the source
+  of my error handler as the error, and before that blamed the JSON parser. Fixed by
+  scoping every match to `<pre id="…">`.
+- **The load event does not wait for a dynamic `import()`** issued after the initial module
+  graph is evaluated. The page sat at "rendering…" for ever.
+- **Nor does it wait for a chain of awaited renderings.** Raising
+  `--virtual-time-budget` moved the loss from cue 2 to cue 4 to cue 12 — a race being lost
+  more slowly, not a bug being fixed. One render per page *plus* a virtual clock is what
+  actually works; either alone is flaky.
+- **Rendering the bed measured the ramp, not the level.** `ambience()` moves gain with
+  `setTargetAtTime`, an exponential approach that never formally arrives; 3- and 6-second
+  windows did not resolve at all. Split into two questions instead: is the resting bed
+  audible (measured), and how far above it does full threat go (`bedLevel`, exact
+  arithmetic). Ask each the way it can actually be answered.
+
+The lesson worth keeping is the one this project keeps relearning in new costume: **the
+instrument is part of the system.** A frame rate under a virtual clock, a promotion priced
+for an army of one, a probe reading its own source — every time, the measurement was wrong
+in a way that looked like a finding.
+
 ### One soldier, one tier bill (v1.43) — and a fix that was worse than the bug
 
 Asked whether to add a fifth troop type, mages, since the genre always stops at three.

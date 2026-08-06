@@ -3,6 +3,7 @@ import { store, load, save } from './state.js';
 import { tick } from './logic.js';
 import { tickWorld } from './world.js';
 import { render, renderAccount, renderChat, wire } from './ui.js';
+import { forget as forgetSound } from './audio.js';
 import * as net from './net.js';
 
 // PWA: register the service worker on real hosting (no-op inside the artifact sandbox)
@@ -17,6 +18,9 @@ render();
 // if a session is stored, the server's hold replaces the local one
 net.resume().then(s => {
   if(s){
+    // the server's hold is a different hold: reset the sound baseline before drawing it,
+    // or every difference between it and the local save rings a bell
+    forgetSound();
     store.s = s; render();
     net.refreshLeaderboard().then(render);
     net.refreshArena().then(render);

@@ -1,0 +1,75 @@
+<!-- Render ONE cue and measure its waveform. `npm run verify:audio` loads this once per
+     cue, passing ?cue=<name> (or ?cue=__wind for the ambient bed).
+
+     NOT served from the repo: the harness copies src/ to a temp directory, appends one
+     test-only export to the COPY, and serves that — so the shipped bundle carries nothing
+     that exists for a test. Same arrangement verify-ui.mjs uses to reach the composer.
+
+     verify-ui.mjs can only prove the audio layer is INERT. Node has no AudioContext, so
+     every assertion there is about not throwing, and nothing in it would notice a cue
+     that produces silence. Silence is the likeliest failure in synthesised audio: a gain
+     ramp that ends where it started, a node never connected to the graph, an oscillator
+     stopped before its envelope opens. All three are silent successes.
+
+     ONE cue per page load, deliberately. The first version rendered all fourteen in a
+     loop and never finished: --dump-dom fires at the load event, which does not wait for
+     a chain of awaited renderings, and --virtual-time-budget only bought a few more
+     (1 of 13, then 4, then 11 as the budget went up — a race being lost slowly rather
+     than a bug being fixed). A single rendering per load always completes, and the
+     isolation is a bonus: each cue gets an untouched context and an untouched module. -->
+<!doctype html>
+<html><head><meta charset="utf-8"><title>audio probe</title>
+<style>body{margin:0;background:#171310;color:#d9a441;font:12px ui-monospace,monospace}
+pre{white-space:pre-wrap;word-break:break-all;padding:8px}</style>
+</head><body>
+<pre id="status">rendering…</pre>
+<pre id="out"></pre>
+<script type="module">
+import * as A from '/src/audio.js';
+
+const name = new URLSearchParams(location.search).get('cue') || 'tap';
+const SR = 44100, SECS = 1.2;         // the longest cue is 0.85s plus its tail
+const status = t => { document.getElementById('status').textContent = t; };
+
+function measure(buf){
+  const d = buf.getChannelData(0);
+  let peak = 0, sq = 0, first = -1;
+  for(let i = 0; i < d.length; i++){
+    const a = Math.abs(d[i]);
+    if(a > peak) peak = a;
+    sq += d[i] * d[i];
+    if(first < 0 && a > 0.001) first = i;
+  }
+  return { peak, rms: Math.sqrt(sq / d.length), startMs: first < 0 ? -1 : (first / SR) * 1000 };
+}
+
+try {
+  const wind = name === '__wind';
+  const off = new OfflineAudioContext(1, Math.round(SR * SECS), SR);
+  A._reset();
+  window.AudioContext = function(){ return off; };
+  // the bed would otherwise sit under every cue and lift every floor
+  A.setPref('amb', wind);
+  A.unlock();
+
+  /* The bed is measured at its RESTING level and nothing else is asked of it here.
+     Calling ambience() first would be measuring a ramp: it moves the gain with
+     setTargetAtTime on a 1.6s constant, an exponential approach that never formally
+     arrives, and an offline render of it never resolved at all — 3 and 6 second windows
+     both hung where 1.2s had merely under-reported. How loud the wind gets at full
+     threat is exact arithmetic (bedLevel), so the harness does that as a ratio against
+     this measured floor rather than trying to render it. */
+  const played = wind ? true : A.cue(name);
+
+  const m = measure(await off.startRendering());
+  status(name + ' rendered');
+  document.getElementById('out').textContent =
+    '@@AUDIO@@' + JSON.stringify({
+      name: wind ? '(wind, resting)' : name, played, ...m,
+      ...(wind ? { loudRatio: A.bedLevel(1) / A.bedLevel(0) } : {}),
+    }) + '@@END@@';
+} catch(err){
+  status('PROBE FAILED on "' + name + '": ' + (err && err.stack || err));
+}
+window.__done = true;
+</script></body></html>
