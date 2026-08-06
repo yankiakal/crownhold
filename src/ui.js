@@ -49,7 +49,7 @@ import {
 } from './arena.js';
 import {
   RESEARCH, techLvl, techCost, techTime, researchProgress, techCap, techBlockedBy,
-  BRANCHES, branchKeys, branchProgress, techNeeds,
+  BRANCHES, branchKeys, branchProgress, techNeeds, treeRows,
 } from './research.js';
 import {
   EVENTS, EVENT_MS, currentEvent, eventEndsIn, eventState, eventCap,
@@ -1231,31 +1231,118 @@ function renderResearch(S){
   h += '</div>';
   h += '<div class="stat-note">'+BRANCHES[researchBranch].blurb+'</div>';
 
-  for(const k of branchKeys(researchBranch)){
-    const d = RESEARCH[k];
-    const lvl = techLvl(S,k);
-    const blocked = techBlockedBy(S,k);
-    /* Truegold rows are marked: they are priced in a resource most players will not
-       have seen yet, and an unmarked row that says "Needs Crucible 4" reads as a bug. */
-    /* `stag`, not `tmeta` — the narrow-width rule gives every .tmeta in a study row its own
-       full-width line, which is right for the effect sentence and the blocked reason and wrong
-       for a one-word badge that belongs beside the name.
-       Only Truegold gets one. A per-line study had "ONE LINE" here too, which was redundant with
-       its own effect text ("spearmen only — power") and cost enough width to wrap the longest
-       name's button onto a line of its own. Truegold earns the badge because nothing else in the
-       row warns you it is priced in a resource you may never have seen. */
-    const tag = d.tg ? '<span class="stag" style="color:var(--gold)">Truegold</span>' : '';
-    /* `study` is what the narrow-width rules hang off: these rows carry a long effect
-       description AND a button, which is the combination that wraps badly at 393px. */
-    h += '<div class="trow study"><span>'+d.icon+'</span><span class="tname">'+d.name+'</span>'
-      + '<span class="tmeta">'+(lvl?'+'+(lvl*d.per)+(d.unit||'')+' ':'')+d.fx+'</span>'
-      + tag
-      + '<span class="spacer"></span><span class="count">'+lvl+'/'+d.max+'</span>';
-    if(blocked) h += '<span class="tmeta">'+blocked+'</span>';
-    else h += '<button data-act="detail" data-dtype="tech" data-key="'+k+'">Study</button>';
-    h += '</div>';
-  }
+  h += renderTree(S, researchBranch);
   h += '</section>';
+  return h;
+}
+
+/* ── the tree itself ──
+   Nodes at computed coordinates with an SVG of connectors behind them, which is what makes this a
+   tree rather than a list that happens to know about prerequisites. The geometry is deliberate
+   rather than emergent: `treeRows` decides the rows, this decides where a node sits inside one,
+   and both the node positions and the connector endpoints come out of the SAME numbers — so a
+   line cannot point at a place where no node is.
+
+   Sized to fit portrait without panning. The widest row is four (the per-line masteries), and at
+   393px minus the page padding minus the dock's column there is about 318px to work with, so a
+   70px node with a 6px gap fits four across with room to spare. It still scrolls sideways if a
+   narrower phone or a future fifth troop line needs it. 70px also clears the 44px tap floor
+   comfortably, which a denser tree would not have. */
+const NODE_W = 70, NODE_H = 62, COL_GAP = 6, ROW_GAP = 26;
+/* Side channels for long edges, outside every node box by construction — see the routing note. */
+const CHAN = 9;
+
+function renderTree(S, br){
+  const rows = treeRows(br);
+  const widest = Math.max(...rows.map(r => r.length), 1);
+  const NW = widest * (NODE_W + COL_GAP) - COL_GAP;     // width of the node field
+  const W = NW + CHAN * 2;                              // plus a channel down each side
+  const H = rows.length * (NODE_H + ROW_GAP) - ROW_GAP;
+
+  /* Centre each row in the node field, so the spine of the tree runs down the middle. */
+  const pos = {};
+  rows.forEach((keys, r) => {
+    const rowW = keys.length * (NODE_W + COL_GAP) - COL_GAP;
+    const x0 = CHAN + (NW - rowW) / 2;
+    keys.forEach((k, i) => {
+      pos[k] = { x: x0 + i * (NODE_W + COL_GAP), y: r * (NODE_H + ROW_GAP), row: r };
+    });
+  });
+
+  /* ── routing, which took three tries and a test to get honest ──
+     Orthogonal elbows, because that is what reads as a tech tree. Two cases:
+
+     ADJACENT rows: down into the gap below the source, across, down into the target. Short and
+     unambiguous.
+
+     LONGER spans: a dashed STUB above the target, and no attempt to draw the whole path. Getting
+     here took three wrong answers. Routing at the span's midpoint drew the Warcraft→Mastery edges
+     straight through Medicine and Plunder. Dropping at the target's column looked clean and was
+     worse — the runs landed exactly on unrelated nodes' centres, so the picture asserted
+     husbandry→logistics→tg_harvest and warcraft→archers→edge, chains that do not exist. Routing out
+     to side channels was provably clear of every node and drew concentric dashed rectangles around
+     the whole diagram, because eleven long edges shared two gutters.
+
+     The real fix was upstream: most long edges existed because the graph was a STAR — seven studies
+     hung off Warcraft — so no row layout could make it a tree. Truegold moved to its own branch and
+     two prerequisites were rechained, which left three. For those a stub is the honest drawing: it
+     says "something above gates this" without claiming a specific route, and the requirement itself
+     is on the node's tooltip and in its detail sheet. */
+  let paths = '';
+  for(const k of Object.keys(pos)){
+    const needs = RESEARCH[k].needs || {};
+    for(const [dep, lvl] of Object.entries(needs)){
+      if(!pos[dep]) continue;                     // a cross-branch prerequisite is not drawn here
+      const a = pos[dep], b = pos[k];
+      const x1 = a.x + NODE_W/2, y1 = a.y + NODE_H;
+      const x2 = b.x + NODE_W/2, y2 = b.y;
+      const gapA = y1 + ROW_GAP/2;                // the gutter just below the source
+      const far = b.row - a.row > 1;
+      let dpath;
+      if(!far){
+        dpath = x1 === x2
+          ? 'M'+x1+' '+y1+' L'+x2+' '+y2
+          : 'M'+x1+' '+y1+' L'+x1+' '+gapA+' L'+x2+' '+gapA+' L'+x2+' '+y2;
+      }else{
+        dpath = 'M'+x2+' '+(y2 - ROW_GAP*0.55)+' L'+x2+' '+y2;   // a stub, not a route
+      }
+      const met = techLvl(S, dep) >= lvl;
+      paths += '<path d="'+dpath+'" class="tw'+(met ? ' met' : '')+(far ? ' far' : '')+'"/>';
+    }
+  }
+
+  let h = '<div class="treewrap"><div class="tree" style="width:'+W+'px;height:'+H+'px">'
+    + '<svg class="twires" viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" aria-hidden="true">'
+    + paths + '</svg>';
+
+  for(const [k, p] of Object.entries(pos)){
+    const d = RESEARCH[k];
+    const lvl = techLvl(S, k), maxed = lvl >= d.max;
+    const blocked = techBlockedBy(S, k);
+    const studying = S.rq && S.rq.key === k;
+    /* One class per state, because the states mean different things and a single "dim vs bright"
+       cannot say which. Locked-by-prerequisite is the one worth distinguishing loudest: it is the
+       only one the player can do something about right now, by studying the node above it. */
+    const cls = maxed ? 'done' : studying ? 'busy'
+      : !blocked ? 'open'
+      : techNeeds(S, k) ? 'locked' : 'shut';
+    const title = d.name + ' ' + lvl + '/' + d.max + (blocked ? ' — ' + blocked : '');
+    h += '<button class="tnode '+cls+'" style="left:'+p.x+'px;top:'+p.y+'px'
+      + ';width:'+NODE_W+'px;height:'+NODE_H+'px"'
+      + ' data-act="detail" data-dtype="tech" data-key="'+k+'"'
+      + ' title="'+title.replace(/"/g,'&quot;')+'" aria-label="'+title.replace(/"/g,'&quot;')+'">'
+      + '<span class="ti">'+d.icon+(d.tg ? '<i class="tgdot">🏵️</i>' : '')+'</span>'
+      + '<span class="tl">'+d.short+'</span>'
+      + '<span class="tv">'+lvl+'/'+d.max+'</span>'
+      + (cls === 'locked' ? '<span class="tlock">🔒</span>' : '')
+      + '</button>';
+  }
+  h += '</div></div>';
+  /* A key, because five states rendered in a dark palette are not self-evident. */
+  h += '<div class="tkey">'
+    + '<span class="tk open">ready</span><span class="tk busy">studying</span>'
+    + '<span class="tk done">mastered</span><span class="tk locked">needs an earlier study</span>'
+    + '<span class="tk shut">Library or Hall too low</span></div>';
   return h;
 }
 

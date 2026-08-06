@@ -381,6 +381,8 @@ section.panel{
   .tabpane.base > section.panel > .stat-note,
   .tabpane.base > section.panel > .trow,
   .tabpane.base > section.panel > .order-row,
+  .tabpane.base > section.panel > .treewrap,
+  .tabpane.base > section.panel > .tkey,
   .tabpane.base > section.panel > .road{
     margin-left:var(--pad);margin-right:3.7rem;
   }
@@ -444,18 +446,63 @@ section.panel{
 }
 .stat-note b{color:var(--ink)}
 .trow{flex-wrap:wrap}
-/* A study row carries an icon, a name, a full sentence of effect, a level count and a button.
-   At 393px that cannot be one line, and `flex-wrap:wrap` alone broke it in the ugliest available
-   place — the count pressed against the right edge and the button orphaned on a second line at the
-   far left. So the wrap is made deliberate instead: the effect sentence is ordered last and given
-   its own full-width line, which leaves name · count · button together on the first. */
-.trow.study .tmeta{order:9;flex-basis:100%;margin:.1rem 0 .15rem}
-.trow.study .spacer{order:5}
-.trow.study .count{order:6}
-.trow.study button{order:7}
-.trow.study .stag{font-family:var(--sans);font-size:.6rem;letter-spacing:.06em;
-  text-transform:uppercase;order:4}
 .tier-tag{font-family:var(--sans);font-size:.6rem;color:var(--gold);letter-spacing:.08em}
+
+/* ── the research tree ──
+   Absolute nodes over an SVG of connectors, both placed from the same computed coordinates in
+   ui.js. The wrapper scrolls sideways as a safety valve: the tree is sized to fit 393px, but a
+   narrower phone — or a fifth troop line widening the mastery row — must pan rather than clip.
+   min-width:0 is what makes that scroll work at all; a grid item defaults to min-width:auto and
+   refuses to shrink below its content, which is how the walls ended up clipped with no way to
+   reach them and the harness still reported "fits". */
+.treewrap{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;
+  min-width:0;padding:.5rem 0 .2rem}
+.tree{position:relative;margin:0 auto}
+.twires{position:absolute;left:0;top:0;pointer-events:none}
+.twires .tw{fill:none;stroke:#3a2f25;stroke-width:2}
+/* a satisfied prerequisite is lit, so the road already walked is the thing you see first */
+.twires .tw.met{stroke:var(--gold-deep);stroke-width:2.5}
+/* an edge from more than one row up runs down a side channel; dashed says so */
+.twires .tw.far{stroke-dasharray:3 3;stroke-width:1.5}
+
+.tnode{
+  position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:.05rem;padding:.2rem .1rem;border-radius:.5rem;
+  border:1px solid #3a2f25;background:#161310;
+  font-family:var(--sans);line-height:1.05;text-align:center;overflow:hidden;
+}
+.tnode .ti{font-size:1.15rem;position:relative;line-height:1}
+/* the Truegold mark rides the icon rather than taking a row: these nodes are priced in a
+   resource most players have never seen, and the node is too small for a word */
+.tnode .tgdot{position:absolute;right:-.5rem;bottom:-.15rem;font-size:.55rem;font-style:normal}
+.tnode .tl{font-size:.53rem;letter-spacing:.02em;color:var(--ink-dim);
+  max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tnode .tv{font-size:.62rem;font-variant-numeric:tabular-nums;color:var(--ink)}
+.tnode .tlock{position:absolute;right:.15rem;top:.15rem;font-size:.5rem}
+
+.tnode.open{border-color:var(--gold-deep);background:#1e1a12}
+.tnode.open .tl{color:var(--ink)}
+.tnode.open .tv{color:var(--gold)}
+.tnode.busy{border-color:var(--info);background:#131a1f}
+.tnode.busy .tv{color:var(--info)}
+.tnode.done{border-color:var(--gold);background:#241c0e}
+.tnode.done .tv{color:var(--gold)}
+.tnode.done .tl{color:var(--ink)}
+/* locked-by-prerequisite stays legible: it is the only state the player can act on right now,
+   by studying the node it points at. Gated-by-building fades further back. */
+.tnode.locked{opacity:.72;border-style:dashed}
+.tnode.shut{opacity:.42}
+
+.tkey{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.56rem;
+  color:var(--ink-dim);margin:.1rem 0 .3rem;letter-spacing:.03em}
+.tkey .tk{display:flex;align-items:center;gap:.2rem}
+.tkey .tk::before{content:'';width:.5rem;height:.5rem;border-radius:.12rem;
+  border:1px solid #3a2f25;background:#161310}
+.tkey .tk.open::before{border-color:var(--gold-deep);background:#1e1a12}
+.tkey .tk.busy::before{border-color:var(--info);background:#131a1f}
+.tkey .tk.done::before{border-color:var(--gold);background:#241c0e}
+.tkey .tk.locked::before{border-style:dashed;opacity:.72}
+.tkey .tk.shut::before{opacity:.42}
 .trow.mine{color:var(--gold)}
 .card.dsheet input{
   width:100%;margin-top:.15rem;padding:.4rem .5rem;

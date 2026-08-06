@@ -1340,6 +1340,57 @@ most quietly. The depth exists so research speedups have somewhere to be sold, a
 research help is a whale lever. We sell neither, so the tree gains structure without gaining
 Whiteout's hundreds of filler levels.
 
+### It was a tree in the data and a list on the screen (v1.68)
+
+The branches and prerequisites above were right, and they were rendered as a vertical list of
+rows with the requirement buried in each detail sheet. That carries the same information and
+communicates almost none of it: you cannot see the shape of your own progress, which is the
+entire appeal of a tech tree. Whiteout and Kingshot draw a graph you look at.
+
+Rows are computed, never authored, so the picture cannot drift from the rules:
+
+```
+row(k) = max( libRank(k), 1 + row(dep) for every prerequisite dep )
+```
+
+The Library-rank floor keeps its progression legible — it *is* the spine, so a study needing
+Library 8 belongs below one needing Library 2 even with no dependency between them. The
+prerequisite term guarantees the drawing is honest: a node is always strictly below everything
+it needs, so every connector runs downward. Authoring rows by hand would have let the two
+disagree the first time anyone edited `needs`.
+
+**The routing took four attempts, and the first three each looked fine.** Elbows at the span's
+midpoint drew the four Warcraft→Mastery edges straight through Medicine and Plunder. Dropping
+each line at its target's column looked clean and was *worse* — the runs landed exactly on
+unrelated nodes' centres, so the picture asserted `husbandry→logistics→tg_harvest` and
+`warcraft→archers→edge`, chains that do not exist. Routing out to side channels was provably
+clear of every node and drew concentric dashed rectangles around the whole diagram, because
+eleven long edges shared two gutters.
+
+The actual problem was upstream and structural: **the dependency graph was a star, not a tree.**
+Seven studies hung directly off Warcraft, so no row layout could have drawn it as a tree. Three
+changes fixed the graph rather than the picture:
+
+- **Truegold became its own branch**, which is Kingshot's own arrangement — Truegold research
+  lives on a separate screen there. Each of the four perfects a mundane track, so inside the main
+  tree they all attached to roots four and five rows above.
+- **The per-line masteries chain off Plunder** rather than hanging off Warcraft. Thematically the
+  better gate: you learn to fight, wall up, treat your wounded, campaign for spoils, and only a
+  veteran army specialises.
+- **Medicine is gated on Fortification** rather than Warcraft — the infirmary is the building
+  behind the wall, and it makes the Battle branch one unbroken spine.
+
+That left two long edges, both in Growth, and those are drawn as a dashed stub above the target:
+it says "something above gates this" without claiming a route, and the requirement itself is on
+the node's tooltip and in its detail sheet.
+
+A test reproduces the renderer's geometry exactly and walks every edge segment against every
+unrelated node box. It found all five original crossings, including the two collinear ones that
+looked like a tidy spine — those are the dangerous kind, because they read as correct. It also
+holds the widest row inside a portrait phone (four nodes plus channels is 316px of ~318px
+available once the page padding and the dock's column are taken out) and refuses a node label
+too long for 70px.
+
 ## Pacing: can an addict finish it in a week? (v1.5)
 
 The honest failure the simulator exposed: with uncapped Valor, attention

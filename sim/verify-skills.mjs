@@ -1535,6 +1535,121 @@ console.log('\n── the research tree is shaped, not a flat list ──');
   ok('no study unlocks before its own prerequisite can', gateClash.length === 0, gateClash.join('; ') || 'clean');
 }
 
+console.log('\n── the tree draws as a tree ──');
+{
+  /* The list view carried the same prerequisites and communicated almost none of them. The tree
+     view is the fix, and these are the invariants a DRAWING needs that a list did not. */
+  for(const br of Object.keys(R.BRANCHES)){
+    const rows = R.treeRows(br);
+    const flat = rows.flat();
+    const keys = R.branchKeys(br);
+    ok(br + ': every study is placed exactly once',
+       flat.length === keys.length && new Set(flat).size === keys.length,
+       flat.length + ' placed of ' + keys.length);
+    ok(br + ': no empty row — a gap would draw as a break in the tree',
+       rows.every(r => r.length > 0), rows.map(r => r.length).join('-'));
+
+    /* The one that matters most. Every connector is drawn from a prerequisite DOWN to the study
+       needing it, so a prerequisite sharing or exceeding its dependent's row would render as a
+       line going sideways or backwards — a picture that contradicts the rules it is drawing.
+       Husbandry and Masonry both sit at Library 1 and would have collided on exactly this, which
+       is why rows are a longest-path layering with the Library rank only as a floor. */
+    const at = {};
+    rows.forEach((r, i) => r.forEach(k => { at[k] = i; }));
+    const wrong = [];
+    for(const k of keys)
+      for(const dep of Object.keys(R.RESEARCH[k].needs || {}))
+        if(at[dep] != null && at[dep] >= at[k])
+          wrong.push(R.RESEARCH[k].name + '(row ' + at[k] + ') needs ' + R.RESEARCH[dep].name + '(row ' + at[dep] + ')');
+    ok(br + ': every prerequisite sits strictly above what it unlocks',
+       wrong.length === 0, wrong.join('; ') || rows.length + ' rows, all edges point down');
+  }
+
+  /* Portrait is the whole point of the layout: the widest row has to fit a phone without the
+     player having to pan to find a node. 70px nodes with 6px gaps, and roughly 318px of usable
+     width once the page padding and the dock's column are taken out. */
+  const widest = Math.max(...Object.keys(R.BRANCHES).flatMap(br => R.treeRows(br).map(r => r.length)));
+  const px = widest * 76 - 6 + 9 * 2;          // node field + a channel down each side
+  ok('the widest row fits a portrait phone without panning', px <= 318,
+     widest + ' nodes + channels = ' + px + 'px of the ~318px available');
+
+  /* Every node needs a short label — the full name does not fit in 70px, and a node falling back
+     to `undefined` is the kind of thing only a screenshot would catch. */
+  const noShort = Object.keys(R.RESEARCH).filter(k => !R.RESEARCH[k].short);
+  ok('every study has a short label for its node', noShort.length === 0, noShort.join(', ') || 'clean');
+  const tooLong = Object.entries(R.RESEARCH).filter(([, d]) => d.short.length > 11);
+  ok('and none of them overflows the node', tooLong.length === 0,
+     tooLong.map(([k, d]) => k + '="' + d.short + '"').join(', ') || 'longest is '
+       + Math.max(...Object.values(R.RESEARCH).map(d => d.short.length)) + ' chars');
+
+  /* ── connectors must not run through unrelated nodes ──
+     Reproduces the renderer's geometry exactly (ui.js: NODE_W 70, NODE_H 62, COL_GAP 6, ROW_GAP
+     26, rows centred) and checks every edge's long vertical segment against every node box it
+     passes. The first routing drew four Warcraft→Mastery edges straight across Medicine and
+     Plunder; the fix drops each line at its TARGET's column, which clears the centre column by
+     only a few pixels. That margin is too small to take on trust, so it is measured. */
+  {
+    const NODE_W = 70, NODE_H = 62, COL_GAP = 6, ROW_GAP = 26, CHAN = 9;
+    const bad = [];
+    let far = 0;
+    for(const br of Object.keys(R.BRANCHES)){
+      const rows = R.treeRows(br);
+      const widest = Math.max(...rows.map(r => r.length), 1);
+      const NW = widest * (NODE_W + COL_GAP) - COL_GAP;
+      const W = NW + CHAN * 2;
+      const pos = {};
+      rows.forEach((keys, r) => {
+        const rowW = keys.length * (NODE_W + COL_GAP) - COL_GAP;
+        const x0 = CHAN + (NW - rowW) / 2;
+        keys.forEach((k, i) => {
+          pos[k] = { x: x0 + i * (NODE_W + COL_GAP), y: r * (NODE_H + ROW_GAP), row: r };
+        });
+      });
+      const boxes = Object.entries(pos);
+      /* Walk each edge as a list of segments, exactly as the renderer emits them, and test every
+         segment against every unrelated node box. Checking only the long vertical would have
+         missed a horizontal run clipping a neighbour. */
+      for(const k of Object.keys(pos)){
+        for(const dep of Object.keys(R.RESEARCH[k].needs || {})){
+          if(!pos[dep]) continue;
+          const a = pos[dep], b = pos[k];
+          const x1 = a.x + NODE_W/2, y1 = a.y + NODE_H;
+          const x2 = b.x + NODE_W/2, y2 = b.y;
+          const gapA = y1 + ROW_GAP/2;
+          const isFar = b.row - a.row > 1;
+          if(isFar) far++;
+          /* A far edge is drawn as a stub above its target, not routed — so that is what gets
+             checked. See the routing note in ui.js for the three versions this replaced. */
+          const pts = isFar
+            ? [[x2, y2 - ROW_GAP*0.55], [x2, y2]]
+            : (x1 === x2 ? [[x1,y1],[x2,y2]]
+                         : [[x1,y1],[x1,gapA],[x2,gapA],[x2,y2]]);
+          for(let i = 0; i < pts.length - 1; i++){
+            const [ax, ay] = pts[i], [bx, by] = pts[i+1];
+            const loX = Math.min(ax,bx), hiX = Math.max(ax,bx);
+            const loY = Math.min(ay,by), hiY = Math.max(ay,by);
+            for(const [other, p] of boxes){
+              if(other === k || other === dep) continue;
+              if(hiX > p.x && loX < p.x + NODE_W && hiY > p.y && loY < p.y + NODE_H)
+                bad.push(br + ' ' + dep + '→' + k + ' crosses ' + other);
+            }
+          }
+        }
+      }
+    }
+    ok('no connector runs through a node it has nothing to do with', bad.length === 0,
+       bad.length ? [...new Set(bad)].join('; ') : 'all edges clear, ' + far + ' drawn as stubs');
+  }
+
+  /* unlockedBy is the inverse of needs; if the two disagree the detail sheet would promise a
+     study that nothing actually gates on this one. */
+  const badInv = [];
+  for(const k of Object.keys(R.RESEARCH))
+    for(const child of R.unlockedBy(k))
+      if(!(R.RESEARCH[child].needs || {})[k]) badInv.push(k + '→' + child);
+  ok('unlockedBy is the exact inverse of needs', badInv.length === 0, badInv.join(', ') || 'clean');
+}
+
 console.log('\n── per-line mastery hits one line and only one line ──');
 {
   const s = hold();
