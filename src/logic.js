@@ -15,7 +15,8 @@ import {
   PET_POOL, PET_MAX_LVL, petXpNeed, petBondNeed,
   WAVE_TYPES, STANCES, COUNTER_BONUS, COUNTER_PENALTY, COUNTER_CASUALTY, SCREEN,
   EXPEDITIONS, EXPEDITION_CD,
-  COST_EXP, TIME_EXP, TIERS, TIER_POWER, TIER_UPKEEP, TIER_COST,
+  COST_EXP, TIME_EXP, TIERS, TIER_POWER, TIER_UPKEEP, TIER_COST, ACADEMY_PER_TIER, ACADEMY_POWER,
+  PROMOTE_MS_PER_TROOP, PROMOTE_MS_MIN,
   REFINE, STEEL_FROM, RUNE_FROM,
   buildTimeCap, TIME_SCALE, SECOND_QUEUE_TH,
   VALOR_QUOTA_BASE, VALOR_QUOTA_PER_TH, VALOR_OVERFLOW,
@@ -396,8 +397,43 @@ export function prodPerSec(s, res){
   return p * prodMult(s,res) * (isRested(s) ? 1 + REST_PROD_BONUS : 1);
 }
 /* ── troop tiers ── */
-export function maxTier(s){ return Math.min(10, (s.b.academy||0)+1); }
+export function maxTier(s){
+  return Math.min(TIERS.length, 1 + Math.floor((s.b.academy || 0) / ACADEMY_PER_TIER));
+}
+/* The Academy level that opens a given tier — what the UI has to name when it refuses. */
+export function academyForTier(t){ return Math.max(0, (t - 1) * ACADEMY_PER_TIER); }
+/* Every level drills the muster, tier or no tier. Multiplied into tierPower for the same
+   reason supply is: that is the one function every power figure in the game passes through,
+   so no call site can forget to ask. */
+export function academyPower(s){ return 1 + ACADEMY_POWER * (s.b.academy || 0); }
 export function tierOf(s,k){ return (s.tier && s.tier[k]) || 1; }
+/* What ONE line of troops draws, per resource, per second — and what the whole muster does.
+   Asked for directly: "I need to see how much each troop type eats which rss, and in total."
+
+   The totals were already on screen but only in aggregate, so a player could see the muster
+   drawing 36 wood/s without being able to tell that the archers were most of it. Both the
+   per-line and the whole-hold figures come from the same two functions the rules use, with
+   the relief multipliers applied once at the end, so the columns add up to the total exactly
+   rather than approximately. */
+export function troopDraw(s, k){
+  const ease = Math.max(0.5, 1 - heroBonus(s,'upkeep') - spoilBonus(s,'upkeep') - (perk(s,16)?0.08:0));
+  const n = s.t[k] || 0;
+  const tierMult = 1 + TIER_UPKEEP * (tierOf(s,k) - 1);
+  const out = { food: TROOPS[k].upkeep * tierMult * n * ease };
+  for(const r of SUPPLY_RES)
+    out[r] = ((SUPPLY[k] || {})[r] || 0) * tierMult * n * supplyRamp(s) * ease;
+  return out;
+}
+export function musterDraw(s){
+  const tot = { food: 0 };
+  for(const r of SUPPLY_RES) tot[r] = 0;
+  for(const k of Object.keys(TROOPS)){
+    const d = troopDraw(s, k);
+    for(const r of Object.keys(tot)) tot[r] += d[r];
+  }
+  return tot;
+}
+
 /* ── supply: what an army needs besides bread ──
    Same shape as food upkeep and eased by the same reliefs — a Quartermaster who stretches
    the rations stretches the arrows too. Scaled by the tier curve for the same reason food
@@ -445,7 +481,7 @@ export function supplyMult(s, k){
    the seam means an unsupplied army is weaker everywhere at once and no call site can
    forget to ask, which is how the cover rule got missed on the frontier for a version. */
 export function tierPower(s,k){
-  return TROOPS[k].power * (1 + TIER_POWER*(tierOf(s,k)-1)) * supplyMult(s,k);
+  return TROOPS[k].power * (1 + TIER_POWER*(tierOf(s,k)-1)) * supplyMult(s,k) * academyPower(s);
 }
 export function tierUpkeep(s,k){ return TROOPS[k].upkeep * (1 + TIER_UPKEEP*(tierOf(s,k)-1)); }
 export function tierCostMult(s,k){ return 1 + TIER_COST*(tierOf(s,k)-1); }
@@ -461,17 +497,46 @@ export function promoteCost(s,k){
   for(const [r,v] of Object.entries(d.cost)) c[r] = Math.ceil(v * TIER_COST * n);
   return c;
 }
+/* How long the forges need. Per soldier in the line, because reforging four hundred knights
+   is not the same job as reforging four — and with a floor, so a tiny line is not instant. */
+export function promoteTime(s, k){
+  return Math.max(PROMOTE_MS_MIN, Math.round((s.t[k] || 0) * PROMOTE_MS_PER_TROOP));
+}
+export function promoteQueue(s){ return s.pq || null; }
 export function promote(s, k, now){
   s.now = now;
   const cur = tierOf(s,k);
   if(cur >= maxTier(s)) return false;
+  if(s.pq) return false;                      // one line at the forges at a time
   const c = promoteCost(s,k);
   if(!canAfford(s,c)) return false;
   payCost(s,c);
-  s.tier[k] = cur+1;
-  scoreDeed(s, 'promoted', 1, now);
-  pushLog(s, TROOPS[k].icon+' Every '+TROOPS[k].name+' is reforged to Tier '+TIERS[cur]+' — new recruits will match.', 'gold');
+  /* Paid now, delivered later. The tier does NOT rise until the work finishes — anything
+     else would let a player pay at leisure and collect the power instantly, which is the
+     shape of every timer this game deliberately does not sell a way around. */
+  s.pq = { key: k, to: cur + 1, start: now, end: now + promoteTime(s, k) };
+  pushLog(s, TROOPS[k].icon+' The forges take in every '+TROOPS[k].plural.toLowerCase()
+    +' to reforge for Tier '+TIERS[cur]+'.', 'gold');
   return true;
+}
+export function finishPromote(s, now){
+  if(!s.pq || now < s.pq.end) return false;
+  const { key, to } = s.pq;
+  s.pq = null;
+  s.tier[key] = Math.max(tierOf(s, key), to);
+  scoreDeed(s, 'promoted', 1, now);
+  pushLog(s, TROOPS[key].icon+' Every '+TROOPS[key].name+' is reforged to Tier '+TIERS[to-1]
+    +' — new recruits will match.', 'gold');
+  return true;
+}
+export function finishPromoteNow(s, now){
+  s.now = now;
+  if(!s.pq) return false;
+  const c = finishCost(s.pq.end, now);
+  if((s.valor || 0) < c) return false;
+  s.valor -= c;
+  s.pq.end = now;
+  return finishPromote(s, now);
 }
 
 /* ── the wounded ──
@@ -807,7 +872,8 @@ const READOUT = {
   ironmine:   (s) => '+' + prodPerSec(s, 'iron').toFixed(1) + ' iron/s',
   wall:       (s) => 'defence +' + Math.round(wallPower(s)),
   watchtower: (s) => 'blunts ' + Math.round(bluntFor(s, s.b.watchtower) * 100) + '%',
-  academy:    (s) => 'troop Tier ' + TIERS[maxTier(s) - 1],
+  academy:    (s) => 'Tier ' + TIERS[maxTier(s) - 1] + ', troops +'
+                     + Math.round(ACADEMY_POWER * (s.b.academy || 0) * 100) + '%',
   hospital:   (s) => Math.round(woundShare(s) * 100) + '% of the fallen come back',
   granary:    (s) => '+' + prodPerSec(s, 'food').toFixed(1) + ' food/s, storage ' + fmt(storageCap(s)),
   barracks:   (s) => 'drills at ×' + trainMultFor(s, s.b.barracks).toFixed(2),
@@ -1782,6 +1848,8 @@ export function tick(s, now, dt, rand=Math.random){
       if(lost) pushLog(s, 'Famine! '+lost+' troops desert an unfed muster — raise your Farms or let raids thin the ranks.', 'loss');
     }
   } else s.famineAcc = 0;
+
+  if(s.pq && now >= s.pq.end) finishPromote(s, now);
 
   if(s.decree && s.decree.until <= now){
     const def = DECREES[s.decree.key];

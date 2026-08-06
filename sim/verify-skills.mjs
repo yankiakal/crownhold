@@ -24,7 +24,8 @@ const near = (a, b, tol=0.02) => Math.abs(a-b) <= Math.abs(b)*tol + 1e-9;
 function hold(){
   const now = Date.now();
   const s = freshState(now, 42);
-  s.b.townhall = 20; s.b.command = 30; s.b.academy = 9; s.b.hospital = 10;
+  s.b.townhall = 20; s.b.command = 30; s.b.hospital = 10;
+  s.b.academy = 27;   // 27 levels now, three per troop tier — Tier X at 27
   s.b.barracks = 10; s.b.range = 8; s.b.stable = 8; s.b.siegeyard = 8;
   s.b.farm = 25; s.b.granary = 10; s.b.forge = 10;
   s.tier = { spearman:5, archer:5, knight:5, ballista:5 };
@@ -542,6 +543,90 @@ console.log('\n── a pre-skills save is inert, not broken ──');
        W.columnLoad({ ballista: 10 }) === 10 * D.LOAD.ballista,
        '10 ballistae weigh ' + W.columnLoad({ ballista: 10 }));
   }
+}
+
+/* ── who eats what ──
+   Asked for directly: "I need to see how much each troop type eats which rss, and in total."
+   The totals were on screen but only in aggregate, so a player could watch 36 wood/s leave
+   without being able to tell the archers were most of it.
+
+   The property that matters is that the per-line columns SUM to the figures the rules
+   actually charge. A breakdown that only approximately adds up is worse than none: it
+   invites a player to plan against numbers the game does not use. */
+{
+  console.log('\n── the muster tells you who eats what ──');
+  const s = hold();
+  s.t = { spearman:300, archer:200, knight:100, ballista:50 };
+  s.tier = { spearman:3, archer:3, knight:3, ballista:3 };
+
+  const tot = L.musterDraw(s);
+  ok('the food column sums to the upkeep the rules charge',
+     Math.abs(tot.food - L.upkeepPerSec(s)) < 1e-9,
+     tot.food.toFixed(2) + ' vs ' + L.upkeepPerSec(s).toFixed(2));
+  for(const r of D.SUPPLY_RES)
+    ok('the ' + r + ' column sums to the supply the rules draw',
+       Math.abs(tot[r] - L.supplyPerSec(s, r)) < 1e-9,
+       tot[r].toFixed(2) + ' vs ' + L.supplyPerSec(s, r).toFixed(2));
+
+  /* And each line's own figures have to be attributable — an archer's draw is timber, a
+     knight's is iron. This is the thing a player is reading the breakdown to find out. */
+  const a = L.troopDraw(s, 'archer'), kn = L.troopDraw(s, 'knight');
+  ok('archers show up under timber and not iron', a.wood > 0 && a.iron === 0,
+     'archers: ' + a.wood.toFixed(1) + ' wood, ' + a.iron.toFixed(1) + ' iron');
+  ok('cavalry show up mostly under iron', kn.iron > kn.wood * 2,
+     'knights: ' + kn.wood.toFixed(1) + ' wood, ' + kn.iron.toFixed(1) + ' iron');
+  ok('and everybody eats', Object.keys(D.TROOPS).every(k => L.troopDraw(s, k).food > 0));
+
+  /* Zero troops of a line must draw nothing — the per-head scaling has been wrong in this
+     codebase before, in exactly the direction of charging for an empty line. */
+  const none = hold();
+  none.t = { spearman:0, archer:0, knight:0, ballista:0 };
+  const z = L.musterDraw(none);
+  ok('an empty muster draws nothing at all',
+     Object.values(z).every(v => v === 0), JSON.stringify(z));
+}
+
+/* ── the War Academy is never a dull upgrade ──
+   Nine levels, one thing each, and after the ninth it was finished furniture. Now a tier
+   every third level (so Tier X is a late-game achievement, not something you hold by Town
+   Hall 9) and a troop-power bonus on EVERY level, so no rung is dead.
+
+   The bonus is deliberately not a promotion discount, which was the obvious first idea and
+   would have reopened the v1.43 hole: reforging costs exactly what the yard charges to drill
+   a soldier a tier higher, precisely so neither route to a tier is cheaper. Asserted below,
+   because that invariant is easy to break from a long way away. */
+{
+  console.log('\n── the War Academy: a tier every third level, and no dull rung ──');
+  const at = a => { const s = hold(); s.b.academy = a; return s; };
+  ok('an unbuilt Academy still allows Tier I', L.maxTier(at(0)) === 1);
+  ok('a tier every third level', L.maxTier(at(3)) === 2 && L.maxTier(at(6)) === 3 && L.maxTier(at(9)) === 4,
+     'L3→' + D.TIERS[L.maxTier(at(3))-1] + ', L6→' + D.TIERS[L.maxTier(at(6))-1] + ', L9→' + D.TIERS[L.maxTier(at(9))-1]);
+  ok('Tier X arrives at the top of the ladder and not before',
+     L.maxTier(at(26)) === 9 && L.maxTier(at(27)) === 10 && D.BUILDINGS.academy.max === 27,
+     'L26→' + D.TIERS[L.maxTier(at(26))-1] + ', L27→' + D.TIERS[L.maxTier(at(27))-1]);
+  ok('and it never promises a tier past X', L.maxTier(at(99)) === D.TIERS.length);
+  ok('the level a tier needs is nameable, for when the panel refuses',
+     L.academyForTier(2) === 3 && L.academyForTier(10) === 27,
+     'Tier II at ' + L.academyForTier(2) + ', Tier X at ' + L.academyForTier(10));
+
+  /* Every level pays, including the two out of three that open no tier. */
+  const p = a => { const s = at(a); s.t = { spearman:100 }; s.tier = { spearman:1 }; return L.tierPower(s, 'spearman'); };
+  ok('every level drills the muster harder, tier or no tier',
+     p(4) > p(3) && p(5) > p(4) && p(27) > p(26),
+     'L3 ' + p(3).toFixed(2) + ' → L4 ' + p(4).toFixed(2) + ' → L5 ' + p(5).toFixed(2)
+     + ' … L27 ' + p(27).toFixed(2));
+  ok('and the whole ladder is worth about a quarter more troop power',
+     Math.abs(p(27)/p(0) - 1.27) < 0.01, '×' + (p(27)/p(0)).toFixed(3));
+
+  /* The invariant the bonus was chosen to protect. */
+  const tot = c => Object.values(c).reduce((a, b) => a + b, 0);
+  const s = hold(); s.tier.knight = 4; s.t.knight = 200;
+  const step = tot(L.promoteCost(s, 'knight'));
+  const before = tot(L.trainCost(s, 'knight', 200));
+  s.tier.knight = 5;
+  ok('and the Academy does NOT discount promotions — that parity still holds',
+     Math.abs(step - (tot(L.trainCost(s, 'knight', 200)) - before)) <= 200,
+     'reforge ' + step + ' vs yard premium ' + (tot(L.trainCost(s,'knight',200)) - before));
 }
 
 /* ── the per-level ladder in a building's detail sheet ──

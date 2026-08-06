@@ -213,9 +213,16 @@ try {
     /* Both kitted alike so they fall inside the bracket, then Corwin given a thinner
        line so the raid actually lands. The first pass of this test kitted Corwin weak
        and the bracket refused the attack outright — which is the bracket doing exactly
-       its job, protecting a small hold from being farmed, and my setup being wrong. */
+       its job, protecting a small hold from being farmed, and my setup being wrong.
+
+       400 against 120 was the second mistake: the bracket floor is theirs >= mine × 0.3,
+       and 120/400 is exactly 0.30. The test sat ON the threshold, so it passed only while
+       nothing perturbed the ratio — and it started failing two runs in three the moment the
+       War Academy began multiplying troop power, because the wall and the garrison do not
+       scale with it and the ratio drifted. A test parked on a boundary is a coin flip that
+       blames whatever changed last. 200 sits in the middle of the bracket. */
     await post('/api/debug/kit', { token: ta, strong: true, spearmen: 400 });
-    await post('/api/debug/kit', { token: tc, strong: true, spearmen: 120 });
+    await post('/api/debug/kit', { token: tc, strong: true, spearmen: 200 });
 
     const list = await post('/api/raid', { token: ta });
     ok('the raid board reads', list.status === 200 && !!list.body.raid, list.body?.error || '');

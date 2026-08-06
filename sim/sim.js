@@ -246,7 +246,7 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
       if(eligible('townhall')) pick = 'townhall';
       else if(s.b.quarry===0 && eligible('quarry')) pick = 'quarry';
       else if(s.b.barracks===0 && eligible('barracks')) pick = 'barracks';
-      else if(s.b.academy < 6 && eligible('academy')) pick = 'academy';
+      else if(s.b.academy < Math.min(12, s.b.townhall) && eligible('academy')) pick = 'academy';
       // a yard you do not own is a troop type you can never field — stand them
       // all up before widening anything else
       else if(s.b.range === 0 && eligible('range')) pick = 'range';

@@ -36,7 +36,7 @@ export function freshState(now, seed){
     laurels:1000, defStance:'shieldwall', arenaWins:0, arenaLosses:0,
     arenaReady:0, arenaLast:null,
     waveType:'rabble', upkeepPauseUntil:0, trainFastNext:false, expedBoost:false,
-    bq:null, bq2:null, tq:{}, hq:null, wounded:{},
+    bq:null, bq2:null, tq:{}, hq:null, pq:null, wounded:{},
     wave:1, nextWave:now+FIRST_WAVE_MS, wavesWon:0, wavesLost:0,
     trained:0, trainedBy:{},
     mxp:0, shields:0, shieldUntil:0, warbandsWon:0, streak:0, famineAcc:0,

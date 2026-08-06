@@ -89,7 +89,7 @@ try {
   const now = D.SEASON_EPOCH + 2 * D.SEASON_MS;
   const s = ST.freshState(now, 42);
   s.seenIntro = true;
-  Object.assign(s.b, { townhall:20, command:30, academy:9, barracks:10,
+  Object.assign(s.b, { townhall:20, command:30, academy:27, barracks:10,
     range:8, stable:8, siegeyard:8, kitchen:10, farm:25, granary:10 });
   s.tier = { spearman:5, archer:5, knight:5, ballista:5 };
   s.t = { spearman:400, archer:200, knight:120, ballista:60 };

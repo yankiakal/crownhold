@@ -22,11 +22,11 @@ import {
 import {
   fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor, capFor, isUnlocked,
   activeTrainings, trainQueue, woundedTotal, woundedCap, woundShare, healCost, healTime,
-  prodPerSec, prodMult, upkeepPerSec, supplyPerSec, shortFrac, supplyMult, buildCost, buildTime, canAfford, armyPower,
+  prodPerSec, prodMult, upkeepPerSec, supplyPerSec, troopDraw, musterDraw, shortFrac, supplyMult, buildCost, buildTime, canAfford, armyPower,
   decreeOf, decreeLeft, canDecree, wallWear, wallMendPerSec,
   armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
   valorQuota, valorToday, isRested, QUEUE_KEYS, buildSlots, activeQueues, freeSlot, townhallReq, townhallPath,
-  maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost, buildingCurve,
+  maxTier, academyForTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, promoteTime, promoteQueue, trainCost, buildingCurve,
   wavePower, streakMult, finishCost, xpNeed,
   courtSeats, courtSeated, heroAway, leadBonus, leadTotal, heroSeasonOpen, classLift,
   effLvl, heroStarCap, arenaTeam, setArenaTeam, gearBlockedBy, petBonus, screenCover,
@@ -320,9 +320,16 @@ function renderMuster(S){
   /* Supply, spelled out. An army quietly at 60% power because the timber ran out three
      minutes ago is the single most confusing thing this system could do, so the draw is
      always shown and the shortfall is named with the line it is hurting. */
-  h += '<div class="stat-note">Also draws '+SUPPLY_RES.map(r =>
-        supplyPerSec(S,r).toFixed(1)+' '+r+'/s of your +'+prodPerSec(S,r).toFixed(1)).join(' and ')
-    + ' — arrows, shafts and shoes</div>';
+  /* The whole muster's bill, per resource, against what the hold makes. Each line above
+     shows its own share, so this is the sum of that column and not a separate estimate. */
+  const draw = musterDraw(S);
+  h += '<div class="stat-note">The muster draws '
+    + ['food'].concat(SUPPLY_RES).map(r => {
+        const net = prodPerSec(S,r) - draw[r];
+        return RES_META[r].icon+' <b>'+draw[r].toFixed(1)+'</b>/s of +'+prodPerSec(S,r).toFixed(1)
+             + ' <span style="color:var(--'+(net<0?'bad':'ink-dim')+')">('+(net<0?'':'+')+net.toFixed(1)+')</span>';
+      }).join(' &nbsp;·&nbsp; ')
+    + '</div>';
   /* The wall's condition. Only shown when it is not whole, because a line that always
      reads "100%" is noise — but a wall quietly at 70% with no explanation would be the
      same silent-power-loss trap the supply warning exists to prevent. */
@@ -332,6 +339,19 @@ function renderMuster(S){
     h += '<p class="d-warn">\ud83e\uddf1 The wall stands at <b>' + pct + '%</b> — masons are drawing '
       + stone.toFixed(1) + ' stone/s to mend it'
       + (S.res.stone < stone * 5 ? ', and the Quarry cannot keep up.' : '.') + '</p>';
+  }
+  /* The forges, when they are working. A timer the player paid for and cannot see is the
+     same problem as a power loss with no explanation. */
+  const pq = promoteQueue(S);
+  if(pq){
+    const left = Math.max(0, pq.end - Date.now());
+    const cost = finishCost(pq.end, Date.now());
+    h += '<div class="queue-strip">'+TROOPS[pq.key].icon+' Reforging every '
+      + TROOPS[pq.key].plural.toLowerCase()+' for Tier '+TIERS[pq.to-1]
+      + ' <span class="bar"><i style="width:'+Math.round(100*(1-left/Math.max(1,pq.end-pq.start)))+'%"></i></span> '
+      + ftime(left)
+      + ' <button class="valor-btn" data-act="finishPromote"'+((S.valor||0)<cost?' disabled':'')
+      + '>✦ '+cost+'</button></div>';
   }
   const dry = SUPPLY_RES.filter(r => shortFrac(S,r) > 0.02);
   if(dry.length){
@@ -357,7 +377,11 @@ function renderMuster(S){
       const canPromote = !locked && tier < maxTier(S);
       h += '<div class="trow">'
         + '<span>'+d.icon+'</span><span class="tname">'+d.name+' <b class="tier-tag">'+TIERS[tier-1]+'</b></span>'
-        + '<span class="tmeta">pwr '+tierPower(S,k).toFixed(0)+'</span>'
+        + '<span class="tmeta">pwr '+tierPower(S,k).toFixed(0)
+          + (S.t[k] ? ' · ' + ['food'].concat(SUPPLY_RES)
+              .filter(r => troopDraw(S,k)[r] > 0.005)
+              .map(r => troopDraw(S,k)[r].toFixed(1)+RES_META[r].icon).join(' ') : '')
+          + '</span>'
         + '<button class="info-btn" data-act="detail" data-dtype="troop" data-key="'+k+'" title="unit details'+(canPromote?' — promotion available!':'')+'">'
         + (canPromote?'⬆':'ⓘ')+'</button>'
         + '<span class="spacer"></span>';
@@ -1724,11 +1748,16 @@ function renderDetail(S){
       body += '<p class="d-delta">Promote all to Tier '+TIERS[tier]+': power '+tierPower(S,k).toFixed(1)+' → '
         + (d.power*(1+0.25*tier)).toFixed(1)+' each (upkeep rises too)</p>'
         + '<p class="d-row">'+costHtml(S,pc)+'</p>'
-        + '<p class="hmeta">A fixed price — it costs this whether you muster '+S.t[k]+' or none, and every '
-        + d.plural.toLowerCase()+' you drill afterwards is already Tier '+TIERS[tier]+'.</p>'
-        + '<button class="primary" data-act="promote" data-key="'+k+'" '+(canAfford(S,pc)?'':'disabled')+'>⬆ Promote to Tier '+TIERS[tier]+'</button>';
+        + '<p class="hmeta">Priced per soldier, and it takes the forges '
+        + ftime(promoteTime(S,k))+' — every '+d.plural.toLowerCase()
+        + ' you drill afterwards is already Tier '+TIERS[tier]+'.</p>'
+        + (promoteQueue(S)
+          ? '<p class="d-warn">The forges are busy with '
+            + TROOPS[promoteQueue(S).key].plural.toLowerCase()+'.</p>'
+          : '<button class="primary" data-act="promote" data-key="'+k+'" '
+            + (canAfford(S,pc)?'':'disabled')+'>⬆ Reforge for Tier '+TIERS[tier]+'</button>');
     }else if(tier < 10){
-      body += '<p class="d-warn">Tier '+TIERS[tier]+' needs War Academy level '+tier+'.</p>';
+      body += '<p class="d-warn">Tier '+TIERS[tier]+' needs War Academy level '+academyForTier(tier+1)+'.</p>';
     }else body += '<p class="d-delta" style="color:var(--gold)">Highest tier — none finer in the realm.</p>';
   }
 

@@ -31,8 +31,11 @@ export const BUILDINGS = {
               cost:{wood:90,food:60},   time:14, max:25, th:2},
   granary:   {name:'Granary',    icon:'🏺', fx:'+2% food production and +3% storage per level.',
               cost:{wood:100,stone:40}, time:16, max:25, th:3},
-  academy:   {name:'War Academy',icon:'🎓', fx:'Each level unlocks the next troop tier.',
-              cost:{stone:150,iron:60}, time:25, max:9,  th:4},
+  /* Nine levels and it was finished — and eight of those nine did exactly one thing, so the
+     ninth was the last time the building was ever interesting. Now every third level opens a
+     troop tier and EVERY level drills the muster harder, so there is no dull rung. */
+  academy:   {name:'War Academy',icon:'🎓', fx:'+1% troop power per level. Every 3rd level unlocks the next troop tier.',
+              cost:{stone:150,iron:60}, time:25, max:27, th:4},
   hospital:  {name:'Infirmary',   icon:'⛑️', fx:'−4% casualties, and more of the fallen come back wounded instead of dead.',
               cost:{wood:120,food:80},  time:18, max:25, th:4},
   command:   {name:'Command Center',icon:'🎖️', fx:'+1 march every 5 levels; marches travel 2% faster per level.',
@@ -59,7 +62,32 @@ export const COST_EXP = 2.0, TIME_EXP = 1.6;
 
 /* ── troop tiers: the same soldier, forged better. Unlocked by the War Academy ── */
 export const TIERS = ['I','II','III','IV','V','VI','VII','VIII','IX','X'];
-export const TIER_POWER = 0.25, TIER_UPKEEP = 0.18, TIER_COST = 0.22;
+/* Academy levels per tier unlocked. Was 1 — nine levels, nine tiers, done. At 3 the ladder
+   runs to level 27 and Tier X becomes a late-game achievement rather than something you have
+   by Town Hall 9. */
+export const ACADEMY_PER_TIER = 3;
+/* And what every level gives regardless, so no rung is dead. Deliberately troop POWER: it is
+   the Academy's own domain, it lands on the multiplier every power figure already passes
+   through, and it breaks no invariant.
+
+   A promotion discount was the obvious first idea and is wrong — v1.43 made reforging cost
+   exactly what the yard charges to drill a soldier a tier higher, so that neither route to a
+   tier is cheaper than the other. Discounting promotions would reopen precisely that hole. */
+export const ACADEMY_POWER = 0.01;
+/* TIER_COST is the premium a tier costs — and it is charged in exactly two places that must
+   stay equal: the yard's price for drilling a soldier at that tier, and the per-head price of
+   reforging one into it. Raising it makes promotions dearer, which is the point, and raising
+   THIS number rather than the promotion formula is what keeps the two routes level. Nudging
+   promoteCost alone would make drilling-then-reforging pricier than drilling at tier, which
+   is the v1.43 hole in reverse. 0.22 → 0.55 makes a full climb to Tier X cost 4.95× a
+   soldier's base price instead of 1.98×. */
+export const TIER_POWER = 0.25, TIER_UPKEEP = 0.18, TIER_COST = 0.36;
+
+/* And reforging a line now takes time, like every other commitment in the hold. Per soldier,
+   so promoting a big line is a real decision rather than a button — and on its own queue, so
+   it competes with nothing. Valor finishes it early, as it does any timer here. */
+export const PROMOTE_MS_PER_TROOP = 900;
+export const PROMOTE_MS_MIN = 30000;
 
 /* ── one soldier, one tier bill, whichever door they came through ──
    A soldier can arrive at tier N two ways: drilled at tier N, or drilled at tier 1 and
