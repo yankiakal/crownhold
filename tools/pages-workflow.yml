@@ -94,3 +94,16 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          # Half an hour, not the default ten minutes.
+          #
+          # Six deploys failed here, every one at exactly 10m00s after the deployment went
+          # in_progress — which is this action's default `timeout` (600000 ms) expiring, not
+          # Pages refusing anything. GitHub never attached an error description to any of the
+          # failed deployment statuses, and one of them sat `queued` for five minutes before
+          # starting at all, so Pages is simply slow for this repository right now.
+          #
+          # Everything else was verified first: source is GitHub Actions, `main` is allowed to
+          # deploy (the `waiting` state cleared in 2 seconds), no stale deployment held the
+          # lock, GitHub reported no incident, and the build job passes in 25 seconds.
+          timeout: 1800000
