@@ -72,16 +72,31 @@ export const ACADEMY_PER_TIER = 3;
 
    A promotion discount was the obvious first idea and is wrong — v1.43 made reforging cost
    exactly what the yard charges to drill a soldier a tier higher, so that neither route to a
-   tier is cheaper than the other. Discounting promotions would reopen precisely that hole. */
-export const ACADEMY_POWER = 0.01;
+   tier is cheaper than the other. Discounting promotions would reopen precisely that hole.
+
+   0.025, not the 0.01 first shipped. At 1% a level the two rungs in three that open no tier
+   read as nothing happening — power 3.09 to 3.12 — which is the exact dullness this bonus
+   exists to remove. */
+export const ACADEMY_POWER = 0.025;
 /* TIER_COST is the premium a tier costs — and it is charged in exactly two places that must
    stay equal: the yard's price for drilling a soldier at that tier, and the per-head price of
    reforging one into it. Raising it makes promotions dearer, which is the point, and raising
    THIS number rather than the promotion formula is what keeps the two routes level. Nudging
    promoteCost alone would make drilling-then-reforging pricier than drilling at tier, which
-   is the v1.43 hole in reverse. 0.22 → 0.55 makes a full climb to Tier X cost 4.95× a
-   soldier's base price instead of 1.98×. */
-export const TIER_POWER = 0.25, TIER_UPKEEP = 0.18, TIER_COST = 0.36;
+   is the v1.43 hole in reverse. 0.22 → 0.28 makes a full climb to Tier X cost 2.52× a
+   soldier's base price instead of 1.98×.
+
+   Settled at 0.28 rather than the 0.36 first shipped, trading some of "cost a lot more" back
+   for playability. Tiers remain far dearer in practice than before: they arrive a third as
+   often, reforging occupies a timed queue, and the per-head price rose. Three frictions on one
+   action was too many at once, and the simulator's WAVE RECORD is where it showed — the floors
+   are catastrophe detectors and had nothing to say about an army quietly falling behind the
+   raid clock. At 0.36 the 4-hour lopsided run lost 65 waves against 61 won; at 0.28 with the
+   Academy bonus raised it loses 38 and reaches wave 116 instead of 62.
+
+   (This comment said 0.22 → 0.55 for a while after the constant had moved to 0.36 — written
+   during a sweep and never corrected. Prose drifts from code faster than anything else here.) */
+export const TIER_POWER = 0.25, TIER_UPKEEP = 0.18, TIER_COST = 0.28;
 
 /* And reforging a line now takes time, like every other commitment in the hold. Per soldier,
    so promoting a big line is a real decision rather than a button — and on its own queue, so

@@ -732,8 +732,15 @@ console.log('\n── a pre-skills save is inert, not broken ──');
      p(4) > p(3) && p(5) > p(4) && p(27) > p(26),
      'L3 ' + p(3).toFixed(2) + ' → L4 ' + p(4).toFixed(2) + ' → L5 ' + p(5).toFixed(2)
      + ' … L27 ' + p(27).toFixed(2));
-  ok('and the whole ladder is worth about a quarter more troop power',
-     Math.abs(p(27)/p(0) - 1.27) < 0.01, '×' + (p(27)/p(0)).toFixed(3));
+  /* Derived from the constant, not written as a literal. This asserted ×1.27 — correct while
+     the bonus was 1% a level — and failed the moment it moved to 2.5%, reporting a real change
+     as a regression. A test that hardcodes the value of the thing it is measuring only ever
+     checks that nobody changed it. */
+  const expect = 1 + D.ACADEMY_POWER * D.BUILDINGS.academy.max;
+  ok('the whole ladder is worth what the constant says it is worth',
+     Math.abs(p(27)/p(0) - expect) < 0.01,
+     '×' + (p(27)/p(0)).toFixed(3) + ' against ×' + expect.toFixed(3)
+     + ' (' + (D.ACADEMY_POWER*100) + '% × ' + D.BUILDINGS.academy.max + ' levels)');
 
   /* The invariant the bonus was chosen to protect. */
   const tot = c => Object.values(c).reduce((a, b) => a + b, 0);
