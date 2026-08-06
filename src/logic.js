@@ -693,18 +693,98 @@ export function buildTime(s,k){
    Without this you could rush the keep and leave a village of huts behind it.
    Raising the Town Hall to level L needs a growing number of other buildings
    already standing at L−1 — so the whole hold climbs together. */
-export function townhallNeedCount(toLvl){ return Math.min(6, 1 + Math.floor(toLvl/4)); }
+/* Five, not six. The named pair below is an ADDITIONAL requirement, so leaving the quota at
+   six made the gate strictly harder rather than differently shaped, and the goal was never
+   to slow the game down — it was to stop the six being cherry-picked. Five any-buildings
+   plus two named lands close to where six any-buildings did.
+
+   Worth recording how nearly this went wrong: the simulator breached its army floor after
+   the pair landed, I read that as the rule being too slow, and eased this number first. It
+   did not help, because the rule was not the problem — the BOT was reading req.short (the
+   nearest candidates) and had no idea the level named two specific buildings, so it raised
+   almost-finished ones while the gate stayed shut. The measurement included an agent that
+   could not follow the new instruction. Fixing the bot restored the floors on its own. */
+export function townhallNeedCount(toLvl){ return Math.min(5, 1 + Math.floor(toLvl/4)); }
+
+/* ── the named pair ──
+   Counting buildings was not enough. The count caps at six, so a player picked the six
+   CHEAPEST and left everything else at nothing: measured, the four resource buildings plus
+   the Barracks and the Wall carry you to Town Hall 30 for 26% of what a full hold costs,
+   with the Archery Range, Stable, Mage Spire, Great Library and Command Center never
+   raised at all. The rule's own comment claimed "the whole hold climbs together". It did
+   not — six of twenty-two did.
+
+   So each Town Hall level also names TWO specific buildings that must have kept pace, the
+   way Whiteout Survival does it. A checklist is a task; a quota is a shopping trip where
+   you buy the cheapest thing on the shelf.
+
+   DERIVED, not tabulated. Sixty hand-written entries would need auditing every time a
+   building's cap or Town Hall gate changed, and the failure would be silent in the worst
+   way: a level that demands the War Academy at 15 when it stops at 9 is a hold that can
+   never be raised again. So the pair is computed from the eligible pool — which is exactly
+   the set that CAN satisfy it — and the suite proves every level is satisfiable and that
+   every building takes its turn.
+
+   The requirement clamps to each building's own maximum, so a capped building counts as
+   kept-up rather than as an impossible demand. */
+/* Every building, in a FIXED order. The walk below indexes this rather than the eligible
+   subset, and that distinction is the whole trick: indexing a list whose LENGTH changes as
+   buildings unlock gave a hopeless spread — Lumberyard and Quarry named at four levels
+   running, Town Hall 3 and 4 naming the same pair, and the Runeworks never named at all,
+   because a modulus over a growing list keeps landing in the same early region. */
+const TH_ORDER = Object.keys(BUILDINGS).filter(k => k !== 'townhall').sort();
+/* Coprime with TH_ORDER.length, checked by the suite — see townhallPair. */
+export const TH_STRIDE = 3;
+export function townhallPool(toLvl){
+  const at = toLvl - 1;
+  // a building whose own Town Hall gate is not yet open cannot be asked for
+  return TH_ORDER.filter(k => !(BUILDINGS[k].th && BUILDINGS[k].th > at));
+}
+/* What level this building has to be at for a Town Hall of toLvl — its own cap if that is
+   lower, which is what keeps a maxed Academy from blocking the game forever. */
+export function pairLevel(key, toLvl){
+  return Math.min(BUILDINGS[key].max, toLvl - 1);
+}
+export function townhallPair(toLvl){
+  /* Step two along the fixed order per level and take the first two ELIGIBLE entries from
+     there, wrapping. Because the stride and the list are both constant, consecutive levels
+     never name the same pair and every building comes round in turn; the eligibility skip
+     only ever moves the window forward past things that cannot exist yet. */
+  const eligible = k => !(BUILDINGS[k].th && BUILDINGS[k].th > toLvl - 1);
+  /* The stride must be COPRIME with the list length or the walk never visits half the
+     positions. Stepping 2 over 22 buildings has gcd 2, so it only ever landed on even
+     indices — the odd ones were reached incidentally when the eligibility skip nudged the
+     window forward, and the Runeworks (which enters the pool at Town Hall 23, with only
+     eight levels left) was never named at all. 3 is coprime with 22, so every position
+     comes round. */
+  const start = ((toLvl - 2) * TH_STRIDE) % TH_ORDER.length;
+  const out = [];
+  for(let n = 0; n < TH_ORDER.length && out.length < 2; n++){
+    const k = TH_ORDER[(start + n) % TH_ORDER.length];
+    if(eligible(k) && !out.includes(k)) out.push(k);
+  }
+  return out;
+}
+export function pairMet(s, toLvl){
+  return townhallPair(toLvl).filter(k => (s.b[k] || 0) < pairLevel(k, toLvl));
+}
+
 export function townhallReq(s){
   const toLvl = s.b.townhall + 1;
   const need = townhallNeedCount(toLvl);
   const others = Object.keys(BUILDINGS).filter(k => k !== 'townhall');
   const ready = others.filter(k => s.b[k] >= toLvl - 1);
+  const pair = townhallPair(toLvl);
+  const pairShort = pairMet(s, toLvl);
   // the closest candidates, so the UI can say what to raise next
   const short = others
     .filter(k => s.b[k] < toLvl - 1 && !(BUILDINGS[k].th && s.b.townhall < BUILDINGS[k].th))
     .sort((a,b) => s.b[b] - s.b[a])
     .slice(0, 4);
-  return { toLvl, need, have: ready.length, ok: ready.length >= need, ready, short };
+  return { toLvl, need, have: ready.length,
+           ok: ready.length >= need && pairShort.length === 0,
+           ready, short, pair, pairShort,
+           pairLevels: pair.map(k => ({ key: k, at: s.b[k] || 0, need: pairLevel(k, toLvl) })) };
 }
 
 /* ── the road to the next Town Hall ──
@@ -735,20 +815,28 @@ export function costToReach(s, key, toLvl){
 export function townhallPath(s){
   const r = townhallReq(s);
   if(r.ok) return { ...r, path: [], want: 0 };
+  const priced = k => {
+    const c = costToReach(s, k, pairLevel(k, r.toLvl));
+    return c && { key: k, levels: c.levels, cost: c.cost, required: false,
+                  weight: Object.values(c.cost).reduce((a, b) => a + b, 0) };
+  };
+  /* The named pair goes in FIRST and is marked required — it is not optional and not
+     interchangeable, so a route that offered the cheapest six instead would be a list of
+     taps that does not unblock the Town Hall. That would be worse than showing nothing:
+     the player would follow it and still be refused. */
+  const path = r.pairShort.map(k => ({ ...priced(k), required: true })).filter(x => x.key);
   const want = Math.max(0, r.need - r.have);
-  const path = Object.keys(BUILDINGS)
-    .filter(k => k !== 'townhall')
+  const chosen = new Set(path.map(p => p.key));
+  const rest = Object.keys(BUILDINGS)
+    .filter(k => k !== 'townhall' && !chosen.has(k))
     .filter(k => (s.b[k] || 0) < r.toLvl - 1)
     .filter(k => !(BUILDINGS[k].th && s.b.townhall < BUILDINGS[k].th))
     .filter(k => BUILDINGS[k].max >= r.toLvl - 1)
-    .map(k => {
-      const c = costToReach(s, k, r.toLvl - 1);
-      return { key: k, levels: c.levels, cost: c.cost,
-               weight: Object.values(c.cost).reduce((a, b) => a + b, 0) };
-    })
+    .map(priced)
+    .filter(Boolean)
     .sort((a, b) => a.weight - b.weight)
-    .slice(0, want);
-  return { ...r, path, want };
+    .slice(0, Math.max(0, want - path.filter(p => (s.b[p.key] || 0) < r.toLvl - 1).length));
+  return { ...r, path: path.concat(rest), want };
 }
 
 /* ── the build crews ── */

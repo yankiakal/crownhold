@@ -190,9 +190,16 @@ try {
        p.path.map(x => x.key + ' ' + (r.b[x.key]||0)).join(', '));
     ok('every step can reach the target level at all',
        p.path.every(x => D.BUILDINGS[x.key].max >= p.toLvl - 1));
-    ok('steps are ordered cheapest first',
-       p.path.every((x, i) => i === 0 || p.path[i-1].weight <= x.weight),
-       p.path.map(x => x.weight).join(' ≤ '));
+    /* Required-then-cheapest, not cheapest-first. The named pair leads the list because it
+       cannot be substituted — a route sorted purely by price would put two cheap buildings
+       above a mandatory expensive one, and a player following it in order would do the
+       cheap work first and still be refused. */
+    const req = p.path.filter(x => x.required), rest = p.path.filter(x => !x.required);
+    ok('the named pair leads the road', p.path.slice(0, req.length).every(x => x.required),
+       p.path.map(x => x.key + (x.required ? '*' : '')).join(' → '));
+    ok('and the substitutable steps after it are cheapest first',
+       rest.every((x, i) => i === 0 || rest[i-1].weight <= x.weight),
+       rest.map(x => x.weight).join(' ≤ ') || 'none');
     ok('no step is the Town Hall itself', !p.path.some(x => x.key === 'townhall'));
     // and the whole road renders into the hold panel
     UI.render();
@@ -203,10 +210,15 @@ try {
 
     /* And when the gate opens it must flip to the raise itself, not keep listing
        chores. A checklist that stays up after it is satisfied is a lie. */
+    /* Satisfying the COUNT is no longer enough — the two named buildings have to have kept
+       pace as well, which is the entire point of the change. This block used to raise six
+       cheap buildings and expect the gate to open; now it must also honour the pair, and
+       that is exactly the player behaviour the rule is meant to force. */
     for(const k of ['farm','lumberyard','quarry','ironmine','barracks','wall']) r.b[k] = 12;
+    for(const k of L.townhallPair(r.b.townhall + 1)) r.b[k] = L.pairLevel(k, r.b.townhall + 1);
     const p2 = L.townhallPath(r);
-    ok('with the pace met, the gate reads open', p2.ok && p2.path.length === 0,
-       p2.have + ' of ' + p2.need);
+    ok('with the count AND the named pair met, the gate reads open', p2.ok && p2.path.length === 0,
+       p2.have + ' of ' + p2.need + ', pair ' + p2.pair.join('+'));
     UI.render();
     const ready = (nodes.app && nodes.app.innerHTML) || '';
     ok('and the road offers the Town Hall itself', /class="road ready"/.test(ready));

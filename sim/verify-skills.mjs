@@ -544,6 +544,82 @@ console.log('\n── a pre-skills save is inert, not broken ──');
   }
 }
 
+/* ── the Town Hall names two buildings, and they cannot be substituted ──
+   Counting buildings was not enough. The count caps at six, so the cheapest six carried a
+   player to Town Hall 30 for 26% of a full hold's cost with the Archery Range, Stable, Mage
+   Spire, Great Library and Command Center never raised at all — while the rule's own
+   comment claimed the whole hold climbed together.
+
+   The dangerous failure of a named requirement is an IMPOSSIBLE one: several buildings cap
+   below 30, so a level demanding the War Academy at 15 when it stops at 9 would wall the
+   game off for ever. That is the first thing asserted here. */
+{
+  console.log('\n── the Town Hall names two buildings ──');
+  const others = Object.keys(D.BUILDINGS).filter(k => k !== 'townhall');
+  const max = D.BUILDINGS.townhall.max;
+
+  let impossible = [], empty = [], dupes = 0, sameAsPrev = 0, prev = '';
+  const named = {};
+  for(let lvl = 2; lvl <= max; lvl++){
+    const pair = L.townhallPair(lvl);
+    if(pair.length !== 2) empty.push(lvl);
+    if(pair[0] === pair[1]) dupes++;
+    if(pair.join() === prev) sameAsPrev++;
+    prev = pair.join();
+    for(const k of pair){
+      named[k] = (named[k] || 0) + 1;
+      const need = L.pairLevel(k, lvl);
+      // it must be reachable: within the building's own cap and its gate already open
+      if(need > D.BUILDINGS[k].max) impossible.push('TH' + lvl + ' wants ' + k + ' ' + need);
+      if(D.BUILDINGS[k].th && D.BUILDINGS[k].th > lvl - 1)
+        impossible.push('TH' + lvl + ' wants ' + k + ' before its own gate opens');
+    }
+  }
+  ok('every level names exactly two', empty.length === 0 && dupes === 0,
+     empty.length ? 'short at ' + empty.join(',') : 'all ' + (max-1) + ' levels');
+  ok('and never asks for a level a building cannot reach', impossible.length === 0,
+     impossible.slice(0,3).join('; ') || 'clamped to every cap');
+  ok('consecutive levels never name the same pair', sameAsPrev === 0);
+  ok('and the pair is stable — the same level always names the same two',
+     L.townhallPair(17).join() === L.townhallPair(17).join() &&
+     L.townhallPair(17).join() !== L.townhallPair(18).join());
+
+  /* Coverage: the whole point is that nothing is skippable. A building never named is a
+     building a player can leave at zero for ever. */
+  const never = others.filter(k => !named[k]);
+  ok('EVERY building takes its turn — nothing is skippable', never.length === 0,
+     Object.keys(named).length + ' of ' + others.length
+     + (never.length ? ' — never named: ' + never.join(', ') : ''));
+  /* The stride has to be coprime with the list length or the walk visits only a fraction of
+     the positions. At 2 over 22 it reached even indices only, and the Runeworks — which
+     enters the pool at Town Hall 23 with eight levels to go — was never named. Asserted as
+     arithmetic so a future building count cannot silently reintroduce it. */
+  const gcd = (a, b) => b ? gcd(b, a % b) : a;
+  ok('and the stride is coprime with the roster, so the walk covers all of it',
+     gcd(L.TH_STRIDE, others.length) === 1,
+     'stride ' + L.TH_STRIDE + ' vs ' + others.length + ' buildings, gcd '
+     + gcd(L.TH_STRIDE, others.length));
+
+  /* And the rush is actually closed. A hold with the six cheapest buildings maxed and
+     nothing else must be refused, where before it sailed through. */
+  const rusher = hold();
+  for(const k of others) rusher.b[k] = 0;
+  for(const k of ['farm','lumberyard','quarry','ironmine','barracks','wall']) rusher.b[k] = 19;
+  rusher.b.townhall = 19;
+  const req = L.townhallReq(rusher);
+  ok('the cheapest-six hold has the COUNT it needs', req.have >= req.need,
+     req.have + ' of ' + req.need + ' at level ' + (req.toLvl-1));
+  ok('but is refused, because the named pair has not kept pace', !req.ok,
+     'missing: ' + (req.pairShort.map(k => D.BUILDINGS[k].name).join(', ') || 'nothing'));
+
+  /* The costed route must include the pair, or the UI hands out a list of taps that does
+     not unblock anything — worse than showing nothing, because the player follows it. */
+  const path = L.townhallPath(rusher);
+  ok('and the road it offers leads through them',
+     req.pairShort.every(k => path.path.some(step => step.key === k)),
+     path.path.map(x => x.key + (x.required ? '*' : '')).join(', '));
+}
+
 /* ── the wall eats stone ──
    Supply gave the Lumberyard and Iron Mine a permanent job and did nothing for the Quarry,
    which still ran +23 stone/s spare at a maxed hold. A wall that has been hit needs

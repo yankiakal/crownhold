@@ -255,7 +255,14 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
       else {
         // clear the Town Hall's prerequisites first — that is what the gate is for
         const req = L.townhallReq(s);
-        if(!req.ok) for(const k of req.short) if(eligible(k)){ pick=k; break; }
+        /* The NAMED pair first, then the nearest substitutable ones. The bot used to read
+           only req.short — the closest candidates by level — which made it blind to the two
+           buildings the level actually demands, so it kept raising almost-there buildings
+           while the gate stayed shut. The simulator reported army 1,421 against a floor of
+           1,500 and I nearly eased the rule over it: the rule was fine, the bot was reading
+           the wrong field. A human player is shown these two by name on the road panel. */
+        if(!req.ok) for(const k of req.pairShort) if(eligible(k)){ pick=k; break; }
+        if(!pick && !req.ok) for(const k of req.short) if(eligible(k)){ pick=k; break; }
         const prodOf = {food:'farm',wood:'lumberyard',stone:'quarry',iron:'ironmine'};
         // only resources a building actually produces — Isle Ore has none
         const order = Object.keys(RES_META)

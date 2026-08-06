@@ -203,13 +203,25 @@ function renderRoad(S){
   if(p.ok){
     const cost = buildCost(S, 'townhall'), can = canAfford(S, cost) && freeSlot(S);
     return '<div class="road ready"><div class="rhead">🏛️ Town Hall '+p.toLvl+' is ready'
-      + ' <span class="hmeta">'+p.have+' of '+p.need+' buildings at level '+(p.toLvl-1)+'</span></div>'
+      + ' <span class="hmeta">'+p.have+' of '+p.need+' buildings at level '+(p.toLvl-1)
+      + ' · ' + p.pair.map(k => BUILDINGS[k].name).join(' and ') + ' have kept pace</span></div>'
       + '<div class="rrow"><span class="rcost">'+costHtml(S, cost)+' · ⏱ '+ftime(buildTime(S,'townhall'))+'</span>'
       + '<button class="primary" data-act="upgrade" data-key="townhall" '+(can?'':'disabled')+'>Raise it</button></div></div>';
   }
+  /* The named pair is spelled out even when it is already satisfied, because "raise any
+     six" and "raise these two, plus any six" are different instructions and a player who
+     reads the first will follow the cheapest route and still be refused. */
   let h = '<div class="road"><div class="rhead">🏛️ The road to Town Hall '+p.toLvl
     + ' <span class="hmeta">'+p.have+' of '+p.need+' buildings at level '+(p.toLvl-1)
-    + ' — cheapest '+p.want+' first</span></div>';
+    + '</span></div>'
+    + '<div class="rrow"><span class="rname" style="color:var(--ink-dim)">This level also asks for '
+    + p.pair.map(k => {
+        const lv = p.pairLevels.find(x => x.key === k);
+        const met = lv && lv.at >= lv.need;
+        return '<b style="color:var(--' + (met ? 'good' : 'gold') + ')">' + BUILDINGS[k].name
+             + ' ' + lv.need + (met ? ' ✓' : '') + '</b>';
+      }).join(' and ')
+    + ' — these two cannot be substituted.</span></div>';
   for(const step of p.path){
     const bd = BUILDINGS[step.key];
     const now = S.b[step.key] || 0;
@@ -218,7 +230,8 @@ function renderRoad(S){
     const cost = buildCost(S, step.key);
     const can = !busy && !capped && freeSlot(S) && canAfford(S, cost);
     h += '<div class="rrow"><span class="rname">'+bd.icon+' '+bd.name
-      + ' <b>'+now+'→'+(p.toLvl-1)+'</b></span>'
+      + ' <b>'+now+'→'+(step.required ? step.levels + now : (p.toLvl-1))+'</b>'
+      + (step.required ? ' <span class="hmeta" style="color:var(--gold)">required</span>' : '')+'</span>'
       + '<span class="rcost">'+(step.levels > 1 ? step.levels+' levels · ' : '')+costHtml(S, cost)+'</span>'
       + '<button data-act="upgrade" data-key="'+step.key+'" '+(can?'':'disabled')+'>'
       + (busy ? 'building' : capped ? 'Town Hall caps it' : 'Raise') + '</button></div>';
