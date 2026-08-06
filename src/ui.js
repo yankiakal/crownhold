@@ -481,9 +481,15 @@ function renderHeroes(S){
     + 'Chairs are the cap: another with every '+COURT_PER_TH+' levels of Town Hall, to '+COURT_MAX+'. '
     + 'Everyone else is free to lead a column.</div>';
   for(const k of court) h += heroRow(S, k, 'court');
-  for(let i = court.length; i < seats; i++)
-    h += '<div class="hero locked"><span class="hname">🪑 An empty chair</span>'
-      + '<div class="hmeta">Seat a hero to make their counsel count for the whole hold</div></div>';
+  /* One line for the empty chairs, not one row each. At Town Hall 14 with two advisors seated
+     that was five identical "🪑 An empty chair" blocks — a fifth of the Court screen repeating
+     the same sentence, and the more chairs the hold earns the worse it gets. The count is the
+     information; the sentence only needs saying once. */
+  const spare = seats - court.length;
+  if(spare > 0)
+    h += '<div class="hero locked"><span class="hname">🪑 '+spare+' empty chair'+(spare===1?'':'s')
+      + '</span><div class="hmeta">Seat a hero to make their counsel count for the whole hold'
+      + (idle.length ? ' — '+idle.length+' await a command below' : '')+'</div></div>';
 
   if(away.length){
     h += '<div class="stat-note" style="margin-top:.7rem">On the road — their counsel is with the column, not the hall</div>';
@@ -2500,21 +2506,29 @@ const TABS = [
   { key:'war',     icon:'⚔️', name:'War' },
   { key:'world',   icon:'🗺️', name:'Frontier' },
   { key:'court',   icon:'👑', name:'Court' },
-  { key:'ally',    icon:'🤝', name:'Alliance' },
+  { key:'ally',    icon:'🤝', name:'Alliance', online: true },
   { key:'ledger',  icon:'📜', name:'Ledger' },
 ];
+/* The Alliance tab needs a server: offline it held one line telling you to sign in, which is a
+   sixth of the navigation spent on an instruction. So it only appears once you are online, and
+   its panels fold into the Ledger until then — hidden from the bar, still reachable, nothing
+   lost. The sign-in button is in the footer either way. */
+const liveTabs = () => TABS.filter(t => !t.online || net.isOnline());
+const paneFor = key => (key === 'ally' && !net.isOnline()) ? 'ledger' : key;
 let tab = 'hold';
 const inTab = (key, body) => '<div class="tabpane" data-pane="'+key+'"'
   + (tab === key ? '' : ' hidden-narrow')+'>'+body+'</div>';
 
 function renderTabBar(){
-  return '<nav class="tabbar">' + TABS.map(t =>
+  return '<nav class="tabbar">' + liveTabs().map(t =>
     '<button data-act="tab" data-key="'+t.key+'"'+(tab === t.key ? ' class="on"' : '')+'>'
     + '<span>'+t.icon+'</span>'+t.name+'</button>').join('') + '</nav>';
 }
 
 export function render(){
   const S = store.s;
+  // signing out while standing on the Alliance tab would leave no pane visible at all
+  if(!liveTabs().some(t => t.key === tab)) tab = 'hold';
   /* One call, before anything is drawn: sound.watch diffs the state it was last shown
      and fires at most one cue. Here rather than in the tick loop because this is the
      single funnel every change passes through — a local action, a server pull and an
@@ -2535,7 +2549,7 @@ export function render(){
                       + renderRally(S) + renderBoss(S))
       + inTab('court',  renderHeroes(S) + renderPets(S) + renderRegalia(S) + renderSpoils(S))
       + inTab('hold',   renderDecrees(S) + renderResearch(S))
-      + inTab('ally',   renderAlliance(S) + renderMusterRoll(S) + renderRealm(S) + renderRift(S))
+      + inTab(paneFor('ally'), renderAlliance(S) + renderMusterRoll(S) + renderRealm(S) + renderRift(S))
       + inTab('ledger', renderQuest(S) + renderDaily(S) + renderEvent(S) + renderCalendar(S)
                       + renderLeaderboard(S) + renderMastery(S) + renderAchievements(S)
                       + renderChronicle(S))

@@ -86,7 +86,12 @@ setTimeout(() => {
       const w = f.contentWindow, d = w.document;
       // switch the frame to its tab by clicking the bar button, as a thumb would
       const btn = d.querySelector('[data-act="tab"][data-key="' + t + '"]');
-      if(btn) btn.click();
+      /* Say so when a tab is not in the bar. The Alliance tab only exists once you are online,
+         and without this the click silently did nothing and the frame reported the HOLD pane's
+         measurements under the ally label — a harness quietly measuring the wrong thing, which
+         is the one failure this file was built to stop. */
+      if(!btn){ rows.push(t + ': not in the bar (offline) — its panels fold into the Ledger'); continue; }
+      btn.click();
       const doc = d.documentElement;
       /* How much of a phone screen is spent before any content: the header and the threat bar
          sit OUTSIDE the tabs, so whatever they cost is paid on all six. */

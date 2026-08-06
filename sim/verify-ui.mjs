@@ -136,14 +136,26 @@ try {
      tab must have a pane, exactly one may be active, and every pane's panels must still be
      in the DOM — they are hidden by CSS, so a pane that stopped rendering would take its
      panels out of the desktop layout too, where there are no tabs at all. */
+  /* Five tabs offline, not six. The Alliance tab needs a server — offline it held a single line
+     telling you to sign in, which is a sixth of the navigation spent on an instruction. Its
+     panels fold into the Ledger instead, so nothing becomes unreachable. This suite runs with no
+     server, so the offline arrangement is what it sees. */
   const panes = [...full.matchAll(/data-pane="([a-z]+)"/g)].map(m => m[1]);
-  ok('every tab has at least one pane',
-     ['hold','war','world','court','ally','ledger'].every(t => panes.includes(t)),
+  ok('every tab that is offered has a pane',
+     ['hold','war','world','court','ledger'].every(t => panes.includes(t)),
      [...new Set(panes)].join(', '));
+  ok('and the Alliance tab is not offered while offline',
+     !full.includes('data-act="tab" data-key="ally"'));
+  /* The Alliance panel itself is still there — it is what invites you to sign in. The Muster
+     Roll is NOT, because renderMusterRoll returns nothing without a server, which is correct and
+     is why asserting on it was wrong: a test looking for something the offline game deliberately
+     never draws. */
+  ok('but the Alliance panel is still on the page, folded into the Ledger',
+     /found or join one/.test(full));
   const active = [...full.matchAll(/<div class="tabpane" data-pane="([a-z]+)">/g)].map(m => m[1]);
   ok('exactly one tab is active at a time', new Set(active).size === 1,
      'active: ' + [...new Set(active)].join(', ') || 'none');
-  ok('and the bar offers every tab', ['hold','war','world','court','ally','ledger']
+  ok('and the bar offers every tab it should', ['hold','war','world','court','ledger']
      .every(t => full.includes('data-act="tab" data-key="' + t + '"')));
   /* The panels themselves must survive — hidden, not removed. */
   ok('hidden panes still render their panels, for the desktop layout',
