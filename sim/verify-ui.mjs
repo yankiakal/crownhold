@@ -98,6 +98,12 @@ try {
   ok('render() produced a hold', full.length > 5000, full.length + ' chars');
   ok('no "undefined" reached the page', !/undefined/.test(full));
   ok('no "NaN" reached the page', !/NaN/.test(full));
+  /* The build stamp has to be ON SCREEN, not merely defined. Its whole purpose is
+     answering "which version am I looking at" during a test, and a stamp that exists only
+     in the bundle answers nothing. `dev` is the value when src/ is imported without Vite,
+     which is exactly what this suite does. */
+  ok('the build stamp is rendered', /build (dev|[0-9a-f]{6,})/.test(full),
+     (full.match(/build [^<]{0,24}/) || ['(absent)'])[0]);
 
   /* ── the column composer: three captains, four classes ──
      The party covers spearman/archer/knight and leaves the ballista uncovered,

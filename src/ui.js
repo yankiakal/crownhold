@@ -54,6 +54,12 @@ import * as net from './net.js';
 import { mountScene, sceneResize, pickBuilding, setSkinTint, setLabels, labelsShown } from './iso.js';
 import { store, freshState, save } from './state.js';
 
+/* Vite replaces __BUILD__ at build time (see vite.config.js). The typeof guard is what
+   lets this same file run under verify-ui.mjs, which imports src/ directly in Node with no
+   bundler anywhere — an unguarded reference to a define is a ReferenceError there, and it
+   would take the whole UI suite down. */
+const BUILD = typeof __BUILD__ === 'string' ? __BUILD__ : 'dev';
+
 const app = document.getElementById('app');
 const fx  = document.getElementById('fx');
 
@@ -1377,7 +1383,11 @@ function renderLeaderboard(S){
 function renderFooter(){
   const armed = Date.now() < resetArmedUntil;
   const who = net.accountName();
+  /* The build stamp is in the footer of every screen on purpose. Testing against a
+     stale cached page cost an afternoon of "why is the ballista still here" — the answer
+     was that the page was three versions old and nothing on it said so. */
   return '<footer><span>Crownhold prototype — every Valor point was earned, none were sold.</span>'
+    + '<span class="hmeta" title="the build you are looking at">build '+BUILD+'</span>'
     + '<button data-act="account">'+(who ? '☁ '+who : '☁ Play online')+'</button>'
     + '<button data-act="codex">📖 Codex — all the rules</button>'
     + '<button data-act="lore">📜 Annals — the story of the Reach</button>'

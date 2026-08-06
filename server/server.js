@@ -1023,7 +1023,15 @@ function serveStatic(req, res, urlPath){
     res.end(existsSync(DIST) ? 'not found' : 'run `npm run build` first');
     return;
   }
-  res.writeHead(200, {'content-type': MIME[extname(file)] || 'application/octet-stream'});
+  /* No-cache on the document. The server sent no freshness headers at all, so browsers
+     applied their own heuristic and happily served a stale index.html — which meant
+     testing a fresh build against localhost showed the previous one, with no way to tell.
+     Assets keep a short cache; the HTML carries the whole game, so it must revalidate. */
+  const ext = extname(file);
+  res.writeHead(200, {
+    'content-type': MIME[ext] || 'application/octet-stream',
+    'cache-control': ext === '.html' ? 'no-cache, must-revalidate' : 'max-age=60',
+  });
   res.end(readFileSync(file));
 }
 
