@@ -1222,11 +1222,17 @@ function renderResearch(S){
   /* Two branches, one queue — so the tabs are not merely tidying. Each shows its own
      progress, because "43/120 Battle" is the number that tells you what kind of ruler
      you have actually been. */
-  h += '<div class="order-row" style="margin-bottom:.4rem">';
+  /* A scrolling strip rather than a wrapping row. Three branches already wrapped to two lines at
+     393px and four is worse, and this game is meant to keep gaining branches for years — so the
+     tabs have to be a thing that scrolls sideways, which is what Whiteout does too. One line,
+     however many branches, and the count stays on the tab because "43/100 Battle" is the number
+     that tells you what kind of ruler you have been. */
+  h += '<div class="brstrip">';
   for(const [br,b] of Object.entries(BRANCHES)){
     const bp = branchProgress(S, br);
     h += '<button class="stance-btn'+(researchBranch===br?' active':'')+'" data-act="researchBranch" '
-      + 'data-key="'+br+'" title="'+b.blurb+'">'+b.icon+' '+b.name+' '+bp.done+'/'+bp.total+'</button>';
+      + 'data-key="'+br+'" title="'+b.blurb+'">'+b.icon+' '+b.name
+      + ' <i>'+bp.done+'/'+bp.total+'</i></button>';
   }
   h += '</div>';
   h += '<div class="stat-note">'+BRANCHES[researchBranch].blurb+'</div>';
@@ -1708,6 +1714,8 @@ function renderFooter(){
 
 let codexOpen = false, loreOpen = false, storeOpen = false, settingsOpen = false;
 let mapCentred = false, sceneCentred = false;
+/* set when the branch changes, cleared once the tab has been scrolled into view */
+let branchScrollWanted = false;
 let resetArmedUntil = 0; // two-tap raze confirmation window
 let arenaStance = 'balanced', arenaFrac = 0.5;
 let listView = false, sceneMounted = false;
@@ -2778,6 +2786,24 @@ export function render(){
     mapCentred = true;
   }
 
+  /* Bring the chosen branch tab fully into view, once per change. Four branches cannot fit 318px
+     — each tab is ~110px — so the strip scrolls, and picking the last one left it half cut off at
+     the right edge, which reads as broken rather than as scrollable. Guarded by a flag for the
+     same reason the map is: re-scrolling every render would fight the player's own swipe four
+     times a second. */
+  if(branchScrollWanted){
+    const strip = document.querySelector('.brstrip');
+    const on = strip && strip.querySelector('.stance-btn.active');
+    if(on){
+      /* scrollLeft by hand rather than scrollIntoView: that would also scroll the PAGE vertically
+         to bring the strip into view, yanking the hold out from under whatever the player was
+         looking at. This touches one axis of one element. */
+      const want = on.offsetLeft - (strip.clientWidth - on.offsetWidth) / 2;
+      strip.scrollLeft = Math.max(0, Math.min(want, strip.scrollWidth - strip.clientWidth));
+    }
+    branchScrollWanted = false;
+  }
+
   const slot = document.getElementById('scene-slot');
   /* Centre the walls the first time they are drawn wider than the screen — the gatehouse is at
      the bottom-middle of the grid, so an un-scrolled view starts on the left wall. */
@@ -2851,7 +2877,7 @@ const VIEW_ACTIONS = {
   },
   holdView:    () => { listView = !listView; sceneMounted = false; },
   arenaStance: b => { arenaStance = b.dataset.key; },
-  researchBranch: b => { researchBranch = b.dataset.key; },
+  researchBranch: b => { researchBranch = b.dataset.key; branchScrollWanted = true; },
   arenaFrac:   b => { arenaFrac = Number(b.dataset.key); },
   arenaAttack: b => {
     const target = b.dataset.key;

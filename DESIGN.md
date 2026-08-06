@@ -1391,6 +1391,61 @@ holds the widest row inside a portrait phone (four nodes plus channels is 316px 
 available once the page padding and the dock's column are taken out) and refuses a node label
 too long for 70px.
 
+### How research grows, and the Seafaring branch (v1.70)
+
+The tree was 240 levels across three branches, and the justification written into `research.js`
+was wrong. It argued that depth is where Whiteout hides pay-to-win, so we should not have depth.
+That conflates two things: **filler levels are bad** — +1% rungs, hundreds of them, emotionally
+nothing — but **total depth is not**, provided no step is dull. The first was used to argue
+against the second, which does not follow.
+
+Measured before deciding anything: research was 74 days of queue, buildings another 106. For a
+game intended to run for years that is thin — though no live-service game ships years of content
+at launch, so the real question is whether the system can absorb additions without a redesign.
+Two ceilings turned out to matter:
+
+- **A row cannot exceed four nodes.** Portrait gives ~318px; four nodes is 316px, five is 392px.
+  So a branch grows *longer* (vertical scroll is fine on a phone) but never *wider*.
+- **Tabs are therefore the axis of growth**, and three already wrapped to two lines. They are a
+  horizontally scrolling strip now, which is what Whiteout uses, and the chosen tab is scrolled
+  into view by hand rather than with `scrollIntoView` — that would drag the page vertically too
+  and yank the hold out from under whoever was looking at it.
+
+Then a survey of what had *no* research at all: the Salt Isle, marches and Command, heroes and
+the Court, the frontier and beasts, wall wear, Writs. Each is a branch's worth of studies landing
+on levers the engine already reads — so the room to grow is real and none of it is filler.
+
+**Seafaring** is the first of them, over the thinnest system in the game: a whole second map
+whose only study was the Electrum tier that spends what it produces. Six studies — Cartography,
+Victualling, the Spyglass, Prospecting, Seamanship, Salvage — over `voyageTime`, `rationCost`,
+the ore roll, the landing's loss factor, `revealAround`'s radius, and the non-ore haul. Nothing
+new was invented.
+
+Three details worth keeping:
+
+- **Costs are partly in Rations**, so studying the Isle competes with sailing it. The one branch
+  where research and the thing researched draw on the same purse.
+- **The Spyglass has two levels, not ten.** A reveal radius is an integer ring; spread over ten
+  levels it would be eight dull rungs and two real ones, which is exactly the trap. Shallow and
+  expensive is the honest shape for a lever that cannot be continuous.
+- **No study buys a second simultaneous voyage.** "One voyage at a time, however many march slots
+  you own" is a stated pillar of the Isle, and a test asserts that a fully-researched hold still
+  cannot sail twice.
+
+Four of the six only take effect inside `voyageStep`, so the suite **sails a real voyage twice**
+with a seeded `rand` and compares what came home, rather than probing a function. Getting that
+fixture right took four passes: an unled column carries six load (capacity comes from the
+captains) and loses to everything; `fitColumn` takes a per-troop object, not a headcount, so a
+number made every line zero and the ship silently refused to sail; the landing had to actually
+*win* or the `won` branch never ran; and iron seeded at 900k sat above the storage cap, so the
+clamp swallowed the Salvage gain and both runs reported an identical −730,650. That last one is
+the second time a storage clamp has hidden a real effect in this project.
+
+Research is now **84 days over 24 studies and 292 levels** — Growth 6, Battle 20, Seafaring 11,
+Electrum 47. Prospecting also lifts Isle Ore by up to two fifths, which takes Electrum from ~8
+seasons of perfect sailing to ~6: the branch that studies the Isle makes the metal it yields come
+faster, which is the intended shape.
+
 ## Pacing: can an addict finish it in a week? (v1.5)
 
 The honest failure the simulator exposed: with uncapped Valor, attention
@@ -1453,8 +1508,8 @@ prototype held about 200 hours of build queue and that launch would need build a
 training times multiplied a further 10–20×. Measured, that had been wrong for a long
 time: `TIME_SCALE` is already 10, and maxing every building is **2,544 hours of
 construction — 106 days of continuously busy queue**, or roughly 62 once the second crew
-opens at Town Hall 10. Research is a further 74 days on its own parallel queue —
-11 of them the general tracks, 15 the per-line masteries, and 47 the Electrum tier.
+opens at Town Hall 10. Research is a further 84 days on its own parallel queue —
+Growth 6, Battle 20 (masteries included), Seafaring 11, and the Electrum tier 47.
 
 No player keeps a queue 100% busy, so the real figure is comfortably inside the intended
 six-to-twelve-month window. The multiplier does not need applying; it already was.

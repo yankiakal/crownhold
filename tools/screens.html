@@ -167,10 +167,32 @@ setTimeout(() => {
         let buried = 0, buriedWhat = [];
         if(dock){
           const dr = dock.getBoundingClientRect();
+          /* Clip a button to whatever scroll container holds it before judging it. A horizontally
+             scrolling strip — the research branch tabs, for one — legitimately has content beyond
+             its own right edge, and getBoundingClientRect happily reports that off-screen position
+             even though the container clips it and the player can never see it under the dock. The
+             fourth branch tab tripped this the moment it existed. What matters is the VISIBLE
+             rectangle, so intersect with every scrollable ancestor and test that. */
+          const visibleRect = el => {
+            let r = el.getBoundingClientRect();
+            let n = el.parentElement;
+            while(n && n !== d.body){
+              const cs = f.contentWindow.getComputedStyle(n);
+              if(/auto|scroll|hidden/.test(cs.overflowX + cs.overflowY)){
+                const nr = n.getBoundingClientRect();
+                const left = Math.max(r.left, nr.left), right = Math.min(r.right, nr.right);
+                const top = Math.max(r.top, nr.top), bottom = Math.min(r.bottom, nr.bottom);
+                if(right <= left || bottom <= top) return null;      // wholly clipped away
+                r = { left, right, top, bottom, width: right - left, height: bottom - top };
+              }
+              n = n.parentElement;
+            }
+            return r;
+          };
           d.querySelectorAll('button[data-act]').forEach(el => {
             if(el.closest('.dock') || el.closest('.tabbar') || el.closest('.card')) return;
-            const r = el.getBoundingClientRect();
-            if(r.width && r.right > dr.left && r.left < dr.right){
+            const r = visibleRect(el);
+            if(r && r.width && r.right > dr.left && r.left < dr.right){
               buried++;
               if(buriedWhat.length < 4)
                 buriedWhat.push((el.textContent || el.dataset.act || '?').trim().slice(0, 14));

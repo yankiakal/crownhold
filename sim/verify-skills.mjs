@@ -16,6 +16,7 @@ import * as SK from '../src/skills.js';
 import * as ST from '../src/state.js';
 import * as AR from '../src/arena.js';
 import * as R from '../src/research.js';
+import * as IS from '../src/isle.js';
 import { freshState } from '../src/state.js';
 import { readFileSync } from 'node:fs';
 
@@ -1535,6 +1536,96 @@ console.log('\n── the research tree is shaped, not a flat list ──');
   ok('no study unlocks before its own prerequisite can', gateClash.length === 0, gateClash.join('; ') || 'clean');
 }
 
+console.log('\n── Seafaring: six studies, measured by actually sailing ──');
+{
+  /* The Salt Isle was the thinnest system in the game — a whole second map with no research on it
+     at all. These six exist because the levers were already in the code; none is a new mechanic.
+     Four of them only take effect INSIDE voyageStep, so the only honest way to check them is to
+     run a real voyage twice with the same seeded rand and compare what came home. The generic
+     "every study moves a number" probe cannot see any of this, and it said so. */
+  /* Three captains, not none. A column's capacity comes from marchCapacity(s, heroes), so an
+     unled column carries 6 load — three spearmen — and its 37 power loses to everything on the
+     island. `want` is a per-troop object too, not a headcount: passed a number, every want[k] is
+     undefined and the ship silently refuses to sail. Both cost a debugging pass. */
+  const CAPTAINS = ['marshal', 'gatekeeper', 'forager'];
+  const COLUMN = { spearman:400, archer:200, knight:120, ballista:60 };
+  /* wreck at tier 2 asks 1,914 against this column's 4,881, so the landing WINS and the `won`
+     branch — where ore, salvage and charting all live — actually runs. It also yields iron and
+     stone besides ore, which is what makes Salvage separable from Prospecting.
+     hall at tier 2 asks 4,374: still a win, but a near enough one that the loss factor is large
+     enough for Seamanship to move it by more than a rounding step. */
+  const isleHold = (site = 'wreck') => {
+    const s = hold();
+    s.b.townhall = 20; s.b.kitchen = 10; s.b.library = 24;
+    s.isle = IS.genIsle(4242, 0);
+    // the beach at 3,6 is the one cell genIsle always leaves charted
+    const beach = IS.cellAt(s.isle, 3, 6);
+    beach.site = site; beach.tier = 2; beach.known = true; beach.spent = false;
+    s.res.rations = 5000;
+    /* Iron and stone start EMPTY. hold() seeds them at 900k, which is over the storage cap, so
+       gainRes clamped both runs to the same ceiling and the salvage delta came out as an identical
+       -730,650 in each — the gain was real and entirely invisible. The same clamp swallowed a
+       wave-plunder fixture earlier in this project's life. */
+    s.res.iron = 0; s.res.stone = 0;
+    s.research = {};
+    s.now = Date.now();
+    return s;
+  };
+  const sail = (research, site = 'wreck') => {
+    const s = isleHold(site);
+    s.research = research;
+    const before = { ore: s.res.isleore || 0, iron: s.res.iron || 0,
+                     troops: Object.values(s.t).reduce((a, b) => a + b, 0),
+                     known: s.isle.cells.filter(c => c.known).length };
+    W.startVoyage(s, 3, 6, COLUMN, CAPTAINS, s.now);
+    /* A fixed rand makes the ore roll deterministic, so a difference between two runs can only
+       come from the research being measured. */
+    W.voyageStep(s, s.now + 99 * 3600 * 1000, () => 0.5);
+    return {
+      ore: (s.res.isleore || 0) - before.ore,
+      iron: (s.res.iron || 0) - before.iron,
+      lost: before.troops - Object.values(s.t).reduce((a, b) => a + b, 0),
+      known: s.isle.cells.filter(c => c.known).length - before.known,
+    };
+  };
+
+  const base = sail({});
+  ok('a voyage brings Isle Ore home at all', base.ore > 0, '+' + base.ore + ' ore');
+
+  const cheap = isleHold(), dear = isleHold();
+  dear.research = { cartography: 10 };
+  ok('Cartography shortens the crossing',
+     W.voyageTime(dear) < W.voyageTime(cheap),
+     Math.round(W.voyageTime(cheap)/60000) + 'm → ' + Math.round(W.voyageTime(dear)/60000) + 'm');
+  const vict = isleHold(); vict.research = { victualling: 10 };
+  ok('Victualling makes her cheaper to victual',
+     W.rationCost(vict) < W.rationCost(cheap),
+     W.rationCost(cheap) + ' → ' + W.rationCost(vict) + ' rations');
+
+  const pro = sail({ prospecting: 10 });
+  ok('Prospecting brings back more ore', pro.ore > base.ore, base.ore + ' → ' + pro.ore);
+  const sal = sail({ salvage: 10 });
+  ok('Salvage brings back more of everything else', sal.iron > base.iron,
+     base.iron + ' → ' + sal.iron + ' iron');
+  ok('and Salvage does NOT quietly raise the ore too', sal.ore === base.ore,
+     'ore ' + sal.ore + ' vs ' + base.ore);
+  const seaBase = sail({}, 'hall');
+  const sea = sail({ seamanship: 10 }, 'hall');
+  ok('Seamanship costs fewer men on a contested landing', sea.lost < seaBase.lost,
+     seaBase.lost + ' → ' + sea.lost + ' hurt on the Drowned Hall');
+  const spy = sail({ spyglass: 2 });
+  ok('The Spyglass charts a wider ring', spy.known > base.known,
+     base.known + ' → ' + spy.known + ' cells charted');
+
+  /* The pillar this branch must not break: one voyage at a time, whatever you have studied. */
+  const two = isleHold(); two.research = { cartography:10, victualling:10, spyglass:2,
+                                           prospecting:10, seamanship:10, salvage:10 };
+  W.startVoyage(two, 3, 6, COLUMN, CAPTAINS, two.now);
+  ok('no amount of Seafaring buys a second simultaneous voyage',
+     W.voyageBlockedBy(two, 3, 6) === 'Your ship is already at sea',
+     String(W.voyageBlockedBy(two, 3, 6)));
+}
+
 console.log('\n── a save from before the Electrum rename carries over ──');
 {
   /* Truegold was Kingshot's resource name shipping verbatim, so the metal became Electrum and the
@@ -1797,19 +1888,26 @@ console.log('\n── no study moves nothing (the bug Electrum itself was) ─�
     s.research = { [k]: R.RESEARCH[k].max };
     if(probe(s) === before) dead.push(k);
   }
-  /* Three are genuinely invisible to these probes and are checked by their own tests
-     elsewhere: loot and Valor are per-event multipliers, medicine is a casualty roll. */
-  const expected = ['siegecraft', 'statecraft', 'medicine', 'smelting'];
+  /* Invisible to these probes and covered by their own, stronger tests elsewhere: loot and Valor
+     are per-event multipliers, medicine is a casualty roll, and the whole Seafaring branch only
+     takes effect inside a voyage — which the block above measures by actually sailing one, twice,
+     and comparing what came home. Being on this list means "measured somewhere better", never
+     "unmeasured": the grep below is the floor, and every name here also has a real assertion. */
+  const expected = ['siegecraft', 'statecraft', 'medicine', 'smelting',
+                    'cartography', 'victualling', 'spyglass', 'prospecting', 'seamanship', 'salvage'];
   const unexplained = dead.filter(k => !expected.includes(k));
   ok('every study moves a number this harness can see', unexplained.length === 0,
      unexplained.length ? 'DEAD: ' + unexplained.join(', ') : dead.length + ' deferred to their own tests');
 
-  /* And the four deferred ones must still be READ by name somewhere in the engine —
-     a weaker check than measurement, but it catches a study nothing consumes at all. */
-  const src = readFileSync(new URL('../src/logic.js', import.meta.url), 'utf8');
+  /* And every deferred one must still be READ by name somewhere in the engine — a weaker check
+     than measurement, but it is what catches a study nothing consumes at all. world.js is in the
+     list because that is where a voyage lives; logic.js alone would have called all six Seafaring
+     studies unread. */
+  const src = ['../src/logic.js', '../src/world.js']
+    .map(f => readFileSync(new URL(f, import.meta.url), 'utf8')).join('\n');
   const unread = expected.filter(k => !src.includes("'" + k + "'"));
-  ok('and the deferred four are each consumed by name in logic.js', unread.length === 0,
-     unread.join(', ') || expected.join(', ') + ' all read');
+  ok('and every deferred study is consumed by name in logic.js or world.js', unread.length === 0,
+     unread.join(', ') || 'all ' + expected.length + ' read');
 }
 
 console.log('\n' + (fail ? '✗ ' + fail + ' FAILED, ' + pass + ' passed' : '✓ all ' + pass + ' passed') + '\n');

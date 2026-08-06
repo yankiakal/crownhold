@@ -381,6 +381,7 @@ section.panel{
   .tabpane.base > section.panel > .stat-note,
   .tabpane.base > section.panel > .trow,
   .tabpane.base > section.panel > .order-row,
+  .tabpane.base > section.panel > .brstrip,
   .tabpane.base > section.panel > .treewrap,
   .tabpane.base > section.panel > .tkey,
   .tabpane.base > section.panel > .road{
@@ -447,6 +448,21 @@ section.panel{
 .stat-note b{color:var(--ink)}
 .trow{flex-wrap:wrap}
 .tier-tag{font-family:var(--sans);font-size:.6rem;color:var(--gold);letter-spacing:.08em}
+
+/* ── the branch strip ──
+   One line that scrolls, not a row that wraps. Three branches already took two lines at 393px, and
+   the tree is meant to keep gaining branches for years, so wrapping would keep eating vertical
+   space a phone does not have. flex-shrink:0 is what makes the strip scroll instead of squeezing
+   every tab into illegibility. */
+.brstrip{
+  display:flex;gap:.4rem;overflow-x:auto;overscroll-behavior-x:contain;
+  -webkit-overflow-scrolling:touch;min-width:0;
+  margin-bottom:.4rem;padding-bottom:.2rem;scrollbar-width:none;
+}
+.brstrip::-webkit-scrollbar{display:none}
+.brstrip .stance-btn{flex:0 0 auto;white-space:nowrap}
+.brstrip .stance-btn i{font-style:normal;font-variant-numeric:tabular-nums;color:var(--ink-dim)}
+.brstrip .stance-btn.active i{color:var(--gold-deep)}
 
 /* ── the research tree ──
    Absolute nodes over an SVG of connectors, both placed from the same computed coordinates in

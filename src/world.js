@@ -5,7 +5,8 @@
 import { TROOPS, TIME_SCALE, HERO_POOL, BEASTS, BEAST_UNLOCK, BEAST_COUNT, BEAST_ROAM_MS,
          BEAST_RESPAWN_MS,
          MARCH_HEROES, MARCH_BASE_CAP, CAP_PER_HERO, CAP_PER_LEVEL, LOAD, seasonNo } from './defs.js';
-import { ISLE_TH, VOYAGE_MS, RATION_COST, ISLE_SITES, genIsle, cellAt, revealAround } from './isle.js';
+import { ISLE_TH, VOYAGE_MS, RATION_COST, ISLE_REVEAL, ISLE_SITES,
+         genIsle, cellAt, revealAround } from './isle.js';
 import { scoreDeed } from './events.js';
 import { takeCasualties } from './logic.js';
 import {
@@ -15,6 +16,9 @@ import {
   skillTotal, skillClass, skillCond,
   gainRes, gainValor, gainShield, gainMastery, pushLog, showBanner, fmt, ftime,
 } from './logic.js';
+/* Seafaring research reaches into the voyage: the crossing, the victuals, the ore, the losses,
+   the ring charted on landing, and the rest of the haul. */
+import { techBonus, techLvl } from './research.js';
 
 /* The frontier. 15×9 with the hold at its centre — up from 11×7, which held only
    18 tiles and topped out at level 3, so the map ran out of interesting work by
@@ -601,12 +605,16 @@ export function tickWorld(s, now, rand=Math.random){
    a purchase. */
 export function isleReady(s){ return (s.b.townhall || 0) >= ISLE_TH; }
 export function rationCost(s){
-  // the Victualler makes sailing cheaper as it grows: a full one halves the cost
-  return Math.round(RATION_COST * Math.max(0.5, 1 - 0.02 * (s.b.kitchen || 0)));
+  // the Victualler makes sailing cheaper as it grows: a full one halves the cost,
+  // and Victualling research takes another fifth off on top
+  return Math.round(RATION_COST * Math.max(0.5, 1 - 0.02 * (s.b.kitchen || 0))
+                                * Math.max(0.5, 1 - techBonus(s, 'victualling')));
 }
 export function voyageTime(s){
-  // the Command Center runs the shipping too, so a well-found ship crosses faster
-  return Math.round(VOYAGE_MS * Math.max(0.55, 1 - 0.015 * (s.b.command || 0)));
+  // the Command Center runs the shipping too, so a well-found ship crosses faster,
+  // and Cartography shortens the crossing again — floored so it can never approach zero
+  return Math.round(VOYAGE_MS * Math.max(0.55, 1 - 0.015 * (s.b.command || 0))
+                              * Math.max(0.6, 1 - techBonus(s, 'cartography')));
 }
 export function voyageBlockedBy(s, x, y){
   if(!isleReady(s)) return 'The charts mean nothing until Town Hall ' + ISLE_TH;
@@ -661,7 +669,8 @@ export function voyageStep(s, now, rand = Math.random){
   let hurt = 0;
   if(d.fight > 0){
     const ratio = against / Math.max(power, 1);
-    const lf = Math.min(0.4, (won ? 0.10 : 0.30) * ratio);
+    const lf = Math.min(0.4, (won ? 0.10 : 0.30) * ratio)
+             * Math.max(0.4, 1 - techBonus(s, 'seamanship'));
     for(const k of Object.keys(v.troops)){
       const l = Math.round(v.troops[k] * lf);
       if(l > 0){ const r = takeCasualties(s, k, l, true); hurt += r.hurt + r.dead; }
@@ -669,11 +678,12 @@ export function voyageStep(s, now, rand = Math.random){
   }
   if(won){
     const [lo, hi] = d.ore;
-    const ore = Math.round((lo + rand() * (hi - lo)) * c.tier);
+    const ore = Math.round((lo + rand() * (hi - lo)) * c.tier
+                           * (1 + techBonus(s, 'prospecting')));
     gainRes(s, 'isleore', ore);
     const bits = ['+' + ore + ' Isle Ore'];
     for(const [r, amt] of Object.entries(d.res || {})){
-      const got = Math.round(amt * (0.6 + 0.4 * c.tier));
+      const got = Math.round(amt * (0.6 + 0.4 * c.tier) * (1 + techBonus(s, 'salvage')));
       gainRes(s, r, got); bits.push('+' + fmt(got) + ' ' + r);
     }
     if(d.valor){ gainValor(s, d.valor * c.tier); bits.push('+' + (d.valor * c.tier) + ' Valor'); }
@@ -682,7 +692,7 @@ export function voyageStep(s, now, rand = Math.random){
     addDeeds(s, party, 'longHaul', now);
     for(const id of party) if(s.heroes[id]) s.heroes[id].xp += 160;
     c.spent = true;
-    const found = revealAround(s.isle, v.x, v.y);
+    const found = revealAround(s.isle, v.x, v.y, ISLE_REVEAL + techLvl(s, 'spyglass'));
     s.isle.sailed = (s.isle.sailed || 0) + 1;
     pushLog(s, '⛵ '+d.icon+' '+d.name+' gives up '+bits.join(', ')
       + (hurt ? ' ('+hurt+' wounded)' : '')

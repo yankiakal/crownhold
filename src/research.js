@@ -26,8 +26,11 @@
 // makes a tree a tree.
 //
 // So there are three additions, and each one exists to create a decision:
-//   1. BRANCHES. Growth or Battle. Two spines, one queue — so investing in one is
-//      genuinely not investing in the other, and the queue makes that cost real.
+//   1. BRANCHES, sharing one queue — so investing in one is genuinely not investing
+//      in the others, and the single queue is what makes that cost real. Two at
+//      first, four now (Growth, Battle, Seafaring, Electrum), and this is the axis
+//      the tree is meant to grow along for years: a branch is a tab, and tabs
+//      scroll, whereas a row cannot exceed four nodes on a portrait phone.
 //   2. PREREQUISITES (`needs`). A study can require a level in an earlier study.
 //      This is the part the flat list was missing entirely.
 //   3. PER-LINE MASTERY. Kingshot's battle tree researches each troop type
@@ -54,15 +57,22 @@
 
 import { TIME_SCALE, TROOPS } from './defs.js';
 
-/* Three branches, and the third one is Kingshot's own arrangement: Electrum research lives on its
-   own screen there rather than hanging off the main tree, and for good reason. Every Electrum study
-   perfects a mundane track, so inside the main tree all four attached to roots four and five rows
-   above them — which drew as long edges looping around the whole diagram. Given its own branch each
-   is simply an endgame study that names its prerequisite, and both other trees come out clean. */
+/* Four branches. Electrum has its own, which is Kingshot's arrangement too — theirs lives in a
+   separate building — and there was a drawing reason as well: every Electrum study perfects a
+   mundane track, so inside the main tree all four attached to roots four and five rows above them
+   and drew as long edges looping around the whole diagram. Given its own branch each is simply an
+   endgame study that names its prerequisite, and every other tree comes out clean.
+
+   Seafaring came later, for a different reason: the Salt Isle had no research at all, and a game
+   meant to run for years needs somewhere to keep growing that is not filler. The remaining
+   candidates with zero research are marches and Command, heroes and the Court, the frontier and
+   beasts, wall wear, and Writs — each one a branch's worth of studies that land on levers the
+   engine already reads. */
 export const BRANCHES = {
-  growth:   {name:'Growth', icon:'🌾', blurb:'Land, stores, and the speed of every crew.'},
-  battle:   {name:'Battle', icon:'⚔️', blurb:'The army, the wall, and what comes home.'},
-  electrum: {name:'Electrum', icon:'🏵️', blurb:'The deepest study in the Reach, paid for in Electrum from the Salt Isle.'},
+  growth:    {name:'Growth', icon:'🌾', blurb:'Land, stores, and the speed of every crew.'},
+  battle:    {name:'Battle', icon:'⚔️', blurb:'The army, the wall, and what comes home.'},
+  seafaring: {name:'Seafaring', icon:'🧭', blurb:'The crossing to the Salt Isle, and what the ship brings back.'},
+  electrum:  {name:'Electrum', icon:'🏵️', blurb:'The deepest study in the Reach, paid for in Electrum from the Salt Isle.'},
 };
 
 /* `needs` is the tree: {study: level}. `line` marks a per-troop-line study.
@@ -102,6 +112,41 @@ export const RESEARCH = {
   siegecraft:   {name:'Plunder',       short:'Plunder',       icon:'🧺', branch:'battle', max:10, per:5,  th:8,  lib:6,  unit:'%',
                  fx:'raid loot', cost:{wood:420, iron:180}, time:200,
                  needs:{medicine:2}},
+
+  /* ── Seafaring ──
+     The Salt Isle was a whole second map with no research touching it at all: its only study was
+     the Electrum tier that spends what it produces. That made it the thinnest system in the game
+     and the obvious first place to deepen, because every lever below already exists in the code —
+     voyageTime, rationCost, the ore roll, the landing's loss factor, revealAround's radius, the
+     non-ore haul. Nothing here is a new mechanic, so nothing here is a filler rung.
+
+     Costs are partly in RATIONS on purpose. Rations are what victual a voyage, so studying the
+     Isle competes with sailing it — the one branch in the tree where research and the thing being
+     researched draw on the same purse. That is a decision rather than a queue.
+
+     What is deliberately NOT here: a second simultaneous voyage. "One voyage at a time, however
+     many march slots you own" is a stated pillar of the Isle's design — it is what makes a crossing
+     a decision you live with rather than a farm — and no research should be able to buy that away. */
+  cartography:  {name:'Cartography',   short:'Charts',    icon:'🗺️', branch:'seafaring', max:10, per:1.5, th:12, lib:12, unit:'%',
+                 fx:'shorter crossing', cost:{wood:900, rations:40}, time:260},
+  victualling:  {name:'Victualling',   short:'Victuals',  icon:'🥫', branch:'seafaring', max:10, per:2,   th:12, lib:13, unit:'%',
+                 fx:'cheaper to victual a voyage', cost:{food:1200, rations:50}, time:280,
+                 needs:{cartography:2}},
+  /* Two levels, not ten. The reveal radius is an integer ring — a per-level fraction of a cell
+     would be eight dull rungs and two real ones, which is the exact trap this tree is built to
+     avoid. Shallow and expensive is the honest shape for a lever that cannot be continuous. */
+  spyglass:     {name:'The Spyglass',  short:'Spyglass',  icon:'🔭', branch:'seafaring', max:2,  per:1,   th:12, lib:13, unit:' ring',
+                 fx:'further sight from a landing', cost:{steel:60, rations:120}, time:600,
+                 needs:{cartography:3}},
+  prospecting:  {name:'Prospecting',   short:'Prospect',  icon:'⛏️', branch:'seafaring', max:10, per:4,   th:14, lib:15, unit:'%',
+                 fx:'more Isle Ore from a landing', cost:{iron:900, rations:80}, time:320,
+                 needs:{victualling:3}},
+  seamanship:   {name:'Seamanship',    short:'Seamen',    icon:'⚓', branch:'seafaring', max:10, per:3,   th:14, lib:15, unit:'%',
+                 fx:'fewer lost on a contested landing', cost:{steel:40, rations:70}, time:300,
+                 needs:{spyglass:1}},
+  salvage:      {name:'Salvage',       short:'Salvage',   icon:'🪝', branch:'seafaring', max:10, per:3,   th:16, lib:18, unit:'%',
+                 fx:'more of everything else a site yields', cost:{stone:1400, rations:90}, time:340,
+                 needs:{prospecting:3}},
 };
 
 /* ── per-line mastery ──
@@ -137,7 +182,9 @@ export const EL_LIB = 20;           // the Library still has to keep up
 /* The Electrum price is set against the MEASURED ore economy, not by feel. The Salt Isle is the
    only source: 49 sites a season, one three-hour voyage at a time, spent when worked and refilled
    only when the season turns. Worked perfectly — every site, every fortnight — that is 586 Isle Ore
-   a season, so 147 Electrum. This tier first shipped at 6 Electrum a level, which totalled 7,078
+   a season, so 147 Electrum. Prospecting in the Seafaring branch lifts that by up to two fifths, to
+   about 205 a season, which is the intended shape: the branch that studies the Isle is what makes
+   the metal it yields come faster. This tier first shipped at 6 Electrum a level, which totalled 7,078
    and would have taken FORTY-EIGHT seasons of flawless sailing: not a long grind, an unreachable
    one. At 1 it totals ~1,230, or eight seasons at perfect play and roughly twice that for anyone
    living a normal life. That is the intended shape for the last thing in the game. */
