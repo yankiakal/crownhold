@@ -14,7 +14,12 @@ export const BUILDINGS = {
               cost:{wood:110,stone:50}, time:16, max:30, th:3},
   stable:    {name:'Stable',     icon:'🐎', fx:'Drills Knights, on its own queue.',
               cost:{wood:160,food:120}, time:20, max:30, th:5},
-  siegeyard: {name:'Siege Yard', icon:'⚙️', fx:'Builds Ballistas, on its own queue.',
+  /* The keys `siegeyard` and `ballista` are deliberately NOT renamed to match the
+     Battlemage. They are in every save on disk — `s.b.siegeyard`, `s.t.ballista`,
+     `s.tier.ballista`, `s.trainedBy.ballista`, plus columns in flight, posted Watch
+     garrisons and the raid register — and a rename for flavour is not worth a migration
+     across all of them. Identifiers are for the machine; the player never sees one. */
+  siegeyard: {name:'Mage Spire', icon:'☄️', fx:'Trains Battlemages, on its own queue.',
               cost:{wood:240,iron:90},  time:24, max:30, th:7},
   embassy:   {name:'Embassy',    icon:'🕊️', fx:'+2 alliance helps your builds may take, per level.',
               cost:{stone:180,wood:120},time:18, max:25, th:5},
@@ -56,6 +61,32 @@ export const COST_EXP = 2.0, TIME_EXP = 1.6;
 export const TIERS = ['I','II','III','IV','V','VI','VII','VIII','IX','X'];
 export const TIER_POWER = 0.25, TIER_UPKEEP = 0.18, TIER_COST = 0.22;
 
+/* ── one soldier, one tier bill, whichever door they came through ──
+   A soldier can arrive at tier N two ways: drilled at tier N, or drilled at tier 1 and
+   reforged later. TIER_COST is the premium the yard charges for the first route, so it
+   has to be the promotion's per-soldier price for the second one too. Anything else
+   makes the ROUTE matter rather than the destination, and the cheaper route becomes
+   compulsory knowledge.
+
+   It used to be 4.8× apart: 1.98× a soldier's base cost to drill them at tier X against
+   9.45× to reforge them into it. So the efficient opening was to drill nothing until the
+   Academy topped out, promote every line for almost nothing (the per-head term collapsed
+   to 1 on an empty muster), and only then mass-drill. Measured end to end, that reached
+   the same 400/400/200/100 army at tier X for 181,812 where growing an army the obvious
+   way cost 716,113 — a 3.9× penalty for ordinary play, which is worse than an exploit
+   for clever play.
+
+   The per-head term itself was never the bug, and I removed it once by mistake. It is
+   what keeps tiers NEUTRAL between a narrow army and a broad one: the bill scales with
+   the bodies that benefit, so power-per-resource is the same either way and the meta is
+   settled by cover and the counter triangle, which is where the design wants it settled.
+   Pricing promotions per LINE instead handed a concentrated army the same upgrade for a
+   quarter of the money, and mono took the floor at three budgets out of four.
+
+   There is deliberately no separate metal charge on top. An earlier version added iron
+   per step for the flavour of reforging, and that was exactly what broke the parity —
+   the invariant is load-bearing and the flavour was not. */
+
 /* upkeep: food/sec per soldier — armies eat. This is what keeps army size in
    equilibrium with your farms instead of scaling to infinity. */
 export const TROOPS = {
@@ -63,7 +94,12 @@ export const TROOPS = {
   archer:  {name:'Archer',   plural:'Archers',  icon:'🏹', power:5,  upkeep:0.10, cost:{food:20,wood:25}, time:6,  at:'range'},
   // iron units eat less per point of power — quality is the path past the food ceiling
   knight:  {name:'Knight',   plural:'Knights',  icon:'🐎', power:11, upkeep:0.17, cost:{food:60,iron:20}, time:12, at:'stable'},
-  ballista:{name:'Ballista', plural:'Ballistae',icon:'⚙️', power:24, upkeep:0.38, cost:{wood:80,iron:40}, time:20, at:'siegeyard'},
+  /* A battlemage, not a siege engine — and the profile is the reason, not the flavour.
+     This line was always the glass cannon: dearest per body, highest power, HOLDS 0,
+     NEEDS 1, worth half of itself with nobody standing in front. That is a spellcaster's
+     shape, so the name follows the numbers rather than the numbers following the name.
+     Asked about adding mages as a FIFTH line; measured, there is no room — see DESIGN.md. */
+  ballista:{name:'Battlemage',plural:'Battlemages',icon:'☄️',power:24, upkeep:0.38, cost:{wood:80,iron:40}, time:20, at:'siegeyard'},
 };
 
 /* The Mastery track — Crownhold's replacement for VIP levels. Earned from every
@@ -283,7 +319,7 @@ export const BEAST_UNLOCK = { boar:1, wolf:4, elk:7, bear:11, wyrm:16 };
    obsolete: change what is COMING AT YOU, not what you own.
 
    Each season the Unpaid muster differently — a season of riders makes pikes
-   and shieldwall correct; a season of siege engines makes archers and volley
+   and shieldwall correct; a season of warcasters makes archers and volley
    correct. Nothing you own gets weaker. What changes is which of your things is
    the right answer this fortnight, which is exactly what a deep roster is for.
 
@@ -300,10 +336,10 @@ export const TEMPERS = [
    blurb:'Skirmishers and horse-archers. Ride them down — knights and a charge.',
    waves:{rabble:0.10, riders:0.15, skirmishers:0.60, brutes:0.15}, favours:'knight'},
   {id:'hammer',  name:'The Hammerfall', icon:'💪',
-   blurb:'Heavy bands with siege at their backs. Break them at range with volley.',
+   blurb:'Heavy bands with casters at their backs. Break them at range with volley.',
    waves:{rabble:0.10, riders:0.15, skirmishers:0.15, brutes:0.60}, favours:'archer'},
-  {id:'engines', name:'The Season of Engines', icon:'⚙️',
-   blurb:'Both sides bring machines. Ballistas earn their keep; walls do not.',
+  {id:'engines', name:'The Season of Sorcery', icon:'☄️',
+   blurb:'Both sides bring casters. Battlemages earn their keep; walls do not.',
    waves:{rabble:0.15, riders:0.20, skirmishers:0.20, brutes:0.45}, favours:'ballista'},
   {id:'lean',    name:'The Lean Season', icon:'🌾',
    blurb:'Hungry, disorganised bands — many of them, none of them fine.',
@@ -519,7 +555,7 @@ export const QUESTS = [
   {txt:'Reach Town Hall 4',              check:s=>s.b.townhall>=4,    reward:{valor:20},          rtxt:'+20 Valor'},
   {txt:'Reach Mastery 3',                check:s=>masteryLvl(s)>=3,   reward:{valor:8},           rtxt:'+8 Valor'},
   {txt:'Reach Town Hall 5',              check:s=>s.b.townhall>=5,    reward:{valor:12,shield:1}, rtxt:'+12 Valor, +1 Writ'},
-  {txt:'Train a Ballista',               check:s=>(s.trainedBy.ballista||0)>=1, reward:{valor:12},rtxt:'+12 Valor'},
+  {txt:'Train a Battlemage',             check:s=>(s.trainedBy.ballista||0)>=1, reward:{valor:12},rtxt:'+12 Valor'},
   {txt:'Repel 15 raids',                 check:s=>s.wavesWon>=15,     reward:{valor:15,shield:1}, rtxt:'+15 Valor, +1 Writ'},
   {txt:'Reach Town Hall 7',              check:s=>s.b.townhall>=7,    reward:{valor:25},          rtxt:'+25 Valor'},
   {txt:'Reach Mastery 6',                check:s=>masteryLvl(s)>=6,   reward:{valor:15},          rtxt:'+15 Valor'},

@@ -544,14 +544,97 @@ console.log('\n── a pre-skills save is inert, not broken ──');
   }
 }
 
+/* ── one soldier, one tier bill, whichever door they came through ──
+   Drilling a soldier at tier N and reforging one into tier N have to cost the same, or
+   the route matters more than the destination and the cheap route becomes compulsory
+   knowledge. They were 4.8× apart, which made "drill nothing until the Academy tops out"
+   the efficient opening and charged everyone who played normally 3.9× for the same army.
+
+   Both properties below were invisible until measured, and the second one bit me twice:
+   I removed the per-head term to fix the first, which quietly handed a concentrated army
+   the same tiers for a quarter of the price. */
+{
+  console.log('\n── one soldier, one tier bill, whichever door they came through ──');
+  const tot = c => Object.values(c).reduce((a, b) => a + b, 0);
+
+  /* The per-step invariant, stated directly against the yard's own premium. */
+  for(const k of Object.keys(D.TROOPS)){
+    const s = hold();
+    s.tier[k] = 4; s.t[k] = 200;
+    const step = tot(L.promoteCost(s, k));
+    const before = tot(L.trainCost(s, k, 200));
+    s.tier[k] = 5;
+    const after = tot(L.trainCost(s, k, 200));
+    ok('reforging a ' + k + ' costs what drilling one a tier higher costs',
+       Math.abs(step - (after - before)) <= 200,
+       'reforge ' + step + ' vs yard premium ' + (after - before));
+  }
+
+  /* And per head, which is what keeps tiers neutral between a narrow army and a broad
+     one — the bill scales with the bodies that benefit. */
+  const small = hold(), big = hold();
+  small.t = { spearman:100, archer:100, knight:100, ballista:100 };
+  big.t   = { spearman:400, archer:400, knight:400, ballista:400 };
+  for(const k of Object.keys(D.TROOPS))
+    ok('a line four times the size costs four times as much to reforge',
+       Math.abs(tot(L.promoteCost(big, k)) / tot(L.promoteCost(small, k)) - 4) < 0.02,
+       '×' + (tot(L.promoteCost(big, k)) / tot(L.promoteCost(small, k))).toFixed(2));
+
+  /* The end-to-end version of the trap: reach the same army at the same tier by both
+     routes and check the bills agree. This is the assertion that would have caught it —
+     the per-step costs looked reasonable in isolation. */
+  const armyOf = () => ({ spearman:400, archer:400, knight:200, ballista:100 });
+  const route = promoteFirst => {
+    const s = hold();
+    s.tier = { spearman:1, archer:1, knight:1, ballista:1 };
+    s.t = promoteFirst ? { spearman:0, archer:0, knight:0, ballista:0 } : armyOf();
+    let spent = 0;
+    const drill = () => { for(const [k, n] of Object.entries(armyOf())) spent += tot(L.trainCost(s, k, n)); };
+    if(!promoteFirst) drill();
+    for(const k of Object.keys(D.TROOPS))
+      while(L.tierOf(s, k) < 10){ spent += tot(L.promoteCost(s, k)); s.tier[k] = L.tierOf(s, k) + 1; }
+    if(promoteFirst) drill();
+    return spent;
+  };
+  const a = route(true), b = route(false);
+  ok('neither route to a tier-X army is cheaper than the other',
+     Math.abs(a - b) / Math.max(a, b) < 0.02,
+     'promote-first ' + a + ' vs drill-first ' + b + ' (×' + (b / a).toFixed(3) + ') — was ×3.94');
+
+  /* Tiers must not be a discount for concentrating. Power-per-resource on the tier axis
+     has to be roughly equal for a narrow army and a broad one of the same size, so that
+     cover and the counter triangle are what settle composition. Pricing per line instead
+     of per head broke exactly this, and mono took the floor at three budgets of four. */
+  const tierSpend = mix => {
+    const s = hold();
+    s.tier = { spearman:1, archer:1, knight:1, ballista:1 };
+    s.t = { spearman:0, archer:0, knight:0, ballista:0 };
+    const load = 960;
+    const unit = Object.entries(mix).reduce((a2, [k, w]) => a2 + w * D.LOAD[k], 0);
+    for(const [k, w] of Object.entries(mix)) s.t[k] = Math.round(w * load / unit);
+    let spent = 0, gained = 0;
+    const before = Object.keys(mix).reduce((p, k) => p + L.tierPower(s, k) * s.t[k], 0);
+    for(const k of Object.keys(mix))
+      while(L.tierOf(s, k) < 8){ spent += tot(L.promoteCost(s, k)); s.tier[k] = L.tierOf(s, k) + 1; }
+    gained = Object.keys(mix).reduce((p, k) => p + L.tierPower(s, k) * s.t[k], 0) - before;
+    return gained / spent;
+  };
+  const narrow = tierSpend({ knight:1 });
+  const broad = tierSpend({ spearman:1, archer:1, knight:1, ballista:1 });
+  ok('tiers buy the same power per resource narrow or broad',
+     Math.max(narrow, broad) / Math.min(narrow, broad) < 1.35,
+     'narrow ' + narrow.toFixed(4) + ' vs broad ' + broad.toFixed(4) +
+     ' power/resource  (×' + (Math.max(narrow, broad) / Math.min(narrow, broad)).toFixed(2) + ')');
+}
+
 /* ── interdependence, which is what actually stops a mono army ──
    Levelling power-per-load stopped one TYPE dominating and then made something worse
-   optimal: pick one and pour everything in. Promoting one troop line to tier 5 costs 165
-   resources where all four cost 972, one troop building serves instead of four, and all
-   three captains can share a class — so three archer captains fielding only archers
-   measured 3,803 against a mixed column's 3,263. Six times cheaper AND stronger.
+   optimal: pick one and pour everything in. One troop building served instead of four,
+   all three captains could share a class, and promotions were charged per soldier so a
+   narrow army promoted cheaply — three archer captains fielding only archers measured
+   3,803 against a mixed column's 3,263. Cheaper AND stronger.
 
-   No percentage nudge answers a 6× cost advantage. Structure does, and it is what
+   No percentage nudge answers a cost advantage that size. Structure does, and it is what
    Whiteout Survival actually uses: marksmen die without an infantry line, and the counter
    triangle is decisive. */
 {

@@ -1536,12 +1536,12 @@ function renderColumnComposer(S){
     const engines = (marchWant.ballista||0) + (marchWant.knight||0);
     if(engines > 0)
       h += '<div class="paceline"><span class="'+(cover > 0.5 ? 'good' : cover < 0.2 ? 'bad' : '')+'">'
-        + (cover > 0.5 ? '🛡️ Engines screened' : cover < 0.2 ? '⚠️ Engines unscreened' : '🛡️ Thin screen')
+        + (cover > 0.5 ? '🛡️ Casters screened' : cover < 0.2 ? '⚠️ Casters unscreened' : '🛡️ Thin screen')
         + ' <span class="hmeta">— casualties fall on whoever is in front, and right now there is '
         + (cover < 0.2 ? 'nobody' : 'a line') + '</span></span></div>';
   }
   if(overLoad) h += '<p class="d-warn">Over capacity — the extra will stay home. Bring stronger captains, '
-    + 'or fewer engines: a ballista weighs '+LOAD.ballista+' where a spearman weighs 1.</p>';
+    + 'or fewer casters: a battlemage weighs '+LOAD.ballista+' where a spearman weighs 1.</p>';
   /* Stated as fact, not scolded. Riding uncovered is a legitimate call — you may
      want the bodies more than the bonus — so this reports the cost and stops. */
   const bare = kinds.filter(k => (marchWant[k]||0) > 0 && lift[k] <= 0);
@@ -1605,6 +1605,8 @@ function renderDetail(S){
       body += '<p class="d-delta">Promote all to Tier '+TIERS[tier]+': power '+tierPower(S,k).toFixed(1)+' → '
         + (d.power*(1+0.25*tier)).toFixed(1)+' each (upkeep rises too)</p>'
         + '<p class="d-row">'+costHtml(S,pc)+'</p>'
+        + '<p class="hmeta">A fixed price — it costs this whether you muster '+S.t[k]+' or none, and every '
+        + d.plural.toLowerCase()+' you drill afterwards is already Tier '+TIERS[tier]+'.</p>'
         + '<button class="primary" data-act="promote" data-key="'+k+'" '+(canAfford(S,pc)?'':'disabled')+'>⬆ Promote to Tier '+TIERS[tier]+'</button>';
     }else if(tier < 10){
       body += '<p class="d-warn">Tier '+TIERS[tier]+' needs War Academy level '+tier+'.</p>';
@@ -1919,7 +1921,7 @@ function renderCodex(S){
     + '<div class="tscroll"><table><tr><th>Troop</th><th>Power</th><th>Cost each</th><th>Time each*</th><th>Eats</th><th>Needs</th></tr>'+troopRows+'</table></div>'
     + '<ul>'
     + '<li>*time shown includes your current ×'+tm.toFixed(2)+' training multiplier (Barracks −6%/level, plus heroes, spoils, Mastery). Costs/power/upkeep shown are Tier I — each tier is +25% power, +18% upkeep, +22% cost.</li>'
-    + '<li><b>Tiers</b>: the War Academy unlocks Tier II–X. Promoting reforges every unit of that class at once (cost scales with how many you own).</li>'
+    + '<li><b>Tiers</b>: the War Academy unlocks Tier II–X. Promoting reforges every unit of that class at once, and every recruit after it matches. A fixed price per line — it does not matter whether you promote before or after you drill, so there is nothing to time.</li>'
     + '<li>Army power = troop power × bonuses + 18 per Wall level.</li>'
     + '<li><b>Armies eat.</b> If food hits 0, roughly 2% of troops desert every 10s until the muster is affordable again.</li>'
     + '</ul>'

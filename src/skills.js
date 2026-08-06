@@ -85,8 +85,8 @@ export const SKILLS = {
                 fx:'+30% to archers in the column',            mods:{cls:0.30}},
   lanceCharge: {name:'Lance Charge',    icon:'🐎', where:'field', cls:'knight',
                 fx:'+30% to knights in the column',            mods:{cls:0.30}},
-  siegeTrain:  {name:'Siege Train',     icon:'⚙️', where:'field', cls:'ballista',
-                fx:'+30% to ballistas in the column',          mods:{cls:0.30}},
+  siegeTrain:  {name:'Warcasting',       icon:'☄️', where:'field', cls:'ballista',
+                fx:'+30% to battlemages in the column',        mods:{cls:0.30}},
   deepRaid:    {name:'Deep Raid',       icon:'🗺️', where:'field', cls:'knight',
                 fx:'−30% travel time, −20% hauled home',       mods:{speed:0.30, haul:-0.20}},
 };

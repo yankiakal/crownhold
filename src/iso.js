@@ -86,7 +86,10 @@ const LOOK = {
   library:    { roof:'#4c5661', body:'#5a5449', w:1.1, h:24, kind:'hall',  mat:'stone',   rmat:'tile'   },
   range:      { roof:'#4f6b3f', body:'#5c5140', w:1.0, h:16, kind:'yard',  mat:'timber',  rmat:'thatch' },
   stable:     { roof:'#6b5a3a', body:'#5f5342', w:1.2, h:18, kind:'hall',  mat:'timber',  rmat:'thatch' },
-  siegeyard:  { roof:'#5a5040', body:'#544c40', w:1.1, h:20, kind:'yard',  mat:'timber',  rmat:'slate'  },
+  /* Was a timber yard when this line built ballistae. A Mage Spire is stone and stands
+     tall — violet where the Runeworks is blue, so the two arcane buildings read as
+     related without reading as the same building. */
+  siegeyard:  { roof:'#3b3350', body:'#4c4060', w:0.8, h:32, kind:'tower', mat:'stone',   rmat:'lead'   },
   embassy:    { roof:'#6b6250', body:'#5d5647', w:1.0, h:22, kind:'hall',  mat:'plaster', rmat:'tile'   },
   command:    { roof:'#6b4a3a', body:'#57503f', w:1.0, h:26, kind:'tower', mat:'stone',   rmat:'tile'   },
   forge:      { roof:'#6b3a2c', body:'#4f4640', w:1.0, h:22, kind:'hall',  mat:'stone',   rmat:'slate'  },
@@ -657,9 +660,6 @@ function drawBuilding(ctx, key, lvl, opts){
       } else if(key === 'range'){                     // rack of pikes and a target
         ctx.strokeStyle = '#7a6a4a'; ctx.lineWidth = 1;
         for(let j=0;j<3;j++){ ctx.beginPath(); ctx.moveTo(px+j*3, py+3); ctx.lineTo(px+j*3+1.5, py-7); ctx.stroke(); }
-      } else {                                        // siegeyard: timber frames
-        ctx.strokeStyle = '#6b5334'; ctx.lineWidth = 1.6;
-        ctx.beginPath(); ctx.moveTo(px, py+3); ctx.lineTo(px+5, py-4); ctx.lineTo(px+10, py+3); ctx.stroke();
       }
       if(r() > 0.7){ ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(px+5, py+4, 5, 1.6, 0, 0, Math.PI*2); ctx.fill(); }
     }
@@ -1045,6 +1045,24 @@ function frame(now){
         ctx.globalAlpha = 0.5 + 0.4*Math.sin(tick/300 + i);
         ctx.fillStyle = '#7fa8d9';
         ctx.beginPath(); ctx.arc(sx + Math.cos(a)*16, sy - h - 4 + Math.sin(a)*7, 2.2, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+    if(key === 'siegeyard'){
+      /* Sparks climbing the spire, not orbiting it — the Runeworks binds runestone in a
+         circle, this place is drilling casters, so the motion goes up and leaves. */
+      const glow = ctx.createRadialGradient(sx, sy - h - 4, 1, sx, sy - h - 4, 18);
+      glow.addColorStop(0, 'rgba(178,142,232,0.34)');
+      glow.addColorStop(1, 'rgba(178,142,232,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(sx, sy - h - 4, 18, 0, Math.PI*2); ctx.fill();
+      for(let i=0;i<6;i++){
+        const t = ((tick/1400) + i/6) % 1;             // 0 at the base, 1 at the tip
+        ctx.globalAlpha = 0.55 * (1 - t);
+        ctx.fillStyle = '#c9a6f2';
+        ctx.beginPath();
+        ctx.arc(sx + Math.sin(t*5 + i)*5, sy - 6 - t*(h + 10), 1.5 - t*0.7, 0, Math.PI*2);
+        ctx.fill();
       }
       ctx.globalAlpha = 1;
     }

@@ -118,17 +118,26 @@ try {
   ok('no "undefined" in the composer', !/undefined/.test(h));
   ok('no "NaN" in the composer', !/NaN/.test(h));
 
-  /* Plurals. The bug this file was written to catch — the game used to append an
-     "s" to the singular, which is right for Archers and wrong for Spearmen and
-     Ballistae. So the test is "every troop declares a plural", not "every plural
-     is irregular": demanding irregularity would fail Archers, which is correct. */
+  /* Plurals. The bug this file was written to catch — the game used to append an "s" to
+     the singular, which is right for Archers and wrong for Spearmen. So the test is
+     "every troop declares a plural", not "every plural is irregular": demanding
+     irregularity would fail Archers, which is correct.
+
+     Derived from TROOPS rather than spelled out. This block used to assert the literal
+     word "ballistae" and broke the moment that line was renamed to the Battlemage —
+     a test that pins today's nouns fails on a rename that changed nothing it was
+     guarding. The property is "each declared plural reaches the screen, and no naive
+     singular+s does", which survives any renaming. */
   console.log('\n── every troop declares its own plural ──');
   for(const [k, d] of Object.entries(D.TROOPS))
     ok(k + ' declares a plural', typeof d.plural === 'string' && d.plural.length > d.name.length - 2,
        d.plural);
-  ok('nothing on screen says "spearmans"', !/spearmans/i.test(flat));
-  ok('nothing on screen says "ballistas"', !/ballistas/i.test(flat));
-  ok('the composer does say "ballistae"', /ballistae/i.test(flat));
+  for(const [k, d] of Object.entries(D.TROOPS)){
+    ok('the composer says "' + d.plural + '"', flat.includes(d.plural.toLowerCase()), d.plural);
+    const naive = d.name.toLowerCase() + 's';
+    if(naive !== d.plural.toLowerCase())
+      ok('and never "' + naive + '"', !flat.includes(naive), 'irregular: ' + d.name + ' → ' + d.plural);
+  }
 
   /* ── the road to the next Town Hall ──
      The pace gate is the only genuinely blocked goal in the game — closed for a third

@@ -34,7 +34,7 @@ export const RESEARCH = {
                  fx:'fewer casualties', cost:{food:320, wood:240}, time:170},
   statecraft:   {name:'Statecraft',    icon:'📜', max:10, per:4,   th:7,  lib:5,  unit:'%',
                  fx:'Valor earned', cost:{food:380, stone:260}, time:180},
-  siegecraft:   {name:'Siegecraft',    icon:'⚙️', max:10, per:5,   th:8,  lib:6,  unit:'%',
+  siegecraft:   {name:'Plunder',       icon:'🧺', max:10, per:5,   th:8,  lib:6,  unit:'%',
                  fx:'raid loot', cost:{wood:420, iron:180}, time:200},
   smelting:     {name:'Smelting',      icon:'🔥', max:10, per:6,   th:12, lib:8, unit:'%',
                  fx:'refining speed', cost:{stone:600, iron:300}, time:260},

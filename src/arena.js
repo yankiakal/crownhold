@@ -72,8 +72,8 @@ export function answerBonus(attState, defState){
   return answerBonusForClass(attState, dominantClass(defState));
 }
 
-/* A wall stops a surprise raid cold, but a besieger arrives prepared: in the
-   arena it counts for half — and ballistas are what a wall really fears. */
+/* A wall stops a surprise raid cold, but a prepared attacker does not care: in the
+   arena it counts for half — and battlemages are what a wall really fears. */
 export const WALL_IN_SIEGE = 0.5, SIEGE_MAX = 0.4;
 export function wallFactor(attState, troops){
   const { total } = composition(attState);
@@ -180,7 +180,7 @@ export function resolveArena(att, def, opts, now, rand = Math.random){
                    : sm < 1 ? ' Their ' + defStance + ' answered your ' + attStance + '.' : '';
   const answerNote = ab >= 0.08 ? ' Your line was built to counter theirs (+' + Math.round(ab*100) + '%).' : '';
   const siegeNote = defBd.wall > 0 && wf < WALL_IN_SIEGE - 0.05
-    ? ' Your ballistas broke down their wall.' : '';
+    ? ' Your battlemages brought their wall down.' : '';
 
   const report = {
     won, attackPower, defPower, sent, fallen, delta,

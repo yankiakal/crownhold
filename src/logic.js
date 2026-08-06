@@ -365,10 +365,16 @@ export function tierOf(s,k){ return (s.tier && s.tier[k]) || 1; }
 export function tierPower(s,k){ return TROOPS[k].power * (1 + TIER_POWER*(tierOf(s,k)-1)); }
 export function tierUpkeep(s,k){ return TROOPS[k].upkeep * (1 + TIER_UPKEEP*(tierOf(s,k)-1)); }
 export function tierCostMult(s,k){ return 1 + TIER_COST*(tierOf(s,k)-1); }
+/* One step of reforging costs each soldier exactly the premium the yard would have
+   charged to drill them one tier higher — tierCostMult rises by TIER_COST per tier, so
+   that difference IS the price. Both routes to a tier therefore cost the same, and no
+   schedule beats any other. See the note above TIERS in defs.js.
+
+   Per head, and priced off the line's own cost, so promoting engines is dearer than
+   promoting pikes and a big line costs more to reforge than a small one. */
 export function promoteCost(s,k){
-  const d = TROOPS[k], n = Math.max(s.t[k],1), next = tierOf(s,k)+1, c = {};
-  for(const [r,v] of Object.entries(d.cost)) c[r] = Math.ceil(v * (1 + TIER_COST*(next-1)) * 0.5 * n);
-  c.iron = (c.iron||0) + Math.ceil(1.5 * next * n); // reforging is done in steel
+  const d = TROOPS[k], n = Math.max(s.t[k] || 0, 1), c = {};
+  for(const [r,v] of Object.entries(d.cost)) c[r] = Math.ceil(v * TIER_COST * n);
   return c;
 }
 export function promote(s, k, now){

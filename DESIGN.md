@@ -481,6 +481,92 @@ Three lessons, in order of how much they cost:
    suspicious of. Reproduce first, theorise second. The check that settled it took
    one command: run it twice, unchanged.
 
+### One soldier, one tier bill (v1.43) — and a fix that was worse than the bug
+
+Asked whether to add a fifth troop type, mages, since the genre always stops at three.
+Measuring that question meant measuring through the tier economy, and the tier economy
+turned out to be broken.
+
+A soldier can reach Tier X two ways: drilled at Tier X, or drilled at Tier I and reforged
+later. Those cost the same thing and should cost the same money. They were **4.8× apart** —
+1.98× a soldier's base cost at the yard against 9.45× to reforge them. And `promoteCost`
+scaled with the line you *currently* fielded, with `n` collapsing to 1 on an empty muster,
+so the efficient opening was to drill nothing until the War Academy topped out, promote
+every line for pennies, and only then mass-drill:
+
+| route to 400/400/200/100, all Tier X | cost |
+|---|---|
+| promote on an empty muster, then drill | 181,812 |
+| drill as you go, then promote | 716,113 |
+| | **3.9× penalty for playing the obvious way** |
+
+A trap for ordinary play is worse than an exploit for clever play — nobody reads the second
+one as unfair, and everybody who hits the first one just quietly falls behind.
+
+**Then I fixed it wrong.** The per-head term looked like the culprit, so I replaced it with
+a fixed price per line, tuned to land on the same income-hours the honest route already
+cost. Every test passed. It also silently inverted the composition meta: mono took the
+floor at three budgets out of four, where before the spread build won all four.
+
+The per-head term was never the bug. It is what keeps tiers **neutral** between a narrow
+army and a broad one — the bill scales with the bodies that benefit, so power per resource
+comes out the same either way and composition is settled by cover and the counter triangle,
+which is where the design wants it settled. Pricing per line hands a concentrated army the
+same upgrade for a quarter of the money, because the cost is per line and the benefit is
+per soldier.
+
+The actual fix is one line: a reforge step costs each soldier exactly `TIER_COST` × their
+base cost — the premium the yard would have charged to drill them a tier higher. Both routes
+now agree to within 0.3%, and tiers buy 12% *more* power per resource broad than narrow.
+
+I then spent a sweep of 25 candidate `HOLDS`/`NEEDS` values for cavalry trying to repair a
+mono advantage that only existed because of my own fix. None of the 25 worked, which is what
+finally pointed at the pricing rather than the cover table. **The four-type game needed no
+balance change at all.**
+
+Three things worth keeping:
+
+1. **A fix that passes every test can still be a regression.** The suite asserted the
+   invariant I had just thought of, not the property I was about to destroy. The guard now
+   in place — *tiers buy the same power per resource narrow or broad* — is the one that
+   would have caught it, and it exists only because the sweep failed loudly enough to make
+   me look.
+2. **When a sweep finds nothing, suspect the axis.** Twenty-five failures in a row is not a
+   tuning problem, it is a sign you are turning the wrong dial.
+3. **Price the destination, not the route.** Any rule where two paths to an identical state
+   cost different amounts becomes compulsory knowledge, and the player who has not read the
+   wiki pays for it.
+
+#### And the answer on mages
+
+Not the complexity risk it looks like — the game already carries four types where Whiteout
+Survival and Kingshot carry three, and it absorbs the fourth by putting it **outside** the
+counter triangle (`BEATS` is a 3-cycle; the ballista is not in it). The binding constraint
+is the **cover budget**: `HOLDS` and `NEEDS` mean only so many fully-exposed troops can be
+anchored, and the four existing lines already spend that budget. A balanced four-line army
+sits at cover 0.50, which is the sweet spot — high enough that breadth pays, low enough that
+concentrating is still a real gamble.
+
+Five stat lines tested for a mage, from glass cannon to line-holder. **None held the shape:**
+
+| HOLDS | NEEDS | balanced cover | spread floor | mono ceiling | |
+|---|---|---|---|---|---|
+| 0.00 | 1.00 | 0.31 | 2/4 | 4/4 | too many exposed — breadth stops paying |
+| 0.00 | 0.80 | 0.34 | 4/4 | 3/4 | spread now out-ceilings mono — no gamble left |
+| 0.15 | 0.80 | 0.40 | 3/4 | 2/4 | both properties gone |
+| 0.30 | 0.50 | 0.52 | 0/4 | 4/4 | mono takes the floor everywhere |
+| 0.50 | 0.30 | 0.62 | 0/4 | 4/4 | worse |
+
+Fully-exposed mages dilute the cover pool; mages that can hold a line inflate it and hand
+the floor back to mono. There is no room at five.
+
+**Recommended instead: rename the ballista to a battlemage.** It already occupies exactly
+that slot — dearest per body, highest power, `HOLDS: 0`, `NEEDS: 1`, worth half of itself
+with nobody in front. That is not a siege engine's profile, it is a spellcaster's. The cost
+is one `TROOPS` entry, one building name and one icon: no new economy, no new heroes, no
+change to the triangle, and it delivers the differentiation the genre lacks at zero balance
+risk.
+
 ### Composition: no shape may be free money (v1.40)
 
 Asked whether to copy Rise of Empires' rule that a full march of cavalry moves faster.
