@@ -125,6 +125,25 @@ try {
      home ? 'at ' + home.x + ',' + home.y : 'nothing drawn at ' + (W.CX*C + C/2) + ',' + (W.CY*C + C/2 - 4));
   ok('and labels it', drawn.some(d => d.txt === 'HOLD'));
 
+  /* ── the phone layout ──
+     Measured with `npm run phone` at real phone widths, the single column ran 11.8 screens
+     on an iPhone SE. Tabs cut it to 4.6. Asserted here as structure rather than pixels: every
+     tab must have a pane, exactly one may be active, and every pane's panels must still be
+     in the DOM — they are hidden by CSS, so a pane that stopped rendering would take its
+     panels out of the desktop layout too, where there are no tabs at all. */
+  const panes = [...full.matchAll(/data-pane="([a-z]+)"/g)].map(m => m[1]);
+  ok('every tab has at least one pane',
+     ['hold','war','world','court','ally','ledger'].every(t => panes.includes(t)),
+     [...new Set(panes)].join(', '));
+  const active = [...full.matchAll(/<div class="tabpane" data-pane="([a-z]+)">/g)].map(m => m[1]);
+  ok('exactly one tab is active at a time', new Set(active).size === 1,
+     'active: ' + [...new Set(active)].join(', ') || 'none');
+  ok('and the bar offers every tab', ['hold','war','world','court','ally','ledger']
+     .every(t => full.includes('data-act="tab" data-key="' + t + '"')));
+  /* The panels themselves must survive — hidden, not removed. */
+  ok('hidden panes still render their panels, for the desktop layout',
+     /THE FRONTIER|Frontier/i.test(full) && /Muster/.test(full) && /Decrees/.test(full));
+
   /* ── the column composer: three captains, four classes ──
      The party covers spearman/archer/knight and leaves the ballista uncovered,
      with ballistae committed anyway. That is the exact case this UI exists to

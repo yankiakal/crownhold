@@ -2352,6 +2352,37 @@ function drawMap(S){
   ctx.fillText('🏰', CX*C+C/2, CY*C+C/2);
 }
 
+/* ── tabs, for a thumb ──
+   Measured at real phone widths (npm run phone), the hold was 11.8 screens tall on an
+   iPhone SE — twenty-five panels in one column. Nothing overflowed sideways; the problem was
+   always vertical, and no amount of CSS tightening fixes a page you have to scroll twelve
+   times to read.
+
+   So the panels are grouped and only one group shows at a time under 820px, with a bar along
+   the bottom — the arrangement both reference games use, for the same reason. Above 820px
+   nothing changes: the desktop two-column layout shows everything at once, because there the
+   scroll was never the problem.
+
+   Grouped by WHAT YOU CAME TO DO, not by system: someone opening the game to check on a
+   march does not want the Chronicle between them and the frontier. */
+const TABS = [
+  { key:'hold',    icon:'🏰', name:'Hold' },
+  { key:'war',     icon:'⚔️', name:'War' },
+  { key:'world',   icon:'🗺️', name:'Frontier' },
+  { key:'court',   icon:'👑', name:'Court' },
+  { key:'ally',    icon:'🤝', name:'Alliance' },
+  { key:'ledger',  icon:'📜', name:'Ledger' },
+];
+let tab = 'hold';
+const inTab = (key, body) => '<div class="tabpane" data-pane="'+key+'"'
+  + (tab === key ? '' : ' hidden-narrow')+'>'+body+'</div>';
+
+function renderTabBar(){
+  return '<nav class="tabbar">' + TABS.map(t =>
+    '<button data-act="tab" data-key="'+t.key+'"'+(tab === t.key ? ' class="on"' : '')+'>'
+    + '<span>'+t.icon+'</span>'+t.name+'</button>').join('') + '</nav>';
+}
+
 export function render(){
   const S = store.s;
   /* One call, before anything is drawn: sound.watch diffs the state it was last shown
@@ -2360,12 +2391,26 @@ export function render(){
      offline fast-forward all end in a render, and none of them would remember to ring
      a bell on their own. */
   sound.watch(S);
-  app.innerHTML = renderHeader(S) + renderThreat(S) + renderWorld(S)
-    + '<main>' + renderHold(S)
-    + '<div class="rail">' + renderMuster(S) + renderHeroes(S) + renderPets(S) + renderRegalia(S) + renderSpoils(S)
-      + renderDecrees(S) + renderDaily(S) + renderIsle(S) + renderEvent(S) + renderRift(S) + renderRally(S) + renderBoss(S) + renderCalendar(S) + renderRealm(S) + renderResearch(S) + renderAlliance(S) + renderMusterRoll(S) + renderWatch(S) + renderRaid(S) + renderArena(S) + renderLeaderboard(S) + renderMastery(S) + renderQuest(S)
-      + renderAchievements(S) + renderChronicle(S) + '</div>'
-    + '</main>' + renderFooter();
+  /* The header and the threat bar sit OUTSIDE the tabs: the raid clock is the one thing you
+     must be able to see whichever screen you are on. Everything else is grouped.
+
+     Panes are `display:contents` above 820px, which dissolves them so the desktop grid comes
+     out exactly as it did before — renderHold in the left cell, the rail on the right. Below
+     820px they become real boxes and all but one is hidden. */
+  app.innerHTML = renderHeader(S) + renderThreat(S)
+    + inTab('world', renderWorld(S) + renderIsle(S))
+    + '<main>' + inTab('hold', renderHold(S))
+    + '<div class="rail">'
+      + inTab('war',    renderMuster(S) + renderWatch(S) + renderRaid(S) + renderArena(S)
+                      + renderRally(S) + renderBoss(S))
+      + inTab('court',  renderHeroes(S) + renderPets(S) + renderRegalia(S) + renderSpoils(S))
+      + inTab('hold',   renderDecrees(S) + renderResearch(S))
+      + inTab('ally',   renderAlliance(S) + renderMusterRoll(S) + renderRealm(S) + renderRift(S))
+      + inTab('ledger', renderQuest(S) + renderDaily(S) + renderEvent(S) + renderCalendar(S)
+                      + renderLeaderboard(S) + renderMastery(S) + renderAchievements(S)
+                      + renderChronicle(S))
+    + '</div>'
+    + '</main>' + renderFooter() + renderTabBar();
   fx.innerHTML = renderFx(S) + renderLore(S) + renderStore(S) + renderSettings(S)
     + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
   setSkinTint((HOLD_SKINS[(S.cos && S.cos.hold) || 'default'] || {}).tint);
@@ -2385,6 +2430,7 @@ export function render(){
 const VIEW_ACTIONS = {
   about: () => { store.s.seenIntro = false; },
   settings: () => { settingsOpen = !settingsOpen; },
+  tab: b => { tab = b.dataset.key; window.scrollTo(0, 0); },
   // toggling sound is a device preference; it never touches the hold, so it stays here
   sfx: () => { sound.setPref('sfx', sound.muted()); },
   amb: () => { sound.setPref('amb', !sound.ambientOn()); },

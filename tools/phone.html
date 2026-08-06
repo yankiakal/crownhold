@@ -1,0 +1,78 @@
+<!-- Render the game at true phone widths. `npm run phone` shoots this.
+     Serve dist/ and open /tools/phone.html — but see scripts/phone.js, which copies both
+     into one directory because the iframe has to be same-origin to be measurable.
+
+     WHY AN IFRAME. Headless Chrome clamps --window-size to a 500px minimum, so
+     `--window-size=390,844` renders a 500px page and crops the image to 390. I read three
+     conclusions off those crops — a cut-off title, an overflowing resource row, a clipped
+     button — and every one was the frame, not the layout. An iframe is a real nested
+     viewport: 100vw inside a 390px frame is 390px, and media queries fire against the frame.
+     No dependency, no device emulation, no lying.
+
+     It also reports scrollWidth against innerWidth per frame, because "does it overflow" is
+     a number and should never again be answered by looking at a picture. -->
+<!doctype html>
+<html><head><meta charset="utf-8"><title>phone layout</title>
+<style>
+  body{margin:0;background:#0d0b09;color:#d9a441;font:12px ui-monospace,monospace}
+  .rack{display:flex;gap:14px;padding:10px;align-items:flex-start}
+  .dev{flex:0 0 auto}
+  .dev h2{font:600 11px ui-monospace,monospace;letter-spacing:.08em;margin:0 0 4px;color:#9c8d77}
+  .dev .verdict{margin-top:4px;font-size:11px}
+  iframe{border:1px solid #3a2f25;background:#171310;display:block}
+</style>
+</head><body>
+<div class="rack" id="rack"></div>
+<pre id="out" style="padding:10px;white-space:pre-wrap"></pre>
+<script>
+/* The three that matter: the narrowest phone still in use, the common modern one, and a
+   small tablet — the width where the two-column layout is about to come back. */
+const DEVICES = [
+  { name:'iPhone SE  375x667', w:375, h:667 },
+  { name:'iPhone 15  393x852', w:393, h:852 },
+  { name:'small tablet 600x900', w:600, h:900 },
+];
+
+const rack = document.getElementById('rack');
+const frames = DEVICES.map(d => {
+  const box = document.createElement('div');
+  box.className = 'dev';
+  const h = document.createElement('h2');
+  h.textContent = d.name;
+  const f = document.createElement('iframe');
+  f.width = d.w; f.height = d.h; f.src = '../index.html';
+  const v = document.createElement('div');
+  v.className = 'verdict';
+  box.append(h, f, v);
+  rack.appendChild(box);
+  return { d, f, v };
+});
+
+/* Measured, not eyeballed: horizontal overflow, and the tallest single scroll a thumb
+   would have to cover. A 20-screen column is a layout problem even when nothing overflows. */
+function report(){
+  const rows = [];
+  for(const { d, f, v } of frames){
+    let line;
+    try {
+      const w = f.contentWindow, doc = w.document.documentElement;
+      const over = doc.scrollWidth - w.innerWidth;
+      const screens = (doc.scrollHeight / w.innerHeight);
+      line = d.name + ' — scrollWidth ' + doc.scrollWidth + ' vs ' + w.innerWidth
+        + (over > 1 ? '  ✗ OVERFLOWS by ' + over + 'px' : '  ✓ fits')
+        + ' · ' + screens.toFixed(1) + ' screens tall';
+      v.textContent = (over > 1 ? '✗ +' + over + 'px wide' : '✓ fits') + ' · ' + screens.toFixed(1) + ' screens';
+      v.style.color = over > 1 ? '#c25a45' : '#7fa65a';
+    } catch(e){
+      line = d.name + ' — unreadable (' + e.name + '): the frame must be same-origin';
+      v.textContent = 'unreadable';
+    }
+    rows.push(line);
+  }
+  document.getElementById('out').textContent = '@@PHONE@@' + rows.join('\n') + '@@END@@';
+  window.__done = true;
+}
+// the game boots, renders, and starts its own tick before any of this is meaningful
+setTimeout(report, 2500);
+</script>
+</body></html>

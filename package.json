@@ -15,7 +15,8 @@
     "shoot": "sh scripts/shoot.sh",
     "sprites": "node scripts/emit-sprites.js",
     "verify:server": "node sim/verify-server.mjs",
-    "verify:audio": "node scripts/audio-probe.js"
+    "verify:audio": "node scripts/audio-probe.js",
+    "phone": "node scripts/phone.js"
   },
   "devDependencies": {
     "vite": "^6.0.0",
