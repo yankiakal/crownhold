@@ -1546,6 +1546,7 @@ function renderFooter(){
 }
 
 let codexOpen = false, loreOpen = false, storeOpen = false, settingsOpen = false;
+let mapCentred = false;
 let resetArmedUntil = 0; // two-tap raze confirmation window
 let arenaStance = 'balanced', arenaFrac = 0.5;
 let listView = false, sceneMounted = false;
@@ -2388,7 +2389,14 @@ function renderChoice(S){
 function renderWorld(S){
   const slots = marchSlots(S);
   let h = '<section class="panel"><h2>The Frontier <span style="letter-spacing:.05em">marches '+S.marches.length+'/'+slots+' · troops away don’t defend the wall</span></h2>';
-  h += '<canvas id="worldmap" width="'+(MAP_W*56)+'" height="'+(MAP_H*56)+'"></canvas>';
+  /* The map scrolls rather than shrinking to fit. Squeezed into 393px, fifteen columns gave
+     26px cells with 6px labels — below the ~44px a thumb can reliably hit, and too small to read
+     what a tile holds, which is the whole point of scouting it. Whiteout Survival's map is a
+     pannable view for the same reason. At natural size the cells are 56px and you see about
+     seven columns, swiping for the rest; the tap handler works off proportional coordinates so
+     it needed no change at all. */
+  h += '<div class="mapwrap" id="mapwrap">'
+    + '<canvas id="worldmap" width="'+(MAP_W*56)+'" height="'+(MAP_H*56)+'"></canvas></div>';
   const now = Date.now();
   for(const m of S.marches){
     // a column is out after a tile or after a beast; a slain beast leaves neither
@@ -2559,6 +2567,14 @@ export function render(){
     + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
   setSkinTint((HOLD_SKINS[(S.cos && S.cos.hold) || 'default'] || {}).tint);
   drawMap(S);
+  /* Centre the frontier on your own hold the first time it is drawn. Re-centring on every
+     render would yank the view back mid-swipe, four times a second. */
+  const wrap = document.getElementById('mapwrap');
+  if(wrap && !mapCentred && wrap.scrollWidth > wrap.clientWidth){
+    wrap.scrollLeft = Math.max(0, (CX + 0.5) * 56 - wrap.clientWidth / 2);
+    mapCentred = true;
+  }
+
   const slot = document.getElementById('scene-slot');
   if(slot){
     if(sceneCanvas.parentNode !== slot) slot.appendChild(sceneCanvas);

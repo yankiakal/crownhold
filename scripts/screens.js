@@ -28,6 +28,16 @@ const args = ['--headless=new','--disable-gpu','--hide-scrollbars',
   '--window-size=2450,1450','--virtual-time-budget=25000'];
 spawnSync(CHROME, [...args, '--screenshot=shots/screens.png',
   'http://localhost:' + PORT + '/tools/screens.html'], { encoding:'utf8' });
+
+/* Two readable halves at 2×, alongside the contact sheet. Six frames across at 1× proves the
+   layout fits and says nothing about how it READS, which is the only reason to look at it. */
+for(const [name, tabs] of [['phone-a','hold,war,world'], ['phone-b','court,ledger']]){
+  spawnSync(CHROME, ['--headless=new','--disable-gpu','--hide-scrollbars',
+    '--window-size=1290,1450','--force-device-scale-factor=2','--virtual-time-budget=25000',
+    '--screenshot=shots/' + name + '.png',
+    'http://localhost:' + PORT + '/tools/screens.html?tabs=' + tabs], { encoding:'utf8' });
+  console.log('  shots/' + name + '.png  (' + tabs + ')');
+}
 const dom = spawnSync(CHROME, [...args, '--dump-dom',
   'http://localhost:' + PORT + '/tools/screens.html'], { encoding:'utf8', maxBuffer: 64*1024*1024 });
 stop();
@@ -45,6 +55,13 @@ const chrome = body.match(/\((\d+)% of the first screen\)/);
 if(chrome && Number(chrome[1]) > 45){
   console.error('\n  ✗ chrome is ' + chrome[1] + '% of a phone screen — budget is 45%.');
   console.error('    The header and threat bar are outside the tabs, so this is paid six times.');
+  process.exit(1);
+}
+/* Tap targets. The frontier was 26px per cell on a phone — you could not reliably hit a tile,
+   and you certainly could not read what garrison it held, which is the entire point of scouting
+   one. 44px is the floor every mobile guideline agrees on. */
+if(/under the 44px/.test(body)){
+  console.error('\n  ✗ the frontier map is below thumb size — see the cell measurement above.');
   process.exit(1);
 }
 if(/OVERFLOWS|undefined|unreadable/.test(body)) process.exit(1);

@@ -355,11 +355,19 @@ section.panel{
   cursor:pointer;touch-action:manipulation;
 }
 
-/* the frontier map */
-#worldmap{
-  width:100%;max-width:640px;display:block;margin:0 auto .5rem;
+/* the frontier map — scrolls at a thumb-sized scale rather than shrinking to fit */
+.mapwrap{
+  max-width:640px;margin:0 auto .5rem;
+  overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;
   border:1px solid var(--edge);border-radius:4px;background:#1b1511;
+}
+#worldmap{
+  width:100%;display:block;background:#1b1511;
   cursor:pointer;touch-action:manipulation;
+}
+@media(max-width:820px){
+  /* natural size: 56px cells, about seven columns visible, swipe for the rest */
+  #worldmap{width:auto;max-width:none}
 }
 
 /* command layer */

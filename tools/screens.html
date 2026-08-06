@@ -59,7 +59,12 @@ function played(){
   return s;
 }
 
-const TABS = ['hold','war','world','court','ally','ledger'];
+/* ?tabs=hold,war — a subset, so a rack of three can be shot at 2× and actually be readable.
+   Six across at 1× is a contact sheet: it proves the layout fits and shows nothing about how it
+   reads, which is the whole reason for looking. */
+const ALL = ['hold','war','world','court','ally','ledger'];
+const want = new URLSearchParams(location.search).get('tabs');
+const TABS = want ? want.split(',').filter(t => ALL.includes(t)) : ALL;
 const rack = document.getElementById('rack');
 const frames = [];
 for(const t of TABS){
@@ -102,6 +107,17 @@ setTimeout(() => {
         + Math.round(100*chrome/852) + '% of the first screen) — '
         + (hd ? Math.round(hd.getBoundingClientRect().height) : 0) + ' header + '
         + (th ? Math.round(th.getBoundingClientRect().height) : 0) + ' threat');
+      if(t === 'world'){
+        const cv = d.getElementById('worldmap'), wrap = d.getElementById('mapwrap');
+        if(cv && wrap){
+          const cell = cv.getBoundingClientRect().width / 15;
+          rows.push('  frontier cells ' + cell.toFixed(0) + 'px'
+            + (cell >= 44 ? ' ✓ thumb-sized' : ' ✗ under the 44px a thumb can hit')
+            + ' · map ' + Math.round(cv.getBoundingClientRect().width) + 'px in a '
+            + Math.round(wrap.clientWidth) + 'px window'
+            + (wrap.scrollWidth > wrap.clientWidth + 1 ? ' (scrolls)' : ' (fits)'));
+        }
+      }
       rows.push(t + ': scrollWidth ' + doc.scrollWidth + '/' + w.innerWidth
         + (doc.scrollWidth > w.innerWidth + 1 ? ' ✗ OVERFLOWS' : ' ✓')
         + ' · ' + (doc.scrollHeight / w.innerHeight).toFixed(1) + ' screens'
