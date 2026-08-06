@@ -9,7 +9,10 @@ import {
   ARENA_HEROES, STAR_POWER, starNeed, TEMPERS, temperFor,
   BEASTS, BEAST_ROAM_MS, PET_POOL, PET_MAX_LVL, petXpNeed, petBondNeed,
 } from './defs.js';
-import { TIERS, SUPPLY_RES, DECREES, DECREE_MS, WAVE_LOSS_FLOOR, WAVE_LOSS_SPAN } from './defs.js';
+/* LOAD and SCREEN already arrive through the main defs import above — this second one
+   carries only what is not already in scope. */
+import { TIERS, SUPPLY_RES, SUPPLY, HOLDS, NEEDS, BEATS, MATCHUP,
+         DECREES, DECREE_MS, WAVE_LOSS_FLOOR, WAVE_LOSS_SPAN } from './defs.js';
 import {
   TILE_TYPES, MAP_W, MAP_H, CX, CY, TRAVEL_MS_PER_TILE, GATHER_MS,
   tileDist, marchSlots, tileBusy, marchPower, campPower, gatherYield, startMarch,
@@ -1771,8 +1774,52 @@ function renderDetail(S){
     const d = TROOPS[k]; if(!d) return '';
     const tier = tierOf(S,k), mt = maxTier(S);
     title = d.icon+' '+d.name+' — Tier '+TIERS[tier-1];
-    body += '<div class="d-row">You muster <b>'+S.t[k]+'</b> · power '+tierPower(S,k).toFixed(1)+' each · eats '+tierUpkeep(S,k).toFixed(2)+' food/s each</div>'
-      + '<div class="d-row">Train: '+costHtml(S, trainCost(S,k,1))+' · ⏱ '+(d.time*trainMult(S)).toFixed(1)+'s each · needs Barracks '+d.barracks+'</div>';
+    /* The full stat block. Asked for as "attack def marching speed rating" — and two of those
+       deliberately do not exist here, which the sheet now says rather than leaving a player to
+       wonder why they cannot find them:
+
+         · There is ONE power figure, not separate attack and defence. Splitting them would mean
+           four numbers per type and sixteen matchups to reason about; the counter triangle
+           already carries that job legibly.
+         · Marching speed is UNIFORM. Per-type pace existed for one version and was removed in
+           v1.41 — it was a workaround for the ladder that LOAD now fixes properly, and a
+           faster troop type is exactly the "one shape is free money" trap this game keeps
+           closing. Kingshot and Whiteout Survival do the same.
+
+       Everything else a player would want to compare IS here, including the derived ratios that
+       make composition arguable: power per unit of column weight, and power per food. */
+    const draw = troopDraw(S, k);
+    const per = (v) => v.toFixed(2);
+    const row = (label, val, note) => '<div class="crow"><span class="clvl">'+label+'</span>'
+      + '<span class="cfx">'+val+'</span>'
+      + '<span class="ccost">'+(note||'')+'</span></div>';
+    body += '<div class="d-row">You muster <b>'+S.t[k]+'</b>'
+      + (S.wounded && S.wounded[k] ? ' · '+S.wounded[k]+' wounded' : '')+'</div>'
+      + '<div class="curve">'
+      + row('power', tierPower(S,k).toFixed(1)+' each',
+            'one figure — attack and defence both')
+      + row('weight', LOAD[k]+' of a column', 'a column carries weight, not bodies')
+      + row('per weight', (tierPower(S,k)/LOAD[k]).toFixed(1)+' power',
+            'the number that decides if a type is worth its slot')
+      + row('eats', per(tierUpkeep(S,k))+' food/s each',
+            (tierPower(S,k)/Math.max(0.001,tierUpkeep(S,k))).toFixed(0)+' power per food')
+      + (SUPPLY_RES.some(r => (draw[r]||0) > 0 && S.t[k] > 0)
+          ? row('draws', SUPPLY_RES.filter(r => (SUPPLY[k]||{})[r])
+                  .map(r => per((SUPPLY[k][r])*(1+0.18*(tier-1)))+' '+r+'/s each').join(' · '),
+                'arrows, shafts, shoes')
+          : '')
+      + row('in the line', (HOLDS[k] ? Math.round(HOLDS[k]*100)+'% holds it' : 'holds nothing')
+            + (NEEDS[k] ? ' · '+Math.round(NEEDS[k]*100)+'% needs one' : ' · needs none'),
+            NEEDS[k] >= 0.8 ? 'half its worth uncovered' : NEEDS[k] ? 'wants a line' : 'is the line')
+      + row('takes hits', SCREEN[k].toFixed(1)+'× share',
+            SCREEN[k] > 1 ? 'screens the dearer troops' : 'screened by the cheap ones')
+      + row('beats', TROOPS[BEATS[k]] ? TROOPS[BEATS[k]].plural : '— outside the triangle',
+            BEATS[k] ? '+'+Math.round(MATCHUP*100)+'% at full share' : 'defined by weight instead')
+      + row('march pace', 'the same as every type', 'uniform on purpose — see v1.41')
+      + row('drills in', (d.time*trainMult(S)).toFixed(1)+'s each',
+            'at the '+BUILDINGS[d.at].name)
+      + '</div>'
+      + '<div class="d-row">Train one: '+costHtml(S, trainCost(S,k,1))+'</div>';
     if(tier < mt){
       const pc = promoteCost(S,k);
       body += '<p class="d-delta">Promote all to Tier '+TIERS[tier]+': power '+tierPower(S,k).toFixed(1)+' → '

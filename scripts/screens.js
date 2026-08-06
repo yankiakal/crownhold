@@ -1,0 +1,40 @@
+// Every tab of the game at phone width, with a played-in hold: `npm run screens`
+//
+// Serves dist/ plus src/ plus the harness from one temp dir so the iframes are same-origin and
+// the harness can import freshState to build the save it seeds.
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, cpSync, copyFileSync, rmSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const PORT = 8921;
+if(!existsSync(CHROME)){ console.log('Chrome not found — skipping.'); process.exit(0); }
+if(!existsSync('dist/index.html')){ console.log('run `npm run build` first'); process.exit(1); }
+
+const dir = mkdtempSync(join(tmpdir(), 'crownhold-screens-'));
+cpSync('dist', dir, { recursive: true });
+cpSync('src', join(dir, 'src'), { recursive: true });
+mkdirSync(join(dir, 'tools'), { recursive: true });
+copyFileSync('tools/screens.html', join(dir, 'tools', 'screens.html'));
+
+const srv = spawn('python3', ['-m','http.server', String(PORT), '--directory', dir], { stdio:'ignore' });
+const stop = () => { try { srv.kill(); } catch {} rmSync(dir, { recursive:true, force:true }); };
+process.on('exit', stop);
+await new Promise(r => setTimeout(r, 900));
+
+mkdirSync('shots', { recursive: true });
+const args = ['--headless=new','--disable-gpu','--hide-scrollbars',
+  '--window-size=2450,1450','--virtual-time-budget=25000'];
+spawnSync(CHROME, [...args, '--screenshot=shots/screens.png',
+  'http://localhost:' + PORT + '/tools/screens.html'], { encoding:'utf8' });
+const dom = spawnSync(CHROME, [...args, '--dump-dom',
+  'http://localhost:' + PORT + '/tools/screens.html'], { encoding:'utf8', maxBuffer: 64*1024*1024 });
+stop();
+
+const m = (dom.stdout||'').match(/<pre id="out"[^>]*>([\s\S]*?)<\/pre>/);
+const body = m ? m[1].replace(/@@SCREENS@@|@@END@@/g,'').replace(/&quot;/g,'"').replace(/&amp;/g,'&').trim() : '';
+console.log('\n── every tab, 393px wide, mid-game hold ──');
+console.log(body || '(no report — the frames may not have booted)');
+console.log('\n  shots/screens.png');
+if(/OVERFLOWS|undefined|unreadable/.test(body)) process.exit(1);

@@ -1,0 +1,101 @@
+<!-- Every tab of the game, at phone width, with a played-in hold. `npm run screens` shoots it.
+     Served from a temp copy alongside dist/ so the iframes are same-origin.
+
+     WHY THIS EXISTS. Every screenshot taken of this game so far has been the intro overlay
+     covering everything behind it — so nobody has ever LOOKED at the Hold, War, Frontier,
+     Court, Alliance or Ledger screens at the size they will be played at. Every visual bug
+     this project has found was found by looking: hip roofs projecting as squat pyramids, trees
+     buried under buildings, mud on unbuilt plots, name plates eating each other's words, the
+     player's own hold missing from the frontier. None of them were findable any other way.
+
+     It seeds a save into localStorage before the frame loads, which is the only way past the
+     intro without a click — the game reads `crownhold-save-v1` on boot. The hold is
+     deliberately mid-game: enough built that panels have content, not so much that everything
+     is capped and the interesting states (a busy queue, a march out, wounded in the ward) are
+     invisible. -->
+<!doctype html>
+<html><head><meta charset="utf-8"><title>every screen</title>
+<style>
+  body{margin:0;background:#0d0b09;color:#d9a441;font:11px ui-monospace,monospace}
+  .rack{display:flex;gap:10px;padding:8px;align-items:flex-start;flex-wrap:nowrap}
+  .dev h2{font:600 11px ui-monospace,monospace;letter-spacing:.1em;margin:0 0 3px;color:#9c8d77}
+  iframe{border:1px solid #3a2f25;background:#171310;display:block}
+</style>
+</head><body>
+<div class="rack" id="rack"></div>
+<pre id="out" style="padding:8px"></pre>
+<script type="module">
+import { freshState, SAVE_KEY } from '../src/state.js';
+
+/* A hold partway through: buildings raised but not capped, four troop types, a court, some
+   wounded, Valor banked, a few waves survived. The point is that every panel has something in
+   it — an empty panel looks fine and tells you nothing. */
+function played(){
+  const now = Date.now();
+  const s = freshState(now, 11);
+  Object.assign(s.b, { townhall:14, farm:15, lumberyard:14, quarry:12, ironmine:11,
+    barracks:12, range:10, stable:9, siegeyard:8, wall:12, watchtower:6, tavern:8,
+    granary:9, academy:12, hospital:8, warehouse:7, library:10, command:10, embassy:6 });
+  s.tier = { spearman:4, archer:4, knight:3, ballista:3 };
+  s.t = { spearman:260, archer:150, knight:70, ballista:35 };
+  s.wounded = { spearman:18, archer:6 };
+  for(const id of ['marshal','gatekeeper','forager','steward','medic'])
+    s.heroes[id] = { lvl:14, xp:120, stars:2, deeds:3, gear:{}, skills:[null,null,null] };
+  s.court = ['steward','gatekeeper'];
+  s.captain = 'marshal';
+  s.valor = 260; s.shields = 2; s.mxp = 900;
+  s.wave = 34; s.wavesWon = 33; s.wavesLost = 7; s.warbandsWon = 2;
+  s.spoils = { drill:2, larder:1, banner:1 };
+  s.wallWear = 0.08;
+  s.seenIntro = true;                    // the whole reason this file exists
+  /* And no pending drafts. A hold seeded at Town Hall 14 with offersDone at 0 owes every hero
+     milestone it never collected, so the first tick queues them all and "A DRAFT OF CHAMPIONS"
+     covers every screen — which is what the first run of this harness photographed six times.
+     Marking the offers already taken is what lets the game itself be visible. */
+  s.offersDone = 12;
+  s.choice = null; s.choiceQueue = [];
+  s.taught = { upkeep:1, pace:1, cover:1, load:1 };   // past the holding lessons
+  s.now = now; s.lastSeen = now;
+  return s;
+}
+
+const TABS = ['hold','war','world','court','ally','ledger'];
+const rack = document.getElementById('rack');
+const frames = [];
+for(const t of TABS){
+  const box = document.createElement('div');
+  box.className = 'dev';
+  const h = document.createElement('h2');
+  h.textContent = t.toUpperCase();
+  const f = document.createElement('iframe');
+  f.width = 393; f.height = 1400;
+  box.append(h, f);
+  rack.appendChild(box);
+  frames.push({ t, f });
+}
+
+/* Seed the save, then point each frame at the game. Each iframe gets its own document but
+   shares the origin's localStorage, so one seed serves all six. */
+localStorage.setItem(SAVE_KEY, JSON.stringify(played()));
+for(const { f } of frames) f.src = '../index.html';
+
+const rows = [];
+setTimeout(() => {
+  for(const { t, f } of frames){
+    try {
+      const w = f.contentWindow, d = w.document;
+      // switch the frame to its tab by clicking the bar button, as a thumb would
+      const btn = d.querySelector('[data-act="tab"][data-key="' + t + '"]');
+      if(btn) btn.click();
+      const doc = d.documentElement;
+      rows.push(t + ': scrollWidth ' + doc.scrollWidth + '/' + w.innerWidth
+        + (doc.scrollWidth > w.innerWidth + 1 ? ' ✗ OVERFLOWS' : ' ✓')
+        + ' · ' + (doc.scrollHeight / w.innerHeight).toFixed(1) + ' screens'
+        + (/undefined|NaN/.test(d.body.innerHTML) ? '  ✗ prints undefined/NaN' : ''));
+    } catch(e){ rows.push(t + ': unreadable (' + e.name + ')'); }
+  }
+  document.getElementById('out').textContent = '@@SCREENS@@' + rows.join('\n') + '@@END@@';
+  window.__done = true;
+}, 3000);
+</script>
+</body></html>
