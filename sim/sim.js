@@ -444,6 +444,25 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
     +' | blocked by "Town Hall must lead" '+(probe.capped/Math.max(1,probe.ticks)).toFixed(1)+' per check'
     +' | Town Hall itself pace-blocked '+pc(probe.thPace));
   console.log('');
+  judge(minutes, label, s);
+}
+
+/* ── the floor ──
+   The simulator printed and never judged, so a change that flattened the whole economy
+   still exited 0 and `npm run check` went green over it. That happened: multi-resource
+   upkeep demanded iron before the Iron Mine could exist, the run ended at Town Hall 1 with
+   sixty soldiers instead of Town Hall 8 with seven thousand, and nothing failed.
+
+   These are not balance targets — they are catastrophe detectors, set far below any healthy
+   run, so they only fire when something is broken rather than merely different. */
+const FLOORS = { th: 6, army: 1500, waves: 60 };
+const failures = [];
+function judge(minutes, label, s){
+  if(minutes < 240) return;               // a 90-minute run is legitimately small
+  const th = s.b.townhall, army = L.armyPower(s);
+  if(th < FLOORS.th) failures.push(label + ': Town Hall ' + th + ' < ' + FLOORS.th);
+  if(army < FLOORS.army) failures.push(label + ': army ' + Math.round(army) + ' < ' + FLOORS.army);
+  if(s.wavesWon < FLOORS.waves) failures.push(label + ': ' + s.wavesWon + ' waves won < ' + FLOORS.waves);
 }
 
 simulate(90, 1.0,  true,  '90 min, average luck, SKILLED (reads scouts, counters)');
@@ -453,3 +472,12 @@ simulate(480, 1.0, true,  '8 hours, average luck, skilled — the long road');
 // the temper system only earns its keep if a lopsided season plays differently
 simulate(240, 1.0, true,  '4 hours, skilled, under a lopsided muster', 2);
 simulate(240, 1.0, false, '4 hours, LAZY, under a lopsided muster', 2);
+
+if(failures.length){
+  console.error('\n== SIM FLOOR BREACHED ==');
+  for(const f of failures) console.error('  ✗ ' + f);
+  console.error('\nA run this far below a healthy one means the economy is broken, not tuned.');
+  process.exit(1);
+}
+console.log('== sim floors held: Town Hall \u2265' + FLOORS.th + ', army \u2265' + FLOORS.army
+  + ', waves \u2265' + FLOORS.waves + ' on the long runs ==');

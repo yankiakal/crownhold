@@ -1,7 +1,7 @@
 // Crownhold state: fresh-state shape, persistence, save migration.
 
-import { RES_META, BUILDINGS, FIRST_WAVE_MS, EXPEDITIONS } from './defs.js';
-import { prodPerSec, upkeepPerSec, storageCap, capFor, refineStep, bankRest, pushLog, fmt,
+import { RES_META, BUILDINGS, FIRST_WAVE_MS, EXPEDITIONS, SUPPLY_RES } from './defs.js';
+import { prodPerSec, upkeepPerSec, supplyPerSec, storageCap, capFor, refineStep, bankRest, pushLog, fmt,
          courtSeats, expedCdMs, caravanYields, CARAVAN_GRACE } from './logic.js';
 import { genWorld } from './world.js';
 import { genIsle } from './isle.js';
@@ -42,6 +42,7 @@ export function freshState(now, seed){
     mxp:0, shields:0, shieldUntil:0, warbandsWon:0, streak:0, famineAcc:0,
     questIdx:0,
     patrolReady:0, caravan:null,
+    short:{wood:0, iron:0},
     log:[], banner:null,
     seenIntro:false,
     now, lastSeen:now,
@@ -57,6 +58,8 @@ export function applyOffline(s, awayMs){
     if(RES_META[r].refined || RES_META[r].carried) continue;   // made or carried, not gathered
     let g = prodPerSec(s, r) * awayMs/1000;
     if(r==='food') g -= upkeepPerSec(s) * awayMs/1000;   // the muster ate while you were gone
+    // and it drew arrows and shoes from the stores while you were gone, same as at the wall
+    if(SUPPLY_RES.includes(r)) g -= supplyPerSec(s, r) * awayMs/1000;
     if(g >= 1){ s.res[r] = Math.min(s.res[r]+g, capFor(s, r)); gained.push('+'+fmt(g)+' '+RES_META[r].lbl.toLowerCase()); }
     else if(g < 0) s.res[r] = Math.max(0, s.res[r]+g); // drain, but no desertion offline
   }

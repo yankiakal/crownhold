@@ -8,6 +8,7 @@ import {
   HERO_POOL, HERO_SLOTS, SPOILS, RARITY,
   COURT_BASE, COURT_PER_TH, COURT_MAX, seasonNo, CLASS_AFFINITY, MARCH_HEROES,
   LOAD, HOLDS, NEEDS, EXPOSED_LOSS, BEATS, MATCHUP,
+  SUPPLY, SUPPLY_RES, SUPPLY_PENALTY, SHORT_RAMP, SHORT_MEND, SUPPLY_FROM_TH, SUPPLY_FULL_TH,
   ARENA_HEROES, STAR_POWER, starCap, starNeed, DEEDS, temperFor,
   PET_POOL, PET_MAX_LVL, petXpNeed, petBondNeed,
   WAVE_TYPES, STANCES, COUNTER_BONUS, COUNTER_PENALTY, COUNTER_CASUALTY, SCREEN,
@@ -362,7 +363,55 @@ export function prodPerSec(s, res){
 /* ── troop tiers ── */
 export function maxTier(s){ return Math.min(10, (s.b.academy||0)+1); }
 export function tierOf(s,k){ return (s.tier && s.tier[k]) || 1; }
-export function tierPower(s,k){ return TROOPS[k].power * (1 + TIER_POWER*(tierOf(s,k)-1)); }
+/* ── supply: what an army needs besides bread ──
+   Same shape as food upkeep and eased by the same reliefs — a Quartermaster who stretches
+   the rations stretches the arrows too. Scaled by the tier curve for the same reason food
+   is: a Tier X line is better equipped, and better equipment costs more to keep. */
+/* How much of the supply burden this hold carries yet, 0..1. */
+export function supplyRamp(s){
+  const th = (s.b && s.b.townhall) || 1;
+  return Math.max(0, Math.min(1, (th - SUPPLY_FROM_TH) / (SUPPLY_FULL_TH - SUPPLY_FROM_TH)));
+}
+export function supplyPerSec(s, res){
+  const ramp = supplyRamp(s);
+  if(ramp <= 0) return 0;
+  let u = 0;
+  for(const k of Object.keys(TROOPS)){
+    const need = (SUPPLY[k] || {})[res] || 0;
+    if(!need) continue;
+    u += need * (1 + TIER_UPKEEP*(tierOf(s,k)-1)) * (s.t[k] || 0);
+  }
+  return u * ramp * Math.max(0.5, 1 - heroBonus(s,'upkeep') - spoilBonus(s,'upkeep') - (perk(s,16)?0.08:0));
+}
+/* How far into a shortage this hold is, 0..1. Continuous in TIME rather than switched on
+   "is the store empty", so one unlucky tick at zero does not cost you 40% of your army's
+   power — you have to actually run dry and stay dry. */
+export function shortFrac(s, res){
+  return Math.min(1, ((s.short && s.short[res]) || 0) / SHORT_RAMP);
+}
+/* What a shortage costs a given line, weighted by how much of ITS supply is the missing
+   resource. Cavalry suffers an iron drought, archers a timber one, battlemages both — so
+   the penalty lands on whoever actually depended on the thing that ran out, rather than
+   flatly on everyone. Returns 1 when supplied, so every power figure in the game is
+   untouched in the normal case. */
+export function supplyMult(s, k){
+  const need = SUPPLY[k];
+  if(!need) return 1;
+  let tot = 0, hit = 0;
+  for(const r of SUPPLY_RES){
+    const v = need[r] || 0;
+    tot += v;
+    hit += v * shortFrac(s, r);
+  }
+  return tot > 0 ? 1 - SUPPLY_PENALTY * (hit / tot) : 1;
+}
+/* Supply multiplies HERE, in the one function every power figure in the game passes
+   through — the hold's defence, a column's strength, the arena, a raid. Folding it in at
+   the seam means an unsupplied army is weaker everywhere at once and no call site can
+   forget to ask, which is how the cover rule got missed on the frontier for a version. */
+export function tierPower(s,k){
+  return TROOPS[k].power * (1 + TIER_POWER*(tierOf(s,k)-1)) * supplyMult(s,k);
+}
 export function tierUpkeep(s,k){ return TROOPS[k].upkeep * (1 + TIER_UPKEEP*(tierOf(s,k)-1)); }
 export function tierCostMult(s,k){ return 1 + TIER_COST*(tierOf(s,k)-1); }
 /* One step of reforging costs each soldier exactly the premium the yard would have
@@ -1479,6 +1528,23 @@ export function tick(s, now, dt, rand=Math.random){
 
   // armies eat: upkeep drains food; an unfed muster deserts
   if(!(s.upkeepPauseUntil > now)) s.res.food -= upkeepPerSec(s)*dt;
+  /* And they consume: arrows, shafts, shoes. Unlike food this never kills anybody — it
+     accrues a shortage that costs POWER, because deleting troops over a timber shortage
+     would make the economy feel like a trap rather than a constraint. Mends SHORT_MEND
+     times faster than it accrues, so recovering is quick once the mines catch up. */
+  s.short = s.short || {};
+  for(const r of SUPPLY_RES){
+    const want = (s.upkeepPauseUntil > now) ? 0 : supplyPerSec(s, r)*dt;
+    const have = Math.max(0, s.res[r] || 0);
+    if(want > 0){
+      s.res[r] = Math.max(0, have - want);
+      const unmet = want > have ? (want - have)/want : 0;
+      s.short[r] = Math.max(0, Math.min(SHORT_RAMP,
+        (s.short[r] || 0) + (unmet > 0 ? dt*1000*unmet : -dt*1000*SHORT_MEND)));
+    } else {
+      s.short[r] = Math.max(0, (s.short[r] || 0) - dt*1000*SHORT_MEND);
+    }
+  }
   if(s.res.food < 0){
     s.res.food = 0;
     s.famineAcc = (s.famineAcc||0) + dt;

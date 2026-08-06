@@ -9,7 +9,7 @@ import {
   ARENA_HEROES, STAR_POWER, starNeed, TEMPERS, temperFor,
   BEASTS, BEAST_ROAM_MS, PET_POOL, PET_MAX_LVL, petXpNeed, petBondNeed,
 } from './defs.js';
-import { TIERS } from './defs.js';
+import { TIERS, SUPPLY_RES } from './defs.js';
 import {
   TILE_TYPES, MAP_W, MAP_H, CX, CY, TRAVEL_MS_PER_TILE, GATHER_MS,
   tileDist, marchSlots, tileBusy, marchPower, campPower, gatherYield, startMarch,
@@ -22,7 +22,7 @@ import {
 import {
   fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor, capFor, isUnlocked,
   activeTrainings, trainQueue, woundedTotal, woundedCap, woundShare, healCost, healTime,
-  prodPerSec, prodMult, upkeepPerSec, buildCost, buildTime, canAfford, armyPower,
+  prodPerSec, prodMult, upkeepPerSec, supplyPerSec, shortFrac, supplyMult, buildCost, buildTime, canAfford, armyPower,
   armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
   valorQuota, valorToday, isRested, QUEUE_KEYS, buildSlots, activeQueues, freeSlot, townhallReq, townhallPath,
   maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost,
@@ -81,7 +81,8 @@ function renderHeader(S){
       rate = REFINE[m.from].rate * (S.b[m.from]||0);
       rateTxt = '+'+rate.toFixed(2);
     }else{
-      rate = prodPerSec(S,r) - (r==='food' ? upkeepPerSec(S) : 0);
+      // net of everything the muster draws: food to eat, wood and iron to stay equipped
+      rate = prodPerSec(S,r) - (r==='food' ? upkeepPerSec(S) : supplyPerSec(S,r));
       rateTxt = (rate<0?'−':'+')+Math.abs(rate).toFixed(1);
     }
     const warn = rate<0 ? 'color:var(--bad)' : m.refined ? 'color:var(--info)' : '';
@@ -301,6 +302,21 @@ function renderMuster(S){
     + ' · '+yards+' yard'+(yards===1?'':'s')+' drilling in parallel</span></h2>';
   h += '<div class="stat-note">'+Math.round(bd.base)+' troops × '+bd.mult.toFixed(2)+' bonuses + '+Math.round(bd.wall)+' wall = <b>'+bd.total+'</b>'
     + ' &nbsp;·&nbsp; eats '+upkeepPerSec(S).toFixed(1)+' food/s of your +'+prodPerSec(S,'food').toFixed(1)+'/s</div>';
+  /* Supply, spelled out. An army quietly at 60% power because the timber ran out three
+     minutes ago is the single most confusing thing this system could do, so the draw is
+     always shown and the shortfall is named with the line it is hurting. */
+  h += '<div class="stat-note">Also draws '+SUPPLY_RES.map(r =>
+        supplyPerSec(S,r).toFixed(1)+' '+r+'/s of your +'+prodPerSec(S,r).toFixed(1)).join(' and ')
+    + ' — arrows, shafts and shoes</div>';
+  const dry = SUPPLY_RES.filter(r => shortFrac(S,r) > 0.02);
+  if(dry.length){
+    const worst = Object.keys(TROOPS).map(k => ({k, m: supplyMult(S,k)}))
+                        .reduce((a,b) => b.m < a.m ? b : a);
+    h += '<p class="d-warn">⚠ Out of '+dry.join(' and ')+'. Your '
+      + TROOPS[worst.k].plural.toLowerCase()+' are fighting at <b>'+Math.round(worst.m*100)
+      + '%</b> — nobody is lost to this, and it mends as soon as the '
+      + (dry.includes('wood') ? 'Lumberyard' : 'Iron Mine')+' catches up.</p>';
+  }
   if(!yards){
     h += '<p style="font-size:.85rem;color:var(--ink-dim);font-style:italic">Build the Barracks to drill Spearmen. The Archery Range, Stable and Siege Yard each drill their own troops, on their own queues.</p>';
   }else{

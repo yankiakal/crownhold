@@ -87,6 +87,81 @@ export const TIER_POWER = 0.25, TIER_UPKEEP = 0.18, TIER_COST = 0.22;
    per step for the flavour of reforging, and that was exactly what broke the parity —
    the invariant is load-bearing and the flavour was not. */
 
+/* ── an army eats more than bread ──
+   Food upkeep already does one job perfectly: it keeps the Farm permanently worth
+   upgrading, because it sets the ceiling on how large a muster you can hold. Measured,
+   food runs NEGATIVE against a full army at every hold level — so the Farm is a building
+   you never stop caring about.
+
+   The Lumberyard, Quarry and Iron Mine had no such job, and the numbers were stark: at
+   level 30 a hold produced 48 wood/s and the refineries — the only continuous sink —
+   ate 8.5. The surplus did not merely exist, it GREW, because production and refining
+   scale on the same exponent. So past the early game those three buildings were finished
+   objects, exactly the complaint Kingshot earns when its resource buildings die at 20.
+   (Worse: the ×3–10 launch time multiplier would have made it much sharper, since longer
+   builds mean more hours of banking against the same one-off costs.)
+
+   So arrows, shafts, shoes and barding are upkeep too. Sized against measurement rather
+   than taste: production per level runs food 2.0 / wood 1.6 / iron 0.7, and the per-soldier
+   demand below is set in those same proportions — 0.80 and 0.35 of the food figure. That
+   means a hold whose resource buildings are all at the same level finds all three binding
+   at the SAME army size, so a balanced player loses nothing and gains a reason to keep
+   every mine current. Neglect the Iron Mine and iron caps your army instead.
+
+   It also makes composition an economic question, which is the point: an archer line runs
+   on wood, cavalry on iron, and a mono army leans its whole weight on one mine.
+
+   ── priced per LOAD, not per body ──
+   The first table was written per soldier and quietly favoured the exact build the
+   composition rules exist to discourage. Per unit of army capacity it came out at 0.0625
+   for a battlemage against 0.27 for an archer, so a mono-battlemage army was four times
+   cheaper to keep in the field — a supply rule that rewarded going all-in on one line.
+   Load is the currency army size is measured in, so it has to be the denominator here too,
+   exactly as it is for column capacity and for promotion pricing.
+
+   So every type costs the SAME per load (0.098) and differs only in WHICH resource:
+   spearmen and archers run on wood, cavalry on iron, battlemages on both. No shape can
+   dodge the constraint; a shape can only choose which mine it leans on.
+
+   The 0.055 per load is SOLVED, not chosen — and the first solve was wrong in an
+   instructive way. Doing it by hand from the production rates (2.0 food / 1.6 wood / 0.7
+   iron per building level) gave 0.098, and that number ignored two things a real hold has:
+   the Granary lifting food production by 2% a level, and the refineries taking their cut of
+   wood and iron before the army sees any. Together those left food with nearly twice the
+   headroom of wood — so the Farm became the slack building instead of the Lumberyard, which
+   is moving the complaint rather than answering it.
+
+   Solved numerically against actual holds at levels 15 through 28 instead, the ceilings
+   that food, wood and iron each place on army size come within 10% of one another at every
+   stage. All three mines matter, and none of them is the obvious one to neglect. */
+/* Foot and bow draw NO iron, and that is a hard requirement rather than flavour. The Iron
+   Mine needs Town Hall 3; a new hold opens with eight spearmen and no way to make iron at
+   all. The first version charged them 0.015 each, so iron went into permanent shortage on
+   the first tick of a new game and every soldier stood at 94% power before the player had
+   touched anything. The Stable (Town Hall 5) and Mage Spire (7) both open after the mine,
+   so pinning iron to those two lines means the game can never ask for what it has not yet
+   let you build. */
+export const SUPPLY = {
+  spearman:{wood:0.055},               // shafts and shield-bosses
+  archer:  {wood:0.055},               // arrows, constantly
+  knight:  {wood:0.022, iron:0.087},   // shoes, barding, tack
+  ballista:{wood:0.140, iron:0.080},   // staves, and focus-iron by the ingot
+};
+/* And it phases in with the hall rather than starting on day one. A village of eight
+   spearmen living off the land is not a quartermaster's problem; an army is. Ramped
+   instead of switched at a threshold, because a cliff in a cost is the same mistake as
+   the win/loss cliff in the raid curve — full weight by Town Hall 8, nothing before 3. */
+export const SUPPLY_FROM_TH = 3, SUPPLY_FULL_TH = 8;
+export const SUPPLY_RES = ['wood', 'iron'];
+/* Running dry does NOT kill anybody. Desertion is right for hunger — an unfed soldier
+   leaves — but wrong for equipment: blunt arrows and lame horses make an army weaker, not
+   smaller, and a rule that deletes troops you paid for over a wood shortage would make
+   the whole system feel like a trap. So the penalty is power, it is continuous in how long
+   you have been short, and it heals twice as fast as it accrues. */
+export const SUPPLY_PENALTY = 0.40;        // most a wholly unsupplied line can lose
+export const SHORT_RAMP = 45000;           // ms of shortage to reach the full penalty
+export const SHORT_MEND = 2;               // recovery runs this many times faster
+
 /* upkeep: food/sec per soldier — armies eat. This is what keeps army size in
    equilibrium with your farms instead of scaling to infinity. */
 export const TROOPS = {

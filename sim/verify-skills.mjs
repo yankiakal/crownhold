@@ -544,6 +544,78 @@ console.log('\n── a pre-skills save is inert, not broken ──');
   }
 }
 
+/* ── an army eats more than bread ──
+   The Lumberyard, Quarry and Iron Mine used to have no permanent job: at level 30 a hold
+   made 48 wood/s against 8.5 eaten, and the surplus GREW. Arrows and shoes are upkeep now.
+
+   The first version of the table was priced per SOLDIER and quietly rewarded the exact
+   build the composition rules exist to discourage — per unit of army capacity it came out
+   at 0.0625 for a battlemage against 0.27 for an archer, so going all-in on battlemages
+   was four times cheaper to keep in the field. That is the test below that matters, and it
+   is the one no amount of reading the table would have produced. */
+{
+  console.log('\n── an army eats more than bread ──');
+  const s = hold();
+  ok('every fighting type draws supply', Object.keys(D.TROOPS).every(k => D.SUPPLY[k]),
+     Object.keys(D.SUPPLY).join(', '));
+
+  /* Priced per LOAD, level across types, so no shape can dodge the constraint by
+     concentrating. Load is the denominator for column capacity and promotion pricing too;
+     this is the third rule that has to use it and the first that got it wrong. */
+  const perLoad = Object.keys(D.TROOPS).map(k => {
+    const n = D.SUPPLY[k];
+    return { k, v: D.SUPPLY_RES.reduce((a, r) => a + (n[r] || 0), 0) / D.LOAD[k] };
+  });
+  const hi = Math.max(...perLoad.map(x => x.v)), lo = Math.min(...perLoad.map(x => x.v));
+  ok('supply costs the same per unit of capacity, whatever the shape', hi / lo < 1.05,
+     perLoad.map(x => x.k + ' ' + x.v.toFixed(4)).join(', ') + '  → ×' + (hi/lo).toFixed(3));
+
+  /* Different types lean on DIFFERENT mines — the part that makes this interesting rather
+     than just a second food. */
+  const woodShare = k => (D.SUPPLY[k].wood || 0) /
+    D.SUPPLY_RES.reduce((a, r) => a + (D.SUPPLY[k][r] || 0), 0);
+  ok('archers run on timber and cavalry on iron',
+     woodShare('archer') > 0.85 && woodShare('knight') < 0.30,
+     'archer ' + (woodShare('archer')*100).toFixed(0) + '% wood, knight '
+     + (woodShare('knight')*100).toFixed(0) + '% wood');
+
+  /* Running dry costs POWER and never a body. This is the whole reason the rule is
+     survivable: a timber shortage must not delete troops you paid for. */
+  const dry = hold();
+  dry.t = { spearman:200, archer:200, knight:100, ballista:50 };
+  const bodiesBefore = Object.values(dry.t).reduce((a,b)=>a+b,0);
+  const powerBefore = L.armyBreakdown(dry).total;
+  dry.res.wood = 0; dry.res.iron = 0;
+  for(let i = 0; i < 120; i++) L.tick(dry, dry.now + (i+1)*1000, 1);
+  const bodiesAfter = Object.values(dry.t).reduce((a,b)=>a+b,0);
+  ok('a hold with no timber loses no soldiers to it', bodiesAfter === bodiesBefore,
+     bodiesBefore + ' → ' + bodiesAfter);
+  ok('but it does fight weaker', L.armyBreakdown(dry).total < powerBefore * 0.95,
+     powerBefore + ' → ' + L.armyBreakdown(dry).total);
+  ok('and the penalty is capped, not a spiral',
+     L.supplyMult(dry, 'archer') >= 1 - D.SUPPLY_PENALTY - 1e-9,
+     'archers at ' + (L.supplyMult(dry,'archer')*100).toFixed(0) + '%');
+
+  /* The shortage lands on whoever depended on the missing thing. */
+  const noIron = hold();
+  noIron.t = { spearman:200, archer:200, knight:100, ballista:50 };
+  noIron.res.wood = 9e5; noIron.res.iron = 0;
+  for(let i = 0; i < 120; i++) L.tick(noIron, noIron.now + (i+1)*1000, 1);
+  ok('an iron drought hurts cavalry more than archers',
+     L.supplyMult(noIron, 'knight') < L.supplyMult(noIron, 'archer') - 0.05,
+     'knights ' + (L.supplyMult(noIron,'knight')*100).toFixed(0) + '%, archers '
+     + (L.supplyMult(noIron,'archer')*100).toFixed(0) + '%');
+
+  /* And it mends. A penalty you cannot recover from is a trap, not a constraint. */
+  noIron.res.iron = 9e5;
+  for(let i = 0; i < 120; i++) L.tick(noIron, noIron.now + (120+i+1)*1000, 1);
+  ok('and it heals once the mine catches up', L.supplyMult(noIron, 'knight') > 0.999,
+     'knights back to ' + (L.supplyMult(noIron,'knight')*100).toFixed(0) + '%');
+
+  ok('a fully supplied hold is untouched by any of this',
+     L.supplyMult(s, 'archer') === 1 && L.supplyMult(s, 'knight') === 1);
+}
+
 /* ── one soldier, one tier bill, whichever door they came through ──
    Drilling a soldier at tier N and reforging one into tier N have to cost the same, or
    the route matters more than the destination and the cheap route becomes compulsory
