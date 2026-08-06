@@ -1183,7 +1183,7 @@ function frame(now){
       ctx.globalAlpha = 1;
     }
     if(key === 'crucible'){
-      // Truegold runs molten. The light spills out of the crucible mouth and
+      // Electrum runs molten. The light spills out of the crucible mouth and
       // pulses slowly, which is the one thing that says this building is working.
       const beat = 0.5 + 0.5*Math.sin(tick/520);
       const gl = ctx.createRadialGradient(sx, sy - h*0.5, 1, sx, sy - h*0.5, 26);

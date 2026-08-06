@@ -5,7 +5,7 @@
 // Rise-of-Empires trap — technically progress, emotionally nothing. So every
 // track here tops out at a bonus you can feel. Measured at Town Hall 25 with the
 // same buildings and troops either way: the general tracks alone are ×1.39 army,
-// adding per-line mastery ×1.77, and the Truegold tier on top of that ×2.40. The
+// adding per-line mastery ×1.77, and the Electrum tier on top of that ×2.40. The
 // wall rises with it rather than past it — 8% of total defence fully researched
 // under the old tree, 9% under this one — so no amount of study turns a hold into
 // something that cannot be raided.
@@ -37,9 +37,9 @@
 //      expensive to max all at once. That turns the Battle branch into a question
 //      about what ARMY you are building, not just a bar.
 //
-// ── the Truegold tier ──
+// ── the Electrum tier ──
 // Kingshot's endgame vertical, and here it fixes an outright bug. The Crucible
-// refines Isle Ore into Truegold, and until now NOTHING IN THE GAME SPENT IT — the
+// refines Isle Ore into Electrum, and until now NOTHING IN THE GAME SPENT IT — the
 // whole Kitchen → voyage → Crucible chain terminated in a resource with no sink,
 // which means every hour anyone spent on it bought them nothing. These four
 // studies are that sink. They are gated on the Crucible itself, they are the
@@ -54,19 +54,19 @@
 
 import { TIME_SCALE, TROOPS } from './defs.js';
 
-/* Three branches, and the third one is Kingshot's own arrangement: Truegold research lives on its
-   own screen there rather than hanging off the main tree, and for good reason. Every Truegold study
+/* Three branches, and the third one is Kingshot's own arrangement: Electrum research lives on its
+   own screen there rather than hanging off the main tree, and for good reason. Every Electrum study
    perfects a mundane track, so inside the main tree all four attached to roots four and five rows
    above them — which drew as long edges looping around the whole diagram. Given its own branch each
    is simply an endgame study that names its prerequisite, and both other trees come out clean. */
 export const BRANCHES = {
   growth:   {name:'Growth', icon:'🌾', blurb:'Land, stores, and the speed of every crew.'},
   battle:   {name:'Battle', icon:'⚔️', blurb:'The army, the wall, and what comes home.'},
-  truegold: {name:'Truegold', icon:'🏵️', blurb:'The deepest study in the Reach, paid for in Truegold from the Salt Isle.'},
+  electrum: {name:'Electrum', icon:'🏵️', blurb:'The deepest study in the Reach, paid for in Electrum from the Salt Isle.'},
 };
 
 /* `needs` is the tree: {study: level}. `line` marks a per-troop-line study.
-   `tg` marks the Truegold tier, which is gated on the Crucible instead of the Library. */
+   `el` marks the Electrum tier, which is gated on the Crucible instead of the Library. */
 export const RESEARCH = {
   /* ── Growth ── */
   husbandry:    {name:'Husbandry',     short:'Husbandry',     icon:'🌾', branch:'growth', max:10, per:3,  th:2,  lib:1,  unit:'%',
@@ -128,55 +128,55 @@ for(const [k, t] of Object.entries(TROOPS)){
   };
 }
 
-/* ── the Truegold tier ──
-   Gated on the Crucible, priced in Truegold, and the reason the Crucible exists.
+/* ── the Electrum tier ──
+   Gated on the Crucible, priced in Electrum, and the reason the Crucible exists.
    Big numbers, slow study, deepest in the game. Each one lands on a bonus the
    engine ALREADY reads, because a study whose number nothing consumes is exactly
-   the dead end Truegold itself was. */
-export const TG_LIB = 20;           // the Library still has to keep up
-/* The Truegold price is set against the MEASURED ore economy, not by feel. The Salt Isle is the
+   the dead end Electrum itself was. */
+export const EL_LIB = 20;           // the Library still has to keep up
+/* The Electrum price is set against the MEASURED ore economy, not by feel. The Salt Isle is the
    only source: 49 sites a season, one three-hour voyage at a time, spent when worked and refilled
    only when the season turns. Worked perfectly — every site, every fortnight — that is 586 Isle Ore
-   a season, so 147 Truegold. This tier first shipped at 6 Truegold a level, which totalled 7,078
+   a season, so 147 Electrum. This tier first shipped at 6 Electrum a level, which totalled 7,078
    and would have taken FORTY-EIGHT seasons of flawless sailing: not a long grind, an unreachable
    one. At 1 it totals ~1,230, or eight seasons at perfect play and roughly twice that for anyone
    living a normal life. That is the intended shape for the last thing in the game. */
-/* Each Truegold study hangs off the mundane track it perfects — you master iron before you
-   master Truegold. Thematic, but structural too: without these the four of them had no
+/* Each Electrum study hangs off the mundane track it perfects — you master iron before you
+   master Electrum. Thematic, but structural too: without these the four of them had no
    prerequisites at all, so the tree view laid them in the TOP row beside Warcraft, which read as
    "start here" for the most endgame content in the game. */
-export const TRUEGOLD = {
-  tg_might:   {name:'Truegold Edge',    short:'Edge',    icon:'🏵️', branch:'truegold', max:20, per:2,  unit:'%',
-               fx:'troop power, every line', cost:{truegold:1, steel:120}, time:900, cru:1,
+export const ELECTRUM = {
+  el_might:   {name:'Electrum Edge',    short:'Edge',    icon:'🏵️', branch:'electrum', max:20, per:2,  unit:'%',
+               fx:'troop power, every line', cost:{electrum:1, steel:120}, time:900, cru:1,
                needs:{warcraft:10}},
-  /* per:5, not the 14 this first shipped with. Each Truegold study should be worth
-     roughly a third again its base track — tg_might is 1.3× Warcraft, tg_hoard 1.5×
+  /* per:5, not the 14 this first shipped with. Each Electrum study should be worth
+     roughly a third again its base track — el_might is 1.3× Warcraft, el_hoard 1.5×
      Logistics — and at 14 this one was 3.5× the whole Fortification track, which took a
      maxed wall from ×5 to ×21 and would have made an endgame hold simply unraidable.
      Measured, not guessed: see the ladder in DESIGN.md. */
-  tg_bulwark: {name:'Truegold Bulwark',  short:'Bulwark',  icon:'🛡️', branch:'truegold', max:20, per:5,  unit:'',
-               fx:'wall power per level', cost:{truegold:1, stone:1400}, time:900, cru:4,
+  el_bulwark: {name:'Electrum Bulwark',  short:'Bulwark',  icon:'🛡️', branch:'electrum', max:20, per:5,  unit:'',
+               fx:'wall power per level', cost:{electrum:1, stone:1400}, time:900, cru:4,
                needs:{fortification:10}},
-  tg_harvest: {name:'Truegold Yield',    short:'Yield',    icon:'🌟', branch:'truegold', max:20, per:2,  unit:'%',
-               fx:'all production', cost:{truegold:1, runestone:40}, time:900, cru:1,
+  el_harvest: {name:'Electrum Yield',    short:'Yield',    icon:'🌟', branch:'electrum', max:20, per:2,  unit:'%',
+               fx:'all production', cost:{electrum:1, runestone:40}, time:900, cru:1,
                needs:{husbandry:10}},
-  tg_hoard:   {name:'Truegold Vaults',   short:'Vaults',   icon:'🏰', branch:'truegold', max:20, per:3,  unit:'%',
-               fx:'storage capacity', cost:{truegold:1, stone:1600}, time:900, cru:7,
+  el_hoard:   {name:'Electrum Vaults',   short:'Vaults',   icon:'🏰', branch:'electrum', max:20, per:3,  unit:'%',
+               fx:'storage capacity', cost:{electrum:1, stone:1600}, time:900, cru:7,
                needs:{logistics:10}},
 };
-for(const [k, d] of Object.entries(TRUEGOLD)){
-  RESEARCH[k] = {...d, tg:true, th:18, lib:TG_LIB};
+for(const [k, d] of Object.entries(ELECTRUM)){
+  RESEARCH[k] = {...d, el:true, th:18, lib:EL_LIB};
 }
 
 export const RESEARCH_COST_EXP = 1.9, RESEARCH_TIME_EXP = 1.5;
-/* Truegold flattens both curves — level 20 of a 1.9-exponent track would cost
-   ~1,700 Truegold, which at 0.012/s is over a year. These are meant to be a long
+/* Electrum flattens both curves — level 20 of a 1.9-exponent track would cost
+   ~1,700 Electrum, which at 0.012/s is over a year. These are meant to be a long
    grind, not an unreachable one. */
-export const TG_COST_EXP = 1.15, TG_TIME_EXP = 1.1;
+export const EL_COST_EXP = 1.15, EL_TIME_EXP = 1.1;
 
 export function techLvl(s, k){ return (s.research && s.research[k]) || 0; }
 export function techBonus(s, k){ return techLvl(s, k) * RESEARCH[k].per / 100; }
-/* fortification and its Truegold echo are flat numbers, not percentages */
+/* fortification and its Electrum echo are flat numbers, not percentages */
 export function techFlat(s, k){ return techLvl(s, k) * RESEARCH[k].per; }
 
 /* Per-line power: the general Warcraft bonus applies to everyone, this one only to
@@ -189,14 +189,14 @@ export function techLine(s, k){
 
 export function techCost(s, k){
   const d = RESEARCH[k], lvl = techLvl(s, k), c = {};
-  const mult = Math.pow(lvl + 1, d.tg ? TG_COST_EXP : RESEARCH_COST_EXP);
+  const mult = Math.pow(lvl + 1, d.el ? EL_COST_EXP : RESEARCH_COST_EXP);
   for(const [r, v] of Object.entries(d.cost)) c[r] = Math.round(v * mult);
   return c;
 }
 export function techTime(s, k){
   const d = RESEARCH[k], lvl = techLvl(s, k);
   const scholars = Math.max(0.4, 1 - 0.02 * Math.max(0, (s.b.library || 1) - 1));
-  const exp = d.tg ? TG_TIME_EXP : RESEARCH_TIME_EXP;
+  const exp = d.el ? EL_TIME_EXP : RESEARCH_TIME_EXP;
   return Math.round(d.time * Math.pow(lvl + 1, exp) * scholars) * 1000 * TIME_SCALE;
 }
 /* The Library caps every track: you can never study past its level. */
@@ -217,7 +217,7 @@ export function techNeeds(s, k){
 export function techBlockedBy(s, k){
   const d = RESEARCH[k];
   if((s.b.library || 0) < 1) return 'Build the Great Library first';
-  if(d.tg && (s.b.crucible || 0) < d.cru) return 'Needs Truegold Crucible ' + d.cru;
+  if(d.el && (s.b.crucible || 0) < d.cru) return 'Needs Electrum Crucible ' + d.cru;
   if((s.b.library || 0) < d.lib) return 'Needs Great Library ' + d.lib;
   if(s.b.townhall < d.th) return 'Needs Town Hall ' + d.th;
   const dep = techNeeds(s, k);
@@ -262,7 +262,7 @@ export function treeRows(br){
   const keys = branchKeys(br);
   const inBranch = new Set(keys);
   /* Distinct Library requirements, compressed to consecutive ranks — the raw values jump 1,2,3,5,
-     8,20 and using them directly would leave eleven empty rows above the Truegold tier. */
+     8,20 and using them directly would leave eleven empty rows above the Electrum tier. */
   const libs = [...new Set(keys.map(k => RESEARCH[k].lib))].sort((a, b) => a - b);
   const libRank = k => libs.indexOf(RESEARCH[k].lib);
 

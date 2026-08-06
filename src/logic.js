@@ -375,7 +375,7 @@ export function perk(s,n){ return masteryLvl(s)>=n; }
 export function shieldCap(s){ return 2 + (perk(s,7)?1:0) + (perk(s,14)?1:0) + spoilBonus(s,'shieldCap'); }
 export function storageCapFor(s, thLvl){
   return Math.round(800 * Math.pow(thLvl,1.7)
-    * (1 + 0.03*(s.b.granary||0) + techBonus(s,'logistics') + techBonus(s,'tg_hoard')
+    * (1 + 0.03*(s.b.granary||0) + techBonus(s,'logistics') + techBonus(s,'el_hoard')
          + petBonus(s,'store') + skillCourt(s,'store'))
     * (perk(s,4)?1.15:1) * (perk(s,13)?1.10:1));
 }
@@ -397,7 +397,7 @@ export function prodMult(s, res){
   return 1 + heroBonus(s,'production') + (perk(s,1)?0.06:0) + (perk(s,8)?0.08:0) + (perk(s,11)?0.08:0)
        + (res==='food' ? 0.02*(s.b.granary||0) : 0)
        + soft + allyBonus(s,'production')
-       + techBonus(s,'tg_harvest')          // Truegold lifts every resource, not a pair
+       + techBonus(s,'el_harvest')          // Electrum lifts every resource, not a pair
        + spoilBonus(s,resKey);
 }
 export function prodPerSec(s, res){
@@ -799,7 +799,7 @@ export function townhallNeedCount(toLvl){ return Math.min(5, 1 + Math.floor(toLv
 
    DERIVED, not tabulated. Sixty hand-written entries would need auditing every time a
    building's cap or Town Hall gate changed, and the failure would be silent in the worst
-   way: a level that demands the War Academy at 15 when it stops at 9 is a hold that can
+   way: a level that demands the Drillfield at 15 when it stops at 9 is a hold that can
    never be raised again. So the pair is computed from the eligible pool — which is exactly
    the set that CAN satisfy it — and the suite proves every level is satisfiable and that
    every building takes its turn.
@@ -901,7 +901,7 @@ const READOUT = {
   forge:      (s) => '+' + (REFINE.forge.rate * s.b.forge).toFixed(3) + ' steel/s',
   runeworks:  (s) => '+' + (REFINE.runeworks.rate * s.b.runeworks).toFixed(3) + ' runestone/s',
   kitchen:    (s) => '+' + (REFINE.kitchen.rate * s.b.kitchen).toFixed(3) + ' rations/s',
-  crucible:   (s) => '+' + (REFINE.crucible.rate * s.b.crucible).toFixed(3) + ' truegold/s',
+  crucible:   (s) => '+' + (REFINE.crucible.rate * s.b.crucible).toFixed(3) + ' electrum/s',
   library:    (s) => 'studies to level ' + s.b.library,
 };
 
@@ -1076,7 +1076,7 @@ export function watchCasualties(s, lossFrac, rand){
 export function wallWear(s){ return Math.max(0, Math.min(WALL_WEAR_MAX, s.wallWear || 0)); }
 export function wallIntact(s){ return 1 - wallWear(s); }
 export function wallPower(s){
-  const full = (18 + techFlat(s,'fortification') + techFlat(s,'tg_bulwark'))*s.b.wall
+  const full = (18 + techFlat(s,'fortification') + techFlat(s,'el_bulwark'))*s.b.wall
              + heroBonus(s,'wallPower');
   return full * wallIntact(s);
 }
@@ -1098,7 +1098,7 @@ export function armyBreakdown(s){
   let base = 0;
   for(const k of Object.keys(TROOPS)) base += tierPower(s,k) * s.t[k] * coverMult(k, cover);
   const mine = (1 + heroBonus(s,'troopPower') + spoilBonus(s,'troopPower')
-                  + techBonus(s,'warcraft') + techBonus(s,'tg_might') + allyBonus(s,'troopPower'))
+                  + techBonus(s,'warcraft') + techBonus(s,'el_might') + allyBonus(s,'troopPower'))
              * (1 + (perk(s,2)?0.06:0) + (perk(s,8)?0.08:0) + (perk(s,10)?0.15:0)
                   + (perk(s,12)?0.08:0) + (perk(s,20)?0.20:0));
   /* The best captain at the wall commands everyone at it — the host included. */

@@ -915,7 +915,7 @@ function renderIsle(S){
   h += '</div>';
   const left = isle.cells.filter(c => c.known && !c.spent).length;
   h += '<div class="stat-note">'+left+' charted site'+(left===1?'':'s')+' still worth landing on. '
-    + 'Isle Ore is the only thing the Truegold Crucible will eat, and the only place it comes from is here.</div>';
+    + 'Isle Ore is the only thing the Electrum Crucible will eat, and the only place it comes from is here.</div>';
   return h + '</section>';
 }
 
@@ -1279,12 +1279,12 @@ function renderTree(S, br){
      here took three wrong answers. Routing at the span's midpoint drew the Warcraft→Mastery edges
      straight through Medicine and Plunder. Dropping at the target's column looked clean and was
      worse — the runs landed exactly on unrelated nodes' centres, so the picture asserted
-     husbandry→logistics→tg_harvest and warcraft→archers→edge, chains that do not exist. Routing out
+     husbandry→logistics→el_harvest and warcraft→archers→edge, chains that do not exist. Routing out
      to side channels was provably clear of every node and drew concentric dashed rectangles around
      the whole diagram, because eleven long edges shared two gutters.
 
      The real fix was upstream: most long edges existed because the graph was a STAR — seven studies
-     hung off Warcraft — so no row layout could make it a tree. Truegold moved to its own branch and
+     hung off Warcraft — so no row layout could make it a tree. Electrum moved to its own branch and
      two prerequisites were rechained, which left three. For those a stub is the honest drawing: it
      says "something above gates this" without claiming a specific route, and the requirement itself
      is on the node's tooltip and in its detail sheet. */
@@ -1331,7 +1331,7 @@ function renderTree(S, br){
       + ';width:'+NODE_W+'px;height:'+NODE_H+'px"'
       + ' data-act="detail" data-dtype="tech" data-key="'+k+'"'
       + ' title="'+title.replace(/"/g,'&quot;')+'" aria-label="'+title.replace(/"/g,'&quot;')+'">'
-      + '<span class="ti">'+d.icon+(d.tg ? '<i class="tgdot">🏵️</i>' : '')+'</span>'
+      + '<span class="ti">'+d.icon+(d.el ? '<i class="eldot">🏵️</i>' : '')+'</span>'
       + '<span class="tl">'+d.short+'</span>'
       + '<span class="tv">'+lvl+'/'+d.max+'</span>'
       + (cls === 'locked' ? '<span class="tlock">🔒</span>' : '')
@@ -2013,7 +2013,7 @@ function renderDetail(S){
           : '<button class="primary" data-act="promote" data-key="'+k+'" '
             + (canAfford(S,pc)?'':'disabled')+'>⬆ Reforge for Tier '+TIERS[tier]+'</button>');
     }else if(tier < 10){
-      body += '<p class="d-warn">Tier '+TIERS[tier]+' needs War Academy level '+academyForTier(tier+1)+'.</p>';
+      body += '<p class="d-warn">Tier '+TIERS[tier]+' needs Drillfield level '+academyForTier(tier+1)+'.</p>';
     }else body += '<p class="d-delta" style="color:var(--gold)">Highest tier — none finer in the realm.</p>';
   }
 
@@ -2190,9 +2190,9 @@ function renderDetail(S){
     if(d.line)
       body += '<p class="d-row">Only '+TROOPS[d.line].plural+' — and it stacks on top of Warcraft, '
         + 'which lifts every line. This is how you build an army that is a shape rather than a pile.</p>';
-    if(d.tg)
-      body += '<p class="d-row">Truegold study: the deepest in the Reach, and the only thing '
-        + '🏵️ Truegold is spent on. Your Crucible must reach '+d.cru+'.</p>';
+    if(d.el)
+      body += '<p class="d-row">Electrum study: the deepest in the Reach, and the only thing '
+        + '🏵️ Electrum is spent on. Your Crucible must reach '+d.cru+'.</p>';
     /* The prerequisite gets its own line whether or not it is met — a tree you can only
        read backwards from a locked button is the thing that makes these panels opaque. */
     if(d.needs){
@@ -2343,7 +2343,7 @@ function renderCodex(S){
     + '<div class="tscroll"><table><tr><th>Troop</th><th>Power</th><th>Cost each</th><th>Time each*</th><th>Eats</th><th>Needs</th></tr>'+troopRows+'</table></div>'
     + '<ul>'
     + '<li>*time shown includes your current ×'+tm.toFixed(2)+' training multiplier (Barracks −6%/level, plus heroes, spoils, Mastery). Costs/power/upkeep shown are Tier I — each tier is +25% power, +18% upkeep, +22% cost.</li>'
-    + '<li><b>Tiers</b>: the War Academy unlocks Tier II–X. Promoting reforges every unit of that class at once, and every recruit after it matches. A fixed price per line — it does not matter whether you promote before or after you drill, so there is nothing to time.</li>'
+    + '<li><b>Tiers</b>: the Drillfield unlocks Tier II–X. Promoting reforges every unit of that class at once, and every recruit after it matches. A fixed price per line — it does not matter whether you promote before or after you drill, so there is nothing to time.</li>'
     + '<li>Army power = troop power × bonuses + 18 per Wall level.</li>'
     + '<li><b>Armies eat.</b> If food hits 0, roughly 2% of troops desert every 10s until the muster is affordable again.</li>'
     + '</ul>'
@@ -2391,7 +2391,7 @@ function renderCodex(S){
     + 'ones, which is what makes uncovering them worth the fog. Fights there <b>wound only</b>, like everywhere the Unpaid '
     + 'are not involved.</li>'
     + '<li><b>Isle Ore is the only resource in the game with no building behind it.</b> It cannot be produced, only carried '
-    + 'home — and it is the only thing the Truegold Crucible will eat. That chain is the whole reason to sail.</li>'
+    + 'home — and it is the only thing the Electrum Crucible will eat. That chain is the whole reason to sail.</li>'
     + '<li>The chart is generated from the season, so everyone sailing the same fortnight is learning the same island.</li>'
     + '</ul>'
 

@@ -26,7 +26,7 @@ for(const k of Object.keys(D.BUILDINGS)) s.b[k] = Math.min(lvl, D.BUILDINGS[k].m
 s.b.townhall = Math.min(lvl, D.BUILDINGS.townhall.max);
 if(q.get('empty')) for(const k of Object.keys(D.BUILDINGS)) s.b[k] = k === 'townhall' ? 2 : 0;
 if(q.get('building')) s.bq = { key:'library', lvl:s.b.library + 1, endsAt: Date.now() + 6e5, total: 9e5 };
-s.res = { food:9e5, wood:9e5, stone:9e5, iron:9e5, steel:9e5, runestone:9e5, rations:500, trueore:9, truegold:2 };
+s.res = { food:9e5, wood:9e5, stone:9e5, iron:9e5, steel:9e5, runestone:9e5, rations:500, isleore:9, electrum:2 };
 s.nextWave = Date.now() + (q.get('threat') ? 6000 : 6e5);
 s.wave = 40;
 s.now = now;

@@ -89,7 +89,7 @@ export const LESSONS = [
   {
     id: 'tiers', icon: '🎓', title: 'The same soldier, forged better',
     when: s => (s.b.academy || 0) >= 1,
-    body: 'The War Academy opens a troop tier every third level and drills your whole muster '
+    body: 'The Drillfield opens a troop tier every third level and drills your whole muster '
         + 'harder at every level. Reforging a line lifts every soldier in it and every recruit '
         + 'after — it costs per head and takes the forges time, so it is a commitment rather '
         + 'than a button.',

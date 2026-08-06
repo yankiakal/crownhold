@@ -34,7 +34,7 @@ export const BUILDINGS = {
   /* Nine levels and it was finished — and eight of those nine did exactly one thing, so the
      ninth was the last time the building was ever interesting. Now every third level opens a
      troop tier and EVERY level drills the muster harder, so there is no dull rung. */
-  academy:   {name:'War Academy',icon:'🎓', fx:'+1% troop power per level. Every 3rd level unlocks the next troop tier.',
+  academy:   {name:'The Drillfield',icon:'🎓', fx:'+1% troop power per level. Every 3rd level unlocks the next troop tier.',
               cost:{stone:150,iron:60}, time:25, max:27, th:4},
   hospital:  {name:'Infirmary',   icon:'⛑️', fx:'−4% casualties, and more of the fallen come back wounded instead of dead.',
               cost:{wood:120,food:80},  time:18, max:25, th:4},
@@ -54,13 +54,13 @@ export const BUILDINGS = {
      back ore, the Crucible turns ore into the finest metal in the Reach. */
   kitchen:   {name:'Victualler', icon:'🍲', fx:'Salts and packs Rations — what a voyage eats.',
               cost:{wood:220,food:260}, time:30, max:25, th:10},
-  crucible:  {name:'Truegold Crucible', icon:'🏵️', fx:'Renders Isle ore into Truegold.',
+  crucible:  {name:'Electrum Crucible', icon:'🏵️', fx:'Renders Isle ore into Electrum.',
               cost:{stone:900,steel:60}, time:70, max:20, th:18},
 };
 // polynomial curves: early levels are quick, late levels are the long road
 export const COST_EXP = 2.0, TIME_EXP = 1.6;
 
-/* ── troop tiers: the same soldier, forged better. Unlocked by the War Academy ── */
+/* ── troop tiers: the same soldier, forged better. Unlocked by the Drillfield ── */
 export const TIERS = ['I','II','III','IV','V','VI','VII','VIII','IX','X'];
 /* Academy levels per tier unlocked. Was 1 — nine levels, nine tiers, done. At 3 the ladder
    runs to level 27 and Tier X becomes a late-game achievement rather than something you have
@@ -771,7 +771,7 @@ export const QUESTS = [
   {txt:'Reach Mastery 6',                check:s=>masteryLvl(s)>=6,   reward:{valor:15},          rtxt:'+15 Valor'},
   {txt:'Repel 25 raids',                 check:s=>s.wavesWon>=25,     reward:{valor:25},          rtxt:'+25 Valor'},
   {txt:'Reach Town Hall 10',             check:s=>s.b.townhall>=10,   reward:{valor:50},          rtxt:'+50 Valor'},
-  {txt:'Build the War Academy',          check:s=>s.b.academy>=1,     reward:{valor:15},          rtxt:'+15 Valor'},
+  {txt:'Build the Drillfield',          check:s=>s.b.academy>=1,     reward:{valor:15},          rtxt:'+15 Valor'},
   {txt:'Promote a troop to Tier II',     check:s=>s.tier && Object.values(s.tier).some(t=>t>=2), reward:{valor:15}, rtxt:'+15 Valor'},
   {txt:'Reach Town Hall 12',             check:s=>s.b.townhall>=12,   reward:{valor:30,shield:1}, rtxt:'+30 Valor, +1 Writ'},
   {txt:'Light the Forge — nothing rises past 14 without Steel',
@@ -835,8 +835,8 @@ export const RES_META = {
      that code can ask "does this have a producer?" instead of inferring it from
      "is it refined?", which is what several loops did: adding a resource that was
      neither immediately crashed them looking up a farm that does not exist. */
-  trueore:  {lbl:'Isle Ore', icon:'🪨', carried:true, capMult:0.05},
-  truegold: {lbl:'Truegold', icon:'🏵️', refined:true, capMult:0.02, from:'crucible'},
+  isleore:  {lbl:'Isle Ore', icon:'🪨', carried:true, capMult:0.05},
+  electrum: {lbl:'Electrum', icon:'🏵️', refined:true, capMult:0.02, from:'crucible'},
 };
 // levels at which every building starts demanding the next currency
 export const STEEL_FROM = 15, RUNE_FROM = 24;
@@ -847,7 +847,7 @@ export const REFINE = {
   kitchen:   { out:'rations',   rate:0.055, in:{food:8, wood:3} },
   // the Crucible eats ore nothing else in the game can make, so it idles until
   // a voyage comes home — deliberately: it is a reason to sail, not a treadmill
-  crucible:  { out:'truegold',  rate:0.012, in:{trueore:4, steel:2} },
+  crucible:  { out:'electrum',  rate:0.012, in:{isleore:4, steel:2} },
 };
 export const WAVE_MS = 75000, FIRST_WAVE_MS = 120000, PATROL_MS = 25000, SHIELD_MS = 180000;
 

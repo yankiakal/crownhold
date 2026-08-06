@@ -472,9 +472,9 @@ section.panel{
   font-family:var(--sans);line-height:1.05;text-align:center;overflow:hidden;
 }
 .tnode .ti{font-size:1.15rem;position:relative;line-height:1}
-/* the Truegold mark rides the icon rather than taking a row: these nodes are priced in a
+/* the Electrum mark rides the icon rather than taking a row: these nodes are priced in a
    resource most players have never seen, and the node is too small for a word */
-.tnode .tgdot{position:absolute;right:-.5rem;bottom:-.15rem;font-size:.55rem;font-style:normal}
+.tnode .eldot{position:absolute;right:-.5rem;bottom:-.15rem;font-size:.55rem;font-style:normal}
 .tnode .tl{font-size:.53rem;letter-spacing:.02em;color:var(--ink-dim);
   max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tnode .tv{font-size:.62rem;font-variant-numeric:tabular-nums;color:var(--ink)}

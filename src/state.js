@@ -17,7 +17,7 @@ export function freshState(now, seed){
     world: genWorld(seed != null ? seed : Math.floor(Math.random()*2**31)),
     isle: genIsle(seed != null ? seed : Math.floor(Math.random()*2**31), seasonNo(now)),
     marches: [], watch: [], watching: [],
-    res:{food:120,wood:120,stone:60,iron:0,steel:0,runestone:0,rations:0,trueore:0,truegold:0},
+    res:{food:120,wood:120,stone:60,iron:0,steel:0,runestone:0,rations:0,isleore:0,electrum:0},
     achieved:{}, campsBurned:0, ruinsRaided:0, winStreak:0, bestStreakWon:0,
     valorDay:0, valorToday:0, rest:0,
     research:{}, rq:null, allyBonus:null, ev:null, daily:null,
@@ -66,7 +66,7 @@ export function applyOffline(s, awayMs){
   /* The refineries never sleep either — run them in chunks so their inputs
      deplete honestly. The list of what they make is DERIVED from RES_META: it was
      hardcoded as ['steel','runestone'], which would have silently left Rations
-     and Truegold out of every offline report the moment they were added. */
+     and Electrum out of every offline report the moment they were added. */
   const madeHere = Object.keys(RES_META).filter(r => RES_META[r].refined);
   const before = {};
   for(const r of madeHere) before[r] = s.res[r] || 0;
@@ -112,6 +112,25 @@ export function migrate(s, now){
     if(s.wavesLost==null) s.wavesLost = 0;
     if(s.famineAcc==null) s.famineAcc = 0;
     if(s.t.ballista==null) s.t.ballista = 0;
+    /* v1.69: Truegold became Electrum, and Isle Ore's key stopped deriving from it.
+       Truegold is Kingshot's own resource name and we were shipping it verbatim, so the metal was
+       renamed to a real one — electrum, the pale gold-silver alloy known since antiquity, which sits
+       in the same grounded register as Steel. Keys moved with the label rather than leaving the code
+       littered with the old one, so any save written before this carries them over. */
+    if(s.res){
+      if(s.res.electrum == null) s.res.electrum = s.res.truegold || 0;
+      if(s.res.isleore == null)  s.res.isleore  = s.res.trueore  || 0;
+      delete s.res.truegold; delete s.res.trueore;
+    }
+    if(s.research){
+      for(const [from, to] of [['tg_might','el_might'], ['tg_bulwark','el_bulwark'],
+                               ['tg_harvest','el_harvest'], ['tg_hoard','el_hoard']]){
+        if(s.research[from] != null && s.research[to] == null) s.research[to] = s.research[from];
+        delete s.research[from];
+      }
+    }
+    // a study in flight under the old key would otherwise finish into nothing
+    if(s.rq && s.rq.key && s.rq.key.startsWith('tg_')) s.rq.key = 'el_' + s.rq.key.slice(3);
     // v0.5: heroes moved from fixed {on,lvl,xp} slots to a drafted roster
     if(s.heroes && Object.values(s.heroes).some(h => h && typeof h.on === 'boolean')){
       const owned = {};

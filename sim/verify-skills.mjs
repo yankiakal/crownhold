@@ -619,7 +619,7 @@ console.log('\n── a pre-skills save is inert, not broken ──');
        raid. */
     const room = Math.floor(L.storageCap(s) * 0.5);
     s.res = { food:room, wood:room, stone:room, iron:room,
-              steel:0, runestone:0, rations:0, trueore:0, truegold:0 };
+              steel:0, runestone:0, rations:0, isleore:0, electrum:0 };
     return { s, now };
   };
   const beaten = (garrison, wave, hospital = 0) => {
@@ -786,7 +786,7 @@ console.log('\n── a pre-skills save is inert, not broken ──');
      LS.nextLesson(fresh, { thBlocked: true }) === null);
 }
 
-/* ── the War Academy is never a dull upgrade ──
+/* ── the Drillfield is never a dull upgrade ──
    Nine levels, one thing each, and after the ninth it was finished furniture. Now a tier
    every third level (so Tier X is a late-game achievement, not something you hold by Town
    Hall 9) and a troop-power bonus on EVERY level, so no rung is dead.
@@ -796,7 +796,7 @@ console.log('\n── a pre-skills save is inert, not broken ──');
    a soldier a tier higher, precisely so neither route to a tier is cheaper. Asserted below,
    because that invariant is easy to break from a long way away. */
 {
-  console.log('\n── the War Academy: a tier every third level, and no dull rung ──');
+  console.log('\n── the Drillfield: a tier every third level, and no dull rung ──');
   const at = a => { const s = hold(); s.b.academy = a; return s; };
   ok('an unbuilt Academy still allows Tier I', L.maxTier(at(0)) === 1);
   ok('a tier every third level', L.maxTier(at(3)) === 2 && L.maxTier(at(6)) === 3 && L.maxTier(at(9)) === 4,
@@ -887,7 +887,7 @@ console.log('\n── a pre-skills save is inert, not broken ──');
    comment claimed the whole hold climbed together.
 
    The dangerous failure of a named requirement is an IMPOSSIBLE one: several buildings cap
-   below 30, so a level demanding the War Academy at 15 when it stops at 9 would wall the
+   below 30, so a level demanding the Drillfield at 15 when it stops at 9 would wall the
    game off for ever. That is the first thing asserted here. */
 {
   console.log('\n── the Town Hall names two buildings ──');
@@ -1314,7 +1314,7 @@ console.log('\n── a pre-skills save is inert, not broken ──');
     s.b.warehouse = opts.warehouse || 0;
     s.b.wall = opts.wall == null ? 6 : opts.wall;
     s.res = { food:40000, wood:40000, stone:20000, iron:9000,
-              steel:5000, runestone:800, rations:300, trueore:5, truegold:2 };
+              steel:5000, runestone:800, rations:300, isleore:5, electrum:2 };
     return s;
   };
 
@@ -1481,8 +1481,8 @@ console.log('\n── a pre-skills save is inert, not broken ──');
 }
 
 /* ── the research tree ──
-   The tree grew branches, prerequisites, per-line mastery and a Truegold tier, and the
-   LAST test in this block is the one that matters most. Truegold shipped as a resource
+   The tree grew branches, prerequisites, per-line mastery and a Electrum tier, and the
+   LAST test in this block is the one that matters most. Electrum shipped as a resource
    the Crucible produced and nothing on earth spent — a whole refining chain terminating
    in a number no rule read. That bug was invisible because nothing was broken; something
    was merely absent, which is this project's signature failure. So every study is maxed
@@ -1533,6 +1533,48 @@ console.log('\n── the research tree is shaped, not a flat list ──');
       if(R.RESEARCH[dep].lib > R.RESEARCH[k].lib)
         gateClash.push(k + '(lib ' + R.RESEARCH[k].lib + ') needs ' + dep + '(lib ' + R.RESEARCH[dep].lib + ')');
   ok('no study unlocks before its own prerequisite can', gateClash.length === 0, gateClash.join('; ') || 'clean');
+}
+
+console.log('\n── a save from before the Electrum rename carries over ──');
+{
+  /* Truegold was Kingshot's resource name shipping verbatim, so the metal became Electrum and the
+     KEYS moved with the label rather than leaving the old one littered through the code. That makes
+     every save written earlier a migration problem, and a dropped resource is exactly the failure
+     no other suite here would notice — the game would simply open with an empty vault and nothing
+     would look broken. */
+  const old = ST.freshState(Date.now(), 7);
+  old.res = { food:100, wood:100, stone:100, iron:50, steel:20, runestone:5, rations:9,
+              trueore:44, truegold:17 };
+  delete old.res.isleore; delete old.res.electrum;
+  old.research = { tg_might:6, tg_hoard:3, husbandry:4 };
+  old.rq = { key:'tg_bulwark', start:0, end:0 };
+  const s = ST.migrate(old);
+  ok('the metal survives under its new key', s.res.electrum === 17, String(s.res.electrum));
+  ok('and so does Isle Ore', s.res.isleore === 44, String(s.res.isleore));
+  ok('levels already studied are kept',
+     s.research.el_might === 6 && s.research.el_hoard === 3,
+     'el_might ' + s.research.el_might + ', el_hoard ' + s.research.el_hoard);
+  ok('an untouched study is undisturbed', s.research.husbandry === 4);
+  ok('the old keys are gone rather than left to shadow the new ones',
+     s.res.truegold === undefined && s.res.trueore === undefined
+       && s.research.tg_might === undefined);
+  /* A study in flight under the old key would otherwise complete into a study that no longer
+     exists, silently losing however many hours were already spent on it. */
+  ok('a study already in the queue is renamed too', s.rq.key === 'el_bulwark', s.rq.key);
+
+  /* And nothing anywhere may still reference the old names, or a rule would read a key that
+     migration has just deleted. */
+  const files = ['../src/defs.js', '../src/logic.js', '../src/research.js', '../src/ui.js',
+                 '../src/world.js', '../src/isle.js', '../src/state.js'];
+  const stale = [];
+  for(const f of files){
+    const src = readFileSync(new URL(f, import.meta.url), 'utf8');
+    /* state.js is allowed to name them — it is the one file that has to, to migrate them. */
+    if(f.endsWith('state.js')) continue;
+    if(/truegold|trueore|tg_might|tg_bulwark|tg_harvest|tg_hoard/i.test(src)) stale.push(f);
+  }
+  ok('no rule outside the migration still names the old keys', stale.length === 0,
+     stale.join(', ') || 'clean');
 }
 
 console.log('\n── the tree draws as a tree ──');
@@ -1670,11 +1712,11 @@ console.log('\n── per-line mastery hits one line and only one line ──');
      '×' + (powerOf('knight') / before.knight).toFixed(3));
 }
 
-console.log('\n── the Truegold tier is the sink the Crucible never had ──');
+console.log('\n── the Electrum tier is the sink the Crucible never had ──');
 {
-  ok('Truegold research exists', Object.keys(R.TRUEGOLD).length > 0);
-  const noGold = Object.entries(R.TRUEGOLD).filter(([, d]) => !d.cost.truegold);
-  ok('and every one of them is priced in Truegold', noGold.length === 0,
+  ok('Electrum research exists', Object.keys(R.ELECTRUM).length > 0);
+  const noGold = Object.entries(R.ELECTRUM).filter(([, d]) => !d.cost.electrum);
+  ok('and every one of them is priced in Electrum', noGold.length === 0,
      noGold.map(([k]) => k).join(', ') || 'clean');
 
   /* Priced in it is not the same as SPENDING it — payCost is generic over resource keys,
@@ -1682,21 +1724,21 @@ console.log('\n── the Truegold tier is the sink the Crucible never had ─�
   const s = hold();
   s.b.library = 30; s.b.crucible = 20; s.b.townhall = 25;
   s.research = { warcraft: 10 };
-  s.res.truegold = 500; s.res.trueore = 500;
-  const held = s.res.truegold;
-  const started = L.startResearch(s, 'tg_might', s.now);
-  ok('a Truegold study can actually be begun', started === true, R.techBlockedBy(s, 'tg_might') || '');
-  ok('and it spends Truegold from the vault', s.res.truegold < held,
-     held + ' → ' + s.res.truegold);
+  s.res.electrum = 500; s.res.isleore = 500;
+  const held = s.res.electrum;
+  const started = L.startResearch(s, 'el_might', s.now);
+  ok('a Electrum study can actually be begun', started === true, R.techBlockedBy(s, 'el_might') || '');
+  ok('and it spends Electrum from the vault', s.res.electrum < held,
+     held + ' → ' + s.res.electrum);
 
-  /* Affordability must bite: without Truegold the study is refused even when every
+  /* Affordability must bite: without Electrum the study is refused even when every
      other resource is overflowing. */
   const s2 = hold();
   s2.b.library = 30; s2.b.crucible = 20; s2.b.townhall = 25;
   s2.research = { warcraft: 10 };
-  s2.res.truegold = 0;
-  ok('and is refused outright with an empty Truegold vault',
-     L.startResearch(s2, 'tg_might', s2.now) === false);
+  s2.res.electrum = 0;
+  ok('and is refused outright with an empty Electrum vault',
+     L.startResearch(s2, 'el_might', s2.now) === false);
 }
 
 console.log('\n── every study can actually be paid for ──');
@@ -1716,27 +1758,27 @@ console.log('\n── every study can actually be paid for ──');
   ok('no study has a level dearer than the vault that must hold it', bad.length === 0,
      bad.join('; ') || 'all ' + Object.keys(R.RESEARCH).length + ' fit');
 
-  /* And the Truegold tier must be reachable from the only place Truegold comes from. The Salt
-     Isle yields a measured 586 Isle Ore a season worked perfectly, so 147 Truegold; the tier
+  /* And the Electrum tier must be reachable from the only place Electrum comes from. The Salt
+     Isle yields a measured 586 Isle Ore a season worked perfectly, so 147 Electrum; the tier
      first shipped needing 7,078, which is 48 seasons of flawless sailing. The band is wide
      because the intent is loose — "a long endgame grind" — but 48 seasons is outside it, and
      nothing would have said so. */
-  const tg = Object.keys(R.TRUEGOLD).reduce((a, k) => {
+  const tg = Object.keys(R.ELECTRUM).reduce((a, k) => {
     const st = hold(); st.b.library = 30; st.b.crucible = 20;
     let sum = 0;
     for(let l = 0; l < R.RESEARCH[k].max; l++){
       st.research = { [k]: l };
-      sum += R.techCost(st, k).truegold || 0;
+      sum += R.techCost(st, k).electrum || 0;
     }
     return a + sum;
   }, 0);
   const seasons = tg / 147;
-  ok('the whole Truegold tier is 4–20 seasons of Isle play, not a lifetime',
+  ok('the whole Electrum tier is 4–20 seasons of Isle play, not a lifetime',
      seasons >= 4 && seasons <= 20,
-     tg + ' Truegold = ' + seasons.toFixed(1) + ' seasons at 147/season');
+     tg + ' Electrum = ' + seasons.toFixed(1) + ' seasons at 147/season');
 }
 
-console.log('\n── no study moves nothing (the bug Truegold itself was) ──');
+console.log('\n── no study moves nothing (the bug Electrum itself was) ──');
 {
   /* Every study maxed in isolation, against a wide sample of observable outputs. If a
      study's number is read by no rule anywhere, it appears here by name. */

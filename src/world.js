@@ -670,7 +670,7 @@ export function voyageStep(s, now, rand = Math.random){
   if(won){
     const [lo, hi] = d.ore;
     const ore = Math.round((lo + rand() * (hi - lo)) * c.tier);
-    gainRes(s, 'trueore', ore);
+    gainRes(s, 'isleore', ore);
     const bits = ['+' + ore + ' Isle Ore'];
     for(const [r, amt] of Object.entries(d.res || {})){
       const got = Math.round(amt * (0.6 + 0.4 * c.tier));

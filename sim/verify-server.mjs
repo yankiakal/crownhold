@@ -218,7 +218,7 @@ try {
        400 against 120 was the second mistake: the bracket floor is theirs >= mine × 0.3,
        and 120/400 is exactly 0.30. The test sat ON the threshold, so it passed only while
        nothing perturbed the ratio — and it started failing two runs in three the moment the
-       War Academy began multiplying troop power, because the wall and the garrison do not
+       Drillfield began multiplying troop power, because the wall and the garrison do not
        scale with it and the ratio drifted. A test parked on a boundary is a coin flip that
        blames whatever changed last. 200 sits in the middle of the bracket. */
     await post('/api/debug/kit', { token: ta, strong: true, spearmen: 400 });
@@ -297,7 +297,7 @@ try {
       /* RULE 2 — only the four base stores can be taken. */
       const untouched = (after.body.raid.unlootable || []).filter(r => cAfter.res[r] !== cBefore.res[r]);
       ok('refined and carried goods cannot be looted', untouched.length === 0,
-         untouched.length ? 'MOVED: ' + untouched.join(', ') : 'steel, runestone, rations, ore, Truegold all held');
+         untouched.length ? 'MOVED: ' + untouched.join(', ') : 'steel, runestone, rations, ore, Electrum all held');
 
       /* RULE 4 — losing buys peace, free. */
       const cBoard = await post('/api/raid', { token: tc });

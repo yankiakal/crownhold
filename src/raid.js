@@ -20,7 +20,7 @@
 //      good, and a FAILED assault buries far more of them than a successful one. Your
 //      wall is survivable; your ambition is not.
 //   2. ONLY THE FOUR BASE STORES CAN BE TAKEN, and only a share of what the Warehouse
-//      leaves exposed. Steel, runestone, rations and Truegold — the scarce spine of the
+//      leaves exposed. Steel, runestone, rations and Electrum — the scarce spine of the
 //      economy — cannot be carted off at all.
 //   3. A COLUMN CARRIES WHAT IT CAN CARRY. Loot is capped by the size of the column
 //      that came for it, so no single raid empties a hold however strong the attacker.

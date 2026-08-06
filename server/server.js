@@ -1421,7 +1421,7 @@ async function api(req, res, url){
     st.tier = body.strong ? { spearman:5, archer:1, knight:1, ballista:1 }
                           : { spearman:1, archer:1, knight:1, ballista:1 };
     st.res = { food:9e5, wood:9e5, stone:9e5, iron:9e5, steel:9e5, runestone:9e5,
-               rations:0, trueore:0, truegold:0 };
+               rations:0, isleore:0, electrum:0 };
     // a hero or two, so the strong hold really does carry a better multiplier
     if(body.strong){
       st.heroes.marshal = { lvl:20, xp:0, stars:3, deeds:0, gear:{}, skills:[null,null,null] };

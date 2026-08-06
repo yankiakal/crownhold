@@ -18,7 +18,7 @@
 //     learn it, and refills only when the season turns — so it is a fortnightly
 //     expedition, not a daily chore.
 //
-// It is the only source of Isle Ore, and therefore the only road to Truegold.
+// It is the only source of Isle Ore, and therefore the only road to Electrum.
 
 export const ISLE_W = 7, ISLE_H = 7;
 export const ISLE_TH = 12;                       // when the charts become useful

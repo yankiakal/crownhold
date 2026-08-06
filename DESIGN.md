@@ -326,8 +326,8 @@ phone. Measured: a level-15 Victualler brings a crossing from 260 Rations to 182
 and a level-20 Command Centre brings 3 hours down to 2h06m.
 
 **Isle Ore is the only resource in the game with no building behind it.** It
-cannot be produced, only carried home, and it is the only thing the Truegold
-Crucible will eat. That chain — Victualler → voyage → ore → Crucible → Truegold —
+cannot be produced, only carried home, and it is the only thing the Electrum
+Crucible will eat. That chain — Victualler → voyage → ore → Crucible → Electrum —
 is the entire reason to sail, and it means the Crucible deliberately idles between
 voyages. It is a reason to go, not a treadmill.
 
@@ -340,7 +340,7 @@ talk about.
 
 Verified end to end: 224 aboard (capped by the three captains, not by the Isle),
 all home, the site stripped, five new cells charted, 3 ore refined into exactly
-0.75 Truegold, a second ship refused while the first is at sea, and the chart
+0.75 Electrum, a second ship refused while the first is at sea, and the chart
 reset when the tide turned.
 
 Architectural note: the voyage code lives in `world.js` rather than `logic.js`,
@@ -569,7 +569,7 @@ A soldier can reach Tier X two ways: drilled at Tier X, or drilled at Tier I and
 later. Those cost the same thing and should cost the same money. They were **4.8× apart** —
 1.98× a soldier's base cost at the yard against 9.45× to reforge them. And `promoteCost`
 scaled with the line you *currently* fielded, with `n` collapsing to 1 on an empty muster,
-so the efficient opening was to drill nothing until the War Academy topped out, promote
+so the efficient opening was to drill nothing until the Drillfield topped out, promote
 every line for pennies, and only then mass-drill:
 
 | route to 400/400/200/100, all Tier X | cost |
@@ -819,7 +819,7 @@ Four rules remove the fear without removing the fight, each one a line in `src/r
    are only ever wounded — however small your Infirmary. Soldiers you *send out* can die,
    and a broken assault buries most of the column.
 2. **Only food, wood, stone and iron can be taken**, and only the share the Warehouse
-   leaves exposed. Steel, runestone, rations, Isle ore and Truegold — the scarce spine of
+   leaves exposed. Steel, runestone, rations, Isle ore and Electrum — the scarce spine of
    the economy — cannot be carted off at all.
 3. **A column carries what it can carry.** Loot is capped by the size of the column that
    came for it: a four-soldier raid on a hold sitting on five million food took 165.
@@ -1285,16 +1285,16 @@ an enormous pile of iron and wood, laundered through a Forge.
 Everything now runs to **Town Hall 30**, Mastery **30**, and a 30-step charter,
 with a 24-entry permanent achievement list underneath.
 
-### Truegold had no sink at all (v1.67)
+### Electrum had no sink at all (v1.67)
 
 The Victualler packs Rations, Rations pay for a voyage, a voyage brings back Isle Ore,
-and the Crucible refines Isle Ore into Truegold. Four buildings and a whole second map,
-and **nothing in the game spent the Truegold**. It was produced, it was displayed, it
+and the Crucible refines Isle Ore into Electrum. Four buildings and a whole second map,
+and **nothing in the game spent the Electrum**. It was produced, it was displayed, it
 counted toward nothing. Every hour anyone put into that chain bought them a number that
 no rule read.
 
 Nothing was broken, so nothing complained — this project's signature failure, the same
-shape as the frontier being unwinnable for two commits. The Truegold research tier below
+shape as the frontier being unwinnable for two commits. The Electrum research tier below
 is the sink, and `verify-skills` now maxes **every** study in isolation and fails the run
 naming any whose number moves nothing observable.
 
@@ -1315,21 +1315,21 @@ makes a tree a tree.
   version is four per-line power tracks, priced so you cannot max all four. It lands in
   `tierPower`, the single place one soldier's worth is computed, so the muster roll, the
   wall and a column on the road cannot disagree about it.
-- **The Truegold tier** — four studies, gated on the Crucible, the biggest bonuses in the
+- **The Electrum tier** — four studies, gated on the Crucible, the biggest bonuses in the
   game and the deepest grind.
 
 100 levels became 240. Measured at Town Hall 25, identical buildings and troops: the
-general tracks alone are **×1.39** army, per-line takes it to **×1.77**, Truegold to
+general tracks alone are **×1.39** army, per-line takes it to **×1.77**, Electrum to
 **×2.40**. The wall rises *with* that rather than past it — 8% of total defence fully
 researched under the old tree, 9% under this one — so no amount of study makes a hold
 unraidable.
 
-**Two things measurement caught that judgement had not.** Truegold Bulwark first shipped at
+**Two things measurement caught that judgement had not.** Electrum Bulwark first shipped at
 +14 wall power per level, which is 3.5× the entire Fortification track where its three
 siblings are ~1.3×; it took a maxed wall from ×5 to ×21. And the tier was priced at 6
-Truegold a level, totalling 7,078 — against a Salt Isle that yields a measured 586 Isle Ore
+Electrum a level, totalling 7,078 — against a Salt Isle that yields a measured 586 Isle Ore
 a season worked *perfectly*, that is 48 seasons of flawless sailing. Not a long grind, an
-unreachable one. At 1 Truegold a level it is 1,232, about 8 seasons at perfect play and
+unreachable one. At 1 Electrum a level it is 1,232, about 8 seasons at perfect play and
 roughly twice that for anyone living a normal life. Both figures are now held by tests,
 along with the one nobody would think to check: **no study may have a level dearer than the
 vault that has to hold the payment**, which would be a permanent dead end wearing the
@@ -1362,7 +1362,7 @@ disagree the first time anyone edited `needs`.
 **The routing took four attempts, and the first three each looked fine.** Elbows at the span's
 midpoint drew the four Warcraft→Mastery edges straight through Medicine and Plunder. Dropping
 each line at its target's column looked clean and was *worse* — the runs landed exactly on
-unrelated nodes' centres, so the picture asserted `husbandry→logistics→tg_harvest` and
+unrelated nodes' centres, so the picture asserted `husbandry→logistics→el_harvest` and
 `warcraft→archers→edge`, chains that do not exist. Routing out to side channels was provably
 clear of every node and drew concentric dashed rectangles around the whole diagram, because
 eleven long edges shared two gutters.
@@ -1371,7 +1371,7 @@ The actual problem was upstream and structural: **the dependency graph was a sta
 Seven studies hung directly off Warcraft, so no row layout could have drawn it as a tree. Three
 changes fixed the graph rather than the picture:
 
-- **Truegold became its own branch**, which is Kingshot's own arrangement — Truegold research
+- **Electrum became its own branch**, which is Kingshot's own arrangement — Electrum research
   lives on a separate screen there. Each of the four perfects a mundane track, so inside the main
   tree they all attached to roots four and five rows above.
 - **The per-line masteries chain off Plunder** rather than hanging off Warcraft. Thematically the
@@ -1454,7 +1454,7 @@ training times multiplied a further 10–20×. Measured, that had been wrong for
 time: `TIME_SCALE` is already 10, and maxing every building is **2,544 hours of
 construction — 106 days of continuously busy queue**, or roughly 62 once the second crew
 opens at Town Hall 10. Research is a further 74 days on its own parallel queue —
-11 of them the general tracks, 15 the per-line masteries, and 47 the Truegold tier.
+11 of them the general tracks, 15 the per-line masteries, and 47 the Electrum tier.
 
 No player keeps a queue 100% busy, so the real figure is comfortably inside the intended
 six-to-twelve-month window. The multiplier does not need applying; it already was.
@@ -1680,9 +1680,9 @@ live game then scales timers/costs 10–50× to land in the 6–12 month window.
 Polynomial (level²) cost curves keep early levels snappy and late levels long.
 
 Progression ladders (all free, all parallel — there is always a next rung):
-- **Town Hall 1–20** gating 13 buildings (Tavern, Granary, War Academy, Hospital,
+- **Town Hall 1–20** gating 13 buildings (Tavern, Granary, Drillfield, Hospital,
   Warehouse joined in v0.8, each with a distinct lever).
-- **Troop tiers I–X** via the War Academy; promotion reforges the whole class.
+- **Troop tiers I–X** via the Drillfield; promotion reforges the whole class.
 - **Mastery 1–20** (the VIP replacement), **heroes to level 20**, spoils stacking.
 - Roadmap ladders, in order: **hero gear** (crafted from raid drops), **player/lord
   gear**, **seasons** (leagues + cosmetic passes), **arena** (async PvP vs snapshot
