@@ -2524,8 +2524,22 @@ const TABS = [
 const liveTabs = () => TABS.filter(t => !t.online || net.isOnline());
 const paneFor = key => (key === 'ally' && !net.isOnline()) ? 'ledger' : key;
 let tab = 'hold';
-const inTab = (key, body) => '<div class="tabpane" data-pane="'+key+'"'
-  + (tab === key ? '' : ' hidden-narrow')+'>'+body+'</div>';
+/* The hold is the BASE view and everything else is a sheet over it — the arrangement Whiteout
+   Survival and Kingshot both use, and structurally different from six equivalent tabs. Your city
+   is always what you come back to; a bar button opens a full-screen panel on top of it and
+   closing that returns you to the walls.
+
+   Above 820px none of this applies: the panes are display:contents, the sheet heads are hidden,
+   and the desktop two-column layout comes out exactly as it did before. */
+const inTab = (key, body) => {
+  const base = key === 'hold';
+  const t = TABS.find(x => x.key === key);
+  return '<div class="tabpane ' + (base ? 'base' : 'sheet') + (tab === key ? ' on' : '')
+    + '" data-pane="' + key + '">'
+    + (base ? '' : '<div class="sheethead"><span>' + (t ? t.icon + ' ' + t.name : key)
+        + '</span><button data-act="tab" data-key="hold" aria-label="Close">✕</button></div>')
+    + body + '</div>';
+};
 
 function renderTabBar(){
   return '<nav class="tabbar">' + liveTabs().map(t =>
@@ -2567,6 +2581,14 @@ export function render(){
     + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
   setSkinTint((HOLD_SKINS[(S.cos && S.cos.hold) || 'default'] || {}).tint);
   drawMap(S);
+  /* The header's real height, published to CSS. A sheet has to start below the resource row —
+     Whiteout Survival keeps resources visible above every modal, and covering them meant opening
+     War hid what you have while you decide what to spend. The height is measured rather than
+     guessed because it wraps to two rows at some widths and one at others, and a hardcoded
+     offset would clip or gap depending on the phone. */
+  const hdr = document.querySelector('header');
+  if(hdr) document.documentElement.style.setProperty('--hdr', hdr.offsetHeight + 'px');
+
   /* Centre the frontier on your own hold the first time it is drawn. Re-centring on every
      render would yank the view back mid-swipe, four times a second. */
   const wrap = document.getElementById('mapwrap');
@@ -2590,7 +2612,11 @@ export function render(){
 const VIEW_ACTIONS = {
   about: () => { store.s.seenIntro = false; },
   settings: () => { settingsOpen = !settingsOpen; },
-  tab: b => { tab = b.dataset.key; window.scrollTo(0, 0); },
+  tab: b => {
+    // tapping the tab you are already on closes its sheet, the way its ✕ does
+    tab = (tab === b.dataset.key) ? 'hold' : b.dataset.key;
+    window.scrollTo(0, 0);
+  },
   // teaching is a device preference like the sound toggles: it never touches the hold
   teach: () => { store.s.teachOff = !store.s.teachOff; },
   // toggling sound is a device preference; it never touches the hold, so it stays here

@@ -64,4 +64,8 @@ if(/under the 44px/.test(body)){
   console.error('\n  ✗ the frontier map is below thumb size — see the cell measurement above.');
   process.exit(1);
 }
+if(/COVERED by the sheet/.test(body)){
+  console.error('\n  ✗ an open sheet is covering the resource row.');
+  process.exit(1);
+}
 if(/OVERFLOWS|undefined|unreadable/.test(body)) process.exit(1);

@@ -118,9 +118,26 @@ setTimeout(() => {
             + (wrap.scrollWidth > wrap.clientWidth + 1 ? ' (scrolls)' : ' (fits)'));
         }
       }
-      rows.push(t + ': scrollWidth ' + doc.scrollWidth + '/' + w.innerWidth
-        + (doc.scrollWidth > w.innerWidth + 1 ? ' ✗ OVERFLOWS' : ' ✓')
-        + ' · ' + (doc.scrollHeight / w.innerHeight).toFixed(1) + ' screens'
+      /* Measure the OPEN SHEET when there is one. Sheets are position:fixed, so they add
+         nothing to documentElement.scrollHeight — after the base-view change every tab reported
+         an identical 2.0 screens, which was the hold measured six times over. */
+      const sheet = d.querySelector('.tabpane.sheet.on');
+      /* The resource row must survive an open sheet. Covering it meant opening War hid what you
+         have while you decide what to spend — and every game this borrows from keeps it visible
+         above a modal. Checked by geometry, not by whether the element exists: it existed the
+         whole time the sheet was sitting on top of it. */
+      if(sheet){
+        const hb = d.querySelector('header').getBoundingClientRect();
+        const sb = sheet.getBoundingClientRect();
+        rows.push('  resource row ' + (sb.top >= hb.bottom - 1
+          ? 'stays visible above the sheet ✓' : '✗ COVERED by the sheet'));
+      }
+      const tall = sheet ? sheet.scrollHeight / w.innerHeight
+                         : doc.scrollHeight / w.innerHeight;
+      const wide = sheet ? sheet.scrollWidth : doc.scrollWidth;
+      rows.push(t + ': ' + (sheet ? 'sheet' : 'base ') + ' width ' + wide + '/' + w.innerWidth
+        + (wide > w.innerWidth + 1 ? ' ✗ OVERFLOWS' : ' ✓')
+        + ' · ' + tall.toFixed(1) + ' screens'
         + (/undefined|NaN/.test(d.body.innerHTML) ? '  ✗ prints undefined/NaN' : ''));
     } catch(e){ rows.push(t + ': unreadable (' + e.name + ')'); }
   }

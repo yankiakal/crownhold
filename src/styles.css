@@ -586,11 +586,45 @@ footer button{font-size:.68rem;padding:.25rem .6rem}
    desktop two-column grid comes out byte-identical to before. Below it they become boxes,
    all but the active one hidden, and the bar appears along the bottom. */
 .tabpane{display:contents}
+.sheethead{display:none}
 .tabbar{display:none}
 
 @media(max-width:820px){
-  .tabpane[hidden-narrow]{display:none}
+  /* The hold is always there. Everything else is a sheet on top of it — so closing a panel
+     returns you to your walls rather than to a different scrolling column. */
   .tabpane{display:block}
+  .tabpane.base{display:block}
+  .tabpane.sheet{display:none}
+  /* Starts below the resource row, which stays visible — as it does over every modal in the
+     games this borrows from. --hdr is measured in render(), because the header wraps to two rows
+     at some widths and a hardcoded offset would clip or gap depending on the phone. */
+  .tabpane.sheet.on{
+    display:block;position:fixed;top:var(--hdr,5.9rem);left:0;right:0;bottom:0;z-index:80;
+    overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+    background:var(--ground);
+    padding:0 var(--pad) 4.75rem;
+  }
+  /* and the row itself sits above them */
+  header{
+    position:sticky;top:0;z-index:86;background:var(--ground);
+    padding-left:var(--pad);padding-right:var(--pad);
+    margin-left:calc(var(--pad) * -1);margin-right:calc(var(--pad) * -1);
+  }
+  .sheethead{
+    display:flex;align-items:center;justify-content:space-between;gap:.5rem;
+    position:sticky;top:0;z-index:2;margin:0 calc(var(--pad) * -1) .6rem;
+    padding:.6rem var(--pad);
+    background:linear-gradient(180deg,#221b16,rgba(34,27,22,.96));
+    border-bottom:1px solid var(--edge);
+  }
+  .sheethead span{
+    font-family:var(--sans);font-size:.66rem;font-weight:600;
+    letter-spacing:.22em;text-transform:uppercase;color:var(--gold);
+  }
+  .sheethead button{
+    font-size:1rem;line-height:1;min-width:2.4rem;min-height:2.4rem;   /* thumb-sized */
+    background:none;border:1px solid var(--edge);border-radius:50%;color:var(--ink-dim);
+  }
   /* the rail's panes have to flow as one column once they are real boxes */
   .rail{display:flex;flex-direction:column;gap:1rem}
 
