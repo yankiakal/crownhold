@@ -66,14 +66,35 @@ STAMP=$(grep -oE '[0-9a-f]{7}\+? · [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}
 [ -n "$STAMP" ] || { echo "deploy: the built page carries no build stamp — refusing to ship it blind."; exit 1; }
 echo "deploy: publishing build $STAMP"
 
-cd dist
-rm -rf .git
-git init -q -b gh-pages
-git add -A
-git commit -qm "deploy $STAMP"
-git push -f https://github.com/yankiakal/crownhold.git gh-pages:gh-pages
-rm -rf .git
-cd ..
+# Publish onto the EXISTING gh-pages history rather than replacing it.
+#
+# This used to `rm -rf .git && git init && push -f`, so every deploy handed Pages a brand-new
+# orphan history with one commit in it. That is one of the few remaining differences between
+# this repo and a working branch deploy, and worth eliminating: the Pages source is correct,
+# no deployment is wedged, the branch policy allows gh-pages, and a deploy with a completely
+# clear field still timed out at exactly 10m02s in the publish step. A continuous history is
+# what the branch route expects.
+REMOTE=https://github.com/yankiakal/crownhold.git
+WORK=$(mktemp -d)
+if git clone -q --branch gh-pages --single-branch --depth 1 "$REMOTE" "$WORK/gh" 2>/dev/null; then
+  # keep the history, replace the contents
+  find "$WORK/gh" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+else
+  echo "deploy: no gh-pages branch yet — starting one"
+  mkdir -p "$WORK/gh" && (cd "$WORK/gh" && git init -q -b gh-pages && git remote add origin "$REMOTE")
+fi
+cp -R dist/. "$WORK/gh/"
+# Jekyll has nothing to do here — the page is one self-contained file — and its Liquid parser
+# would happily try to interpret {{ }} sequences inside a minified bundle.
+touch "$WORK/gh/.nojekyll"
+(
+  cd "$WORK/gh"
+  git add -A
+  git -c user.email=deploy@crownhold -c user.name=deploy commit -qm "deploy $STAMP" || {
+    echo "deploy: nothing changed since the last deploy"; exit 0; }
+  git push -q origin gh-pages
+)
+rm -rf "$WORK"
 
 # ── and now wait to actually see it ──
 URL="https://yankiakal.github.io/crownhold/"

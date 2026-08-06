@@ -1,0 +1,96 @@
+# NOT INSTALLED — this file lives here because I cannot install it.
+#
+# Pushing to .github/workflows/ requires the `workflow` OAuth scope, which the credentials
+# available to me do not have: "refusing to allow an OAuth App to create or update workflow".
+# So it is version-controlled here instead, and installing it is one copy-paste:
+#
+#   1. Settings → Pages → Build and deployment → Source: change "Deploy from a branch"
+#      to "GitHub Actions". Until that is set, the deploy step below has no authority and
+#      will refuse.
+#   2. On github.com: Actions → New workflow → "set up a workflow yourself", name the file
+#      pages.yml, paste everything below the marker line, commit.
+#   3. Actions → "Deploy Pages" → Run workflow.
+#
+# ─────────────────────── paste from here down ───────────────────────
+# Publish Crownhold to GitHub Pages by uploading the built page directly, bypassing the
+# branch-deploy path that is currently stalling.
+#
+# WHY THIS EXISTS. Deploying by force-pushing dist/ to the gh-pages branch stopped working:
+# `Build with Jekyll` succeeded every time and `Deploy to GitHub Pages` then ran for exactly
+# 10m02s and failed, repeatedly. Ruled out with data first — the Pages source is correctly
+# set to gh-pages/(root), no deployment was wedged, the environment's branch policy allows
+# gh-pages, and a deploy that waited for a completely clear field failed the same way. Four
+# releases sat unpublished behind it.
+#
+# This route skips branch deploys and Jekyll entirely: build, upload an artifact, deploy it.
+#
+# MANUAL ONLY, ON PURPOSE. There is a standing rule on this project against automation, and
+# a workflow that fires on every push is exactly that. `workflow_dispatch` means it runs when
+# someone presses the button and never otherwise — the deploy stays a decision. If you later
+# want it on every push to main, uncomment the `push:` trigger below.
+#
+# BEFORE THE FIRST RUN: Settings → Pages → Build and deployment → Source must be
+# "GitHub Actions" rather than "Deploy from a branch". While it still says branch, this
+# workflow's deploy step will refuse — the source setting is what authorises it.
+
+name: Deploy Pages
+
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One at a time, and let a running deploy finish rather than cancelling it. Cancelling
+# mid-deploy is how the branch route ended up with a run recorded as 'cancelled' and a site
+# left on a stale build.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The footer's version and build stamp are read out of git history
+          # (scripts/build-stamp.js walks back up to 40 commit subjects for the release
+          # number), so a shallow clone would stamp the page "v0".
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The full suite, not just the build. Publishing a page that fails its own checks is
+      # worse than publishing nothing: verify:audio needs a browser and skips cleanly here,
+      # which is why it is safe to run the whole thing.
+      - run: npm run check
+
+      - name: Confirm the built page carries a version
+        run: |
+          grep -qE 'class="vtag"[^>]*>v[0-9]+\.[0-9]+<' dist/index.html \
+            || { echo "the built page has no release number in its footer"; exit 1; }
+          grep -oE 'v[0-9]+\.[0-9]+' dist/index.html | head -1
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
