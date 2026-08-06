@@ -603,3 +603,18 @@ footer button{font-size:.68rem;padding:.25rem .6rem}
   color:var(--gold);border:1px solid var(--gold-deep);border-radius:3px;
   padding:.1rem .4rem;
 }
+
+/* the per-level ladder in a building's detail sheet */
+.curve{display:flex;flex-direction:column;margin:.3rem 0 .6rem;text-align:left}
+.crow{
+  display:grid;grid-template-columns:3.2rem 1fr auto;gap:.5rem;align-items:baseline;
+  padding:.28rem .4rem;border-bottom:1px solid rgba(58,47,37,.5);
+  font-family:var(--sans);font-size:.74rem;font-variant-numeric:tabular-nums;
+}
+.crow:last-child{border-bottom:none}
+.crow .clvl{color:var(--ink-dim);font-size:.68rem;letter-spacing:.06em}
+.crow .cfx{color:var(--ink)}
+.crow .ccost{color:var(--ink-dim);font-size:.66rem;text-align:right}
+.crow.now{background:#241c0e;border-radius:3px}
+.crow.now .clvl,.crow.now .cfx{color:var(--gold)}
+.crow.next .cfx{color:var(--good)}

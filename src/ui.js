@@ -26,7 +26,7 @@ import {
   decreeOf, decreeLeft, canDecree, wallWear, wallMendPerSec,
   armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
   valorQuota, valorToday, isRested, QUEUE_KEYS, buildSlots, activeQueues, freeSlot, townhallReq, townhallPath,
-  maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost,
+  maxTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, trainCost, buildingCurve,
   wavePower, streakMult, finishCost, xpNeed,
   courtSeats, courtSeated, heroAway, leadBonus, leadTotal, heroSeasonOpen, classLift,
   effLvl, heroStarCap, arenaTeam, setArenaTeam, gearBlockedBy, petBonus, screenCover,
@@ -1675,19 +1675,27 @@ function renderDetail(S){
     title = d.icon+' '+d.name+' — '+(lvl===0?'not built':'level '+lvl+'/'+d.max);
     body += '<p class="d-fx">'+(d.prod ? '+'+d.rate+' '+d.prod+'/s per level' : d.fx)+'</p>';
     if(d.th && S.b.townhall < d.th) body += '<p class="d-warn">Requires Town Hall '+d.th+'</p>';
+    /* The whole ladder, so "what does this do at max" is answerable without arithmetic.
+       Every figure is MEASURED — buildingCurve clones the state at each level and calls the
+       same functions the game calls. This panel used to carry its own copies of the formulas
+       and two had already drifted: the wall's `18*lvl` predated both wear and fortification
+       tech, and the Infirmary's `4*lvl` was describing a rule that had moved. */
+    const curve = buildingCurve(S, k);
+    if(curve.length){
+      body += '<div class="d-row" style="margin-top:.5rem;color:var(--ink-dim)">Every level</div>'
+        + '<div class="curve">';
+      for(const row of curve){
+        const cls = row.now ? ' now' : (row.next ? ' next' : '');
+        body += '<div class="crow'+cls+'">'
+          + '<span class="clvl">'+row.lvl+(row.lvl===d.max ? ' max' : '')+'</span>'
+          + '<span class="cfx">'+row.readout+'</span>'
+          + '<span class="ccost">'+(row.now ? 'you are here'
+              : row.cost ? costLabel(row.cost.cost)+' · '+row.cost.levels+(row.cost.levels===1?' level':' levels')
+              : '')+'</span></div>';
+      }
+      body += '</div>';
+    }
     if(lvl < d.max){
-      let delta = '';
-      if(d.prod) delta = '+'+(d.rate*lvl*prodMult(S,d.prod)).toFixed(1)+'/s → +'+(d.rate*(lvl+1)*prodMult(S,d.prod)).toFixed(1)+'/s';
-      else if(k==='townhall') delta = 'storage '+fmt(storageCap(S))+' → '+fmt(storageCapFor(S,lvl+1));
-      else if(k==='wall') delta = 'defense +'+(18*lvl)+' → +'+(18*(lvl+1));
-      else if(k==='barracks') delta = 'train speed ×'+trainMult(S).toFixed(2)+' → ×'+trainMultFor(S,lvl+1).toFixed(2);
-      else if(k==='watchtower') delta = 'blunts '+Math.round(bluntFor(S,lvl)*100)+'% → '+Math.round(bluntFor(S,lvl+1)*100)+'%';
-      else if(k==='academy') delta = 'unlocks troop Tier '+TIERS[Math.min(9,lvl+1)];
-      else if(k==='tavern') delta = 'expedition bonus +'+(3*lvl)+'% → +'+(3*(lvl+1))+'%';
-      else if(k==='granary') delta = 'food +'+(2*lvl)+'%, storage +'+(3*lvl)+'% → +'+(2*(lvl+1))+'% / +'+(3*(lvl+1))+'%';
-      else if(k==='hospital') delta = 'casualties −'+(4*lvl)+'% → −'+(4*(lvl+1))+'%';
-      else if(k==='warehouse') delta = 'stores protected '+(4*lvl)+'% → '+(4*(lvl+1))+'%';
-      if(delta) body += '<p class="d-delta">Next level: '+delta+'</p>';
       body += '<p class="d-row">Cost: '+costHtml(S, buildCost(S,k))+' · ⏱ '+ftime(buildTime(S,k))+'</p>';
       const capped = k!=='townhall' && lvl >= S.b.townhall;
       if(capped) body += '<p class="d-warn">Town Hall must lead — raise it first.</p>';

@@ -787,6 +787,74 @@ export function townhallReq(s){
            pairLevels: pair.map(k => ({ key: k, at: s.b[k] || 0, need: pairLevel(k, toLvl) })) };
 }
 
+/* ── what a building does at each of its levels ──
+   Asked for directly: "I should be able to see how much food the farm produces at max level."
+
+   MEASURED, not tabulated. Every row below is produced by cloning the state with that one
+   building set to that one level and then calling the SAME function the game calls — so the
+   sheet cannot drift from the rules. The detail panel used to carry its own copies of the
+   formulas (`18*lvl` for the wall, `4*lvl` for the Infirmary) and two of them were already
+   wrong: the wall gained wear and fortification tech since, and neither was reflected.
+
+   A probe is a shallow clone with its own `b`, which is enough — none of these readouts
+   write, and wallWear is zeroed so the curve shows what a WHOLE wall is worth rather than
+   the state of yours right now. */
+const READOUT = {
+  townhall:   (s) => 'storage ' + fmt(storageCap(s)),
+  farm:       (s) => '+' + prodPerSec(s, 'food').toFixed(1) + ' food/s',
+  lumberyard: (s) => '+' + prodPerSec(s, 'wood').toFixed(1) + ' wood/s',
+  quarry:     (s) => '+' + prodPerSec(s, 'stone').toFixed(1) + ' stone/s',
+  ironmine:   (s) => '+' + prodPerSec(s, 'iron').toFixed(1) + ' iron/s',
+  wall:       (s) => 'defence +' + Math.round(wallPower(s)),
+  watchtower: (s) => 'blunts ' + Math.round(bluntFor(s, s.b.watchtower) * 100) + '%',
+  academy:    (s) => 'troop Tier ' + TIERS[maxTier(s) - 1],
+  hospital:   (s) => Math.round(woundShare(s) * 100) + '% of the fallen come back',
+  granary:    (s) => '+' + prodPerSec(s, 'food').toFixed(1) + ' food/s, storage ' + fmt(storageCap(s)),
+  barracks:   (s) => 'drills at ×' + trainMultFor(s, s.b.barracks).toFixed(2),
+  range:      (s) => 'drills at ×' + trainMultFor(s, s.b.range).toFixed(2),
+  stable:     (s) => 'drills at ×' + trainMultFor(s, s.b.stable).toFixed(2),
+  siegeyard:  (s) => 'drills at ×' + trainMultFor(s, s.b.siegeyard).toFixed(2),
+  /* marchSlots lives in world.js, which imports this file — reaching back for it would make
+     the cycle, so the Command Center's readout is its other effect: how much faster a column
+     travels. The slot count is already on the frontier panel, where it matters. */
+  command:    (s) => 'columns ride ' + Math.round(2 * (s.b.command || 0)) + '% faster',
+  forge:      (s) => '+' + (REFINE.forge.rate * s.b.forge).toFixed(3) + ' steel/s',
+  runeworks:  (s) => '+' + (REFINE.runeworks.rate * s.b.runeworks).toFixed(3) + ' runestone/s',
+  kitchen:    (s) => '+' + (REFINE.kitchen.rate * s.b.kitchen).toFixed(3) + ' rations/s',
+  crucible:   (s) => '+' + (REFINE.crucible.rate * s.b.crucible).toFixed(3) + ' truegold/s',
+  library:    (s) => 'studies to level ' + s.b.library,
+};
+
+export function buildingReadout(s, key, lvl){
+  const fn = READOUT[key];
+  if(!fn) return null;
+  const probe = { ...s, b: { ...s.b }, wallWear: 0 };
+  probe.b[key] = lvl;
+  if(key !== 'townhall') probe.b.townhall = Math.max(probe.b.townhall, lvl);
+  try { return fn(probe); } catch { return null; }
+}
+
+/* The levels worth showing. Every one of thirty is a wall of numbers on a phone, and a
+   milestone every five hides the two rows that matter most — where you are, and where you
+   would be after one more upgrade. So: the ends, the fives, and your own neighbourhood. */
+export function buildingCurve(s, key){
+  const d = BUILDINGS[key];
+  if(!d || !READOUT[key]) return [];
+  const at = s.b[key] || 0;
+  const want = new Set([1, d.max, at, at + 1]);
+  for(let l = 5; l < d.max; l += 5) want.add(l);
+  return [...want]
+    .filter(l => l >= 1 && l <= d.max)
+    .sort((a, b) => a - b)
+    .map(l => ({
+      lvl: l,
+      readout: buildingReadout(s, key, l),
+      now: l === at,
+      next: l === at + 1,
+      cost: l > at ? costToReach(s, key, l) : null,
+    }));
+}
+
 /* ── the road to the next Town Hall ──
    The pace gate is the ONE place in the game where the thing a player wants is
    genuinely blocked. Measured across the simulator's scenarios it is closed 13% of

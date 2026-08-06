@@ -544,6 +544,50 @@ console.log('\n── a pre-skills save is inert, not broken ──');
   }
 }
 
+/* ── the per-level ladder in a building's detail sheet ──
+   Asked for directly: "I should be able to see how much food the farm produces at max level."
+
+   The sheet used to carry its own copies of the formulas, and two had already drifted — the
+   wall's `18*lvl` predated both wear and fortification research, and the Infirmary's `4*lvl`
+   described a rule that had moved. So the ladder is measured: cloned state, real function.
+   The test that matters is the LAST one here, which proves that — a hardcoded curve cannot
+   respond to research it does not know about. */
+{
+  console.log('\n── a building tells you what it does at every level ──');
+  const s = hold();
+  s.b.farm = 12; s.b.wall = 9; s.b.academy = 5;
+
+  for(const k of ['farm','lumberyard','quarry','ironmine','wall','academy','hospital','forge']){
+    const c = L.buildingCurve(s, k);
+    ok(D.BUILDINGS[k].name + ' has a ladder that reaches its cap',
+       c.length >= 2 && c[c.length-1].lvl === D.BUILDINGS[k].max && !!c[c.length-1].readout,
+       'L1 ' + (c[0] && c[0].readout) + '  →  L' + D.BUILDINGS[k].max + ' ' + (c[c.length-1] || {}).readout);
+  }
+
+  const farm = L.buildingCurve(s, 'farm');
+  ok('it marks where you are and what one more level buys',
+     farm.some(r => r.now && r.lvl === 12) && farm.some(r => r.next && r.lvl === 13),
+     'now at ' + (farm.find(r => r.now) || {}).lvl + ', next ' + (farm.find(r => r.next) || {}).lvl);
+  ok('and prices the levels ahead but not the ones behind',
+     farm.filter(r => r.lvl > 12).every(r => r.cost) && farm.filter(r => r.lvl <= 12).every(r => !r.cost));
+
+  /* Production has to rise monotonically up the ladder. A curve that dipped would mean the
+     probe was leaking state between rows. */
+  const out = farm.map(r => parseFloat(r.readout.replace(/[^0-9.]/g, '')));
+  ok('production climbs all the way up, with no leak between rows',
+     out.every((v, i) => i === 0 || v > out[i-1]), out.join(' → '));
+
+  /* The proof that it is measured. Fortification research adds flat defence per level, and a
+     hardcoded `18*lvl` cannot know that. If this figure moves when the research does, the
+     ladder is reading the real rule. */
+  const before = L.buildingCurve(s, 'wall').find(r => r.lvl === 20).readout;
+  const s2 = hold();
+  s2.b.wall = 9; s2.research = { ...(s2.research||{}), fortification: 10 };
+  const after = L.buildingCurve(s2, 'wall').find(r => r.lvl === 20).readout;
+  ok('the wall ladder answers to fortification research — so it is measured, not copied',
+     before !== after, before + '  →  ' + after + ' with the research maxed');
+}
+
 /* ── the Town Hall names two buildings, and they cannot be substituted ──
    Counting buildings was not enough. The count caps at six, so the cheapest six carried a
    player to Town Hall 30 for 26% of a full hold's cost with the Archery Range, Stable, Mage
