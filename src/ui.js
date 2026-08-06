@@ -87,13 +87,13 @@ function renderHeader(S){
       rateTxt = (rate<0?'−':'+')+Math.abs(rate).toFixed(1);
     }
     const warn = rate<0 ? 'color:var(--bad)' : m.refined ? 'color:var(--info)' : '';
-    h += '<span class="res"><span class="lbl">'+m.lbl+'</span> '+fmt(S.res[r]||0)
+    h += '<span class="res"><span class="ricon">'+m.icon+'</span><span class="lbl">'+m.lbl+'</span> '+fmt(S.res[r]||0)
        + '<span class="rate" style="'+warn+'">/'+fmt(capFor(S,r))+' · '+rateTxt+'/s</span></span>';
   }
   const quota = valorQuota(S), today = valorToday(S);
   const spent = Math.min(today, quota);
   h += '<span class="res valor" title="Valor earns at full rate up to your daily quota, then trickles">'
-    + '<span class="lbl">Valor</span> '+fmt(S.valor)
+    + '<span class="ricon">✦</span><span class="lbl">Valor</span> '+fmt(S.valor)
     + '<span class="rate" style="color:'+(today>=quota?'var(--ink-dim)':'var(--gold-deep)')+'">'
     + ' · today '+fmt(spent)+'/'+fmt(quota)+(today>=quota?' (trickle)':'')+'</span></span>';
   if(isRested(S))

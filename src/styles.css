@@ -69,10 +69,40 @@ header{
   font-variant-numeric:tabular-nums;
   display:flex;align-items:baseline;gap:.35rem;
 }
+.res .ricon{font-size:.9rem;line-height:1;margin-right:.1rem}
 .res .lbl{font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-dim)}
 .res .rate{font-size:.65rem;color:var(--ink-dim)}
 .res.valor{color:var(--gold);border-left:1px solid var(--edge);padding-left:1rem}
 .res.valor .lbl{color:var(--gold-deep)}
+
+/* ── portrait, on a real phone ──
+   At 390x844 the page overflowed sideways: the title read "CROWNHOL", the resource row ran
+   off the edge and "Read the Annals" was clipped. One cause, cascading — the intro card's
+   h1 is 2.6rem with .18em tracking, and "CROWNHOLD" at that size has a min-content width
+   near 470px. A flex child cannot shrink below min-content, so the card set the document's
+   width and everything else inherited the overflow.
+
+   Fixed at the source rather than papered over: the display type is fluid, the card can
+   never exceed the viewport, and long words may break. The overflow-x guard on the root is
+   a backstop for anything added later, not the fix. */
+:root{--pad:clamp(.6rem, 3vw, 1rem)}
+html,body{overflow-x:hidden}
+.wrap{padding-left:var(--pad);padding-right:var(--pad)}
+
+/* The overlay's own rules are edited in place further down rather than overridden here.
+   The first attempt at this fix added copies up at the top of the file, where they lost the
+   cascade to the originals at equal specificity — the page rendered exactly as before and
+   the icons landing made it look like the CSS had applied. */
+/* the res row must be allowed to shrink and wrap; margin-left:auto alone stops it */
+.res-row{min-width:0;row-gap:.35rem}
+@media(max-width:560px){
+  .res-row{gap:.55rem;margin-left:0;width:100%}
+  .res{font-size:.78rem}
+  .res .lbl{display:none}          /* the icon carries it — this is why they were added */
+  .res .rate{font-size:.6rem}
+  .brand h1{font-size:1.05rem}
+  footer{flex-wrap:wrap}
+}
 
 /* threat bar */
 .threat{
@@ -272,8 +302,12 @@ section.panel{
   -webkit-overflow-scrolling:touch;
 }
 .overlay .card{
-  max-width:34rem;border:1px solid var(--gold-deep);border-radius:5px;
-  background:var(--panel);padding:2.2rem 2.4rem;text-align:center;
+  /* min() against the viewport, not a bare max-width: a flex child cannot shrink below its
+     min-content, so a card holding large display type set the document's width on a phone
+     and everything else inherited the sideways overflow. */
+  max-width:min(34rem, calc(100vw - var(--pad) * 2));
+  border:1px solid var(--gold-deep);border-radius:5px;
+  background:var(--panel);padding:clamp(1rem, 5vw, 2.4rem);text-align:center;
   margin:auto;                                  /* centres when it fits, scrolls when it does not */
   max-height:calc(100dvh - 2rem);overflow-y:auto;
   overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
@@ -293,8 +327,11 @@ section.panel{
 }
 .sheet-x:hover{color:var(--gold);border-color:var(--gold-deep)}
 .overlay h1{
-  font-size:2.6rem;font-weight:600;letter-spacing:.18em;color:var(--gold);
-  text-wrap:balance;
+  /* Fluid, and breakable. "CROWNHOLD" at 2.6rem with .18em tracking has a min-content width
+     near 470px — wider than a phone — which is what forced the whole page sideways. */
+  font-size:clamp(1.35rem, 7.5vw, 2.6rem);font-weight:600;
+  letter-spacing:clamp(.06em, 1.2vw, .18em);color:var(--gold);
+  text-wrap:balance;overflow-wrap:anywhere;
 }
 .overlay .rule{width:5rem;height:1px;background:var(--gold-deep);margin:1rem auto}
 .overlay p.sub{color:var(--ink-dim);font-style:italic;margin-bottom:1.2rem}
