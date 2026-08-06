@@ -15,6 +15,20 @@ export function sha(){
   return (git('git rev-parse --short HEAD') || 'nogit') + (git('git status --porcelain') ? '+' : '');
 }
 
+/* The release number, read from the most recent commit whose subject opens with one.
+   Every release here is committed as "vX.YY — ...", so history is already the source of
+   truth and there is no second place to forget to bump. Non-release commits (a deploy
+   script fix, a rebuild) inherit the version of the release they sit on, which is what a
+   player means by "which version am I on". */
+export function version(){
+  const log = git('git log -40 --pretty=%s');
+  for(const line of log.split('\n')){
+    const m = line.match(/^(v\d+\.\d+)/);
+    if(m) return m[1];
+  }
+  return 'v0';
+}
+
 export function stamp(){
   const d = new Date();
   const p = n => String(n).padStart(2, '0');

@@ -60,6 +60,7 @@ import { store, freshState, save } from './state.js';
    bundler anywhere — an unguarded reference to a define is a ReferenceError there, and it
    would take the whole UI suite down. */
 const BUILD = typeof __BUILD__ === 'string' ? __BUILD__ : 'dev';
+const VERSION = typeof __VERSION__ === 'string' ? __VERSION__ : 'dev';
 
 const app = document.getElementById('app');
 const fx  = document.getElementById('fx');
@@ -1455,7 +1456,11 @@ function renderFooter(){
      stale cached page cost an afternoon of "why is the ballista still here" — the answer
      was that the page was three versions old and nothing on it said so. */
   return '<footer><span>Crownhold prototype — every Valor point was earned, none were sold.</span>'
-    + '<span class="hmeta" title="the build you are looking at">build '+BUILD+'</span>'
+    /* The release number first and in gold, because that is what a person means by "which
+       version is this". The commit and time stay behind it in the tooltip and small print —
+       they are what I need to tell two builds of the same release apart. */
+    + '<span class="vtag" title="build '+BUILD+'">'+VERSION+'</span>'
+    + '<span class="hmeta">build '+BUILD+'</span>'
     + '<button data-act="account">'+(who ? '☁ '+who : '☁ Play online')+'</button>'
     + '<button data-act="codex">📖 Codex — all the rules</button>'
     + '<button data-act="lore">📜 Annals — the story of the Reach</button>'

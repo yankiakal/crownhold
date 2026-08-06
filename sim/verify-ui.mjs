@@ -111,6 +111,11 @@ try {
      which is exactly what this suite does. */
   ok('the build stamp is rendered', /build (dev|[0-9a-f]{6,})/.test(full),
      (full.match(/build [^<]{0,24}/) || ['(absent)'])[0]);
+  /* And the RELEASE number, which is the part a person actually reads. A commit hash answers
+     "are these two builds the same"; it does not answer "am I on the version you just told me
+     about", which is the question that gets asked. */
+  ok('and the release number beside it', /class="vtag"[^>]*>(v\d+\.\d+|dev)</.test(full),
+     (full.match(/class="vtag"[^>]*>([^<]+)/) || [,'(absent)'])[1]);
 
   /* ── the frontier draws the player's own hold ──
      It did not, for every version up to this one. genWorld keeps the middle nine cells

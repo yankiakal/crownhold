@@ -13,10 +13,15 @@
 set -e
 cd "$(dirname "$0")/.."
 
-if [ -n "$(git status --porcelain)" ]; then
-  echo "deploy: the working tree is dirty — the build would stamp uncommitted work as a"
-  echo "        release, and the footer would name a commit that does not contain what is"
-  echo "        on screen. Commit or stash first."
+# Uncommitted SOURCE is the danger — a build from it stamps a commit that does not contain
+# what is on screen. index.html is excluded because it IS the build output: the stamp changes
+# it on every build, so the tree is dirty immediately after one, and the guard blocked every
+# deploy that followed a build until this exclusion existed.
+DIRTY=$(git status --porcelain -- . ':(exclude)index.html')
+if [ -n "$DIRTY" ]; then
+  echo "deploy: uncommitted source changes — a build from them would stamp a commit that"
+  echo "        does not contain what is on screen. Commit or stash first:"
+  echo "$DIRTY" | sed 's/^/          /'
   exit 1
 fi
 
