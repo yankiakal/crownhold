@@ -29,7 +29,7 @@ function hold(){
   const now = Date.now();
   const s = freshState(now, 42);
   s.b.townhall = 20; s.b.command = 30; s.b.hospital = 10;
-  s.b.academy = 27;   // 27 levels now, three per troop tier — Tier X at 27
+  s.b.academy = 30;   // the Drillfield's top, which is what Tier X asks for
   s.b.barracks = 10; s.b.range = 8; s.b.stable = 8; s.b.siegeyard = 8;
   s.b.farm = 25; s.b.granary = 10; s.b.forge = 10;
   s.tier = { spearman:5, archer:5, knight:5, ballista:5 };
@@ -802,29 +802,49 @@ console.log('\n── a pre-skills save is inert, not broken ──');
   ok('an unbuilt Academy still allows Tier I', L.maxTier(at(0)) === 1);
   ok('a tier every third level', L.maxTier(at(3)) === 2 && L.maxTier(at(6)) === 3 && L.maxTier(at(9)) === 4,
      'L3→' + D.TIERS[L.maxTier(at(3))-1] + ', L6→' + D.TIERS[L.maxTier(at(6))-1] + ', L9→' + D.TIERS[L.maxTier(at(9))-1]);
-  ok('Tier X arrives at the top of the ladder and not before',
-     L.maxTier(at(26)) === 9 && L.maxTier(at(27)) === 10 && D.BUILDINGS.academy.max === 27,
-     'L26→' + D.TIERS[L.maxTier(at(26))-1] + ', L27→' + D.TIERS[L.maxTier(at(27))-1]);
+  /* Tier X asks for the FINISHED building, not the ninth step of the ladder. It used to land at
+     27, three short of the Drillfield's top, which made the last three levels the only ones that
+     bought nothing but a percentage — and left this the one building stopping at 27 when
+     everything near it runs to 30. Derived from ACADEMY_TOP so the two cannot drift. */
+  ok('the step ladder stops at Tier IX however far it climbs',
+     L.maxTier(at(24)) === 9 && L.maxTier(at(29)) === 9,
+     'L24→' + D.TIERS[L.maxTier(at(24))-1] + ', L29→' + D.TIERS[L.maxTier(at(29))-1]);
+  ok('Tier X arrives only with the whole Drillfield',
+     L.maxTier(at(D.ACADEMY_TOP - 1)) === 9 && L.maxTier(at(D.ACADEMY_TOP)) === 10
+       && D.BUILDINGS.academy.max === D.ACADEMY_TOP,
+     'L' + (D.ACADEMY_TOP-1) + '→' + D.TIERS[L.maxTier(at(D.ACADEMY_TOP-1))-1]
+       + ', L' + D.ACADEMY_TOP + '→' + D.TIERS[L.maxTier(at(D.ACADEMY_TOP))-1]);
   ok('and it never promises a tier past X', L.maxTier(at(99)) === D.TIERS.length);
   ok('the level a tier needs is nameable, for when the panel refuses',
-     L.academyForTier(2) === 3 && L.academyForTier(10) === 27,
-     'Tier II at ' + L.academyForTier(2) + ', Tier X at ' + L.academyForTier(10));
+     L.academyForTier(2) === 3 && L.academyForTier(9) === 24
+       && L.academyForTier(10) === D.ACADEMY_TOP,
+     'Tier II at ' + L.academyForTier(2) + ', IX at ' + L.academyForTier(9)
+       + ', X at ' + L.academyForTier(10));
+  /* Every level the tier ladder skips must still pay, and the run from 24 to 30 is the longest
+     dry spell in the game — the honest cost of making the last tier a climb. */
+  ok('the six levels between Tier IX and Tier X are reachable and none is the top',
+     D.ACADEMY_TOP - L.academyForTier(9) === 6, String(D.ACADEMY_TOP - L.academyForTier(9)));
 
   /* Every level pays, including the two out of three that open no tier. */
   const p = a => { const s = at(a); s.t = { spearman:100 }; s.tier = { spearman:1 }; return L.tierPower(s, 'spearman'); };
   ok('every level drills the muster harder, tier or no tier',
-     p(4) > p(3) && p(5) > p(4) && p(27) > p(26),
+     p(4) > p(3) && p(5) > p(4) && p(D.ACADEMY_TOP) > p(D.ACADEMY_TOP - 1),
      'L3 ' + p(3).toFixed(2) + ' → L4 ' + p(4).toFixed(2) + ' → L5 ' + p(5).toFixed(2)
-     + ' … L27 ' + p(27).toFixed(2));
+     + ' … L' + D.ACADEMY_TOP + ' ' + p(D.ACADEMY_TOP).toFixed(2));
   /* Derived from the constant, not written as a literal. This asserted ×1.27 — correct while
      the bonus was 1% a level — and failed the moment it moved to 2.5%, reporting a real change
      as a regression. A test that hardcodes the value of the thing it is measuring only ever
      checks that nobody changed it. */
-  const expect = 1 + D.ACADEMY_POWER * D.BUILDINGS.academy.max;
+  /* ...and the level it MEASURES at has to be derived too. The expectation came from
+     BUILDINGS.academy.max while the measurement sat at a literal 27, so raising the max to 30
+     compared a 27-level ladder against a 30-level expectation and reported ×1.675 vs ×1.750.
+     Half a derived test is a test that fails for the wrong reason. */
+  const top = D.BUILDINGS.academy.max;
+  const expect = 1 + D.ACADEMY_POWER * top;
   ok('the whole ladder is worth what the constant says it is worth',
-     Math.abs(p(27)/p(0) - expect) < 0.01,
-     '×' + (p(27)/p(0)).toFixed(3) + ' against ×' + expect.toFixed(3)
-     + ' (' + (D.ACADEMY_POWER*100) + '% × ' + D.BUILDINGS.academy.max + ' levels)');
+     Math.abs(p(top)/p(0) - expect) < 0.01,
+     '×' + (p(top)/p(0)).toFixed(3) + ' against ×' + expect.toFixed(3)
+     + ' (' + (D.ACADEMY_POWER*100) + '% × ' + top + ' levels)');
 
   /* The invariant the bonus was chosen to protect. */
   const tot = c => Object.values(c).reduce((a, b) => a + b, 0);

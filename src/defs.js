@@ -34,8 +34,10 @@ export const BUILDINGS = {
   /* Nine levels and it was finished — and eight of those nine did exactly one thing, so the
      ninth was the last time the building was ever interesting. Now every third level opens a
      troop tier and EVERY level drills the muster harder, so there is no dull rung. */
-  academy:   {name:'The Drillfield',icon:'🎓', fx:'+1% troop power per level. Every 3rd level unlocks the next troop tier.',
-              cost:{stone:150,iron:60}, time:25, max:27, th:4},
+  /* "+1%" here was stale for a long time: ACADEMY_POWER moved from 0.01 to 0.025 and this string
+     did not follow, so the panel promised a quarter of what the building actually gave. */
+  academy:   {name:'The Drillfield',icon:'🎓', fx:'+2.5% troop power per level. A troop tier every 3rd level, and Tier X at 30.',
+              cost:{stone:150,iron:60}, time:25, max:30, th:4},
   hospital:  {name:'Infirmary',   icon:'⛑️', fx:'−4% casualties, and more of the fallen come back wounded instead of dead.',
               cost:{wood:120,food:80},  time:18, max:25, th:4},
   command:   {name:'Command Center',icon:'🎖️', fx:'+1 march every 5 levels; marches travel 2% faster per level.',
@@ -63,9 +65,22 @@ export const COST_EXP = 2.0, TIME_EXP = 1.6;
 /* ── troop tiers: the same soldier, forged better. Unlocked by the Drillfield ── */
 export const TIERS = ['I','II','III','IV','V','VI','VII','VIII','IX','X'];
 /* Academy levels per tier unlocked. Was 1 — nine levels, nine tiers, done. At 3 the ladder
-   runs to level 27 and Tier X becomes a late-game achievement rather than something you have
+   climbs properly and Tier X becomes a late-game achievement rather than something you have
    by Town Hall 9. */
 export const ACADEMY_PER_TIER = 3;
+/* Tiers II–IX arrive every third level, at 3 through 24. TIER X ASKS FOR THE WHOLE BUILDING.
+   It used to arrive at 27, three short of the Drillfield's top, which made the last three levels
+   the only ones in the game that bought nothing but a percentage — and left the Drillfield as the
+   one building that stopped at 27 when everything around it runs to 30.
+
+   So the final tier is now the long climb: 24 to 30 with no tier in between. That is a deliberate
+   dry spell and the longest in the ladder, which is the honest cost of the change — the five
+   levels inside it still pay ACADEMY_POWER each, +12.5% troop power across them, so they are not
+   dead rungs, just quieter ones. The alternative was spreading all nine tiers evenly to 30, which
+   keeps every gap to three or four levels but moves Tier II to 4 and gives up the clean "every
+   third level" rule. A dramatic final gate is the more genre-honest of the two: Kingshot's own top
+   tier sits behind a building that opens around two hundred days in. */
+export const ACADEMY_TOP = 30;
 /* And what every level gives regardless, so no rung is dead. Deliberately troop POWER: it is
    the Academy's own domain, it lands on the multiplier every power figure already passes
    through, and it breaks no invariant.

@@ -16,7 +16,7 @@ import {
   WAVE_TYPES, STANCES, COUNTER_BONUS, COUNTER_PENALTY, COUNTER_CASUALTY, SCREEN,
   WAVE_LOSS_FLOOR, WAVE_LOSS_SPAN, WAVE_PLUNDER_FLOOR, WAVE_PLUNDER_SPAN,
   EXPEDITIONS, EXPEDITION_CD,
-  COST_EXP, TIME_EXP, TIERS, TIER_POWER, TIER_UPKEEP, TIER_COST, ACADEMY_PER_TIER, ACADEMY_POWER,
+  COST_EXP, TIME_EXP, TIERS, TIER_POWER, TIER_UPKEEP, TIER_COST, ACADEMY_PER_TIER, ACADEMY_TOP, ACADEMY_POWER,
   PROMOTE_MS_PER_TROOP, PROMOTE_MS_MIN,
   REFINE, STEEL_FROM, RUNE_FROM,
   buildTimeCap, TIME_SCALE, SECOND_QUEUE_TH,
@@ -406,11 +406,19 @@ export function prodPerSec(s, res){
   return p * prodMult(s,res) * (isRested(s) ? 1 + REST_PROD_BONUS : 1);
 }
 /* ── troop tiers ── */
+/* Tiers II–IX every third level; Tier X only at the Drillfield's top. The step ladder is capped
+   one short of the last tier so that no amount of ordinary progress can reach X — it is the one
+   tier that asks for the finished building. */
 export function maxTier(s){
-  return Math.min(TIERS.length, 1 + Math.floor((s.b.academy || 0) / ACADEMY_PER_TIER));
+  const a = s.b.academy || 0;
+  if(a >= ACADEMY_TOP) return TIERS.length;
+  return Math.min(TIERS.length - 1, 1 + Math.floor(a / ACADEMY_PER_TIER));
 }
-/* The Academy level that opens a given tier — what the UI has to name when it refuses. */
-export function academyForTier(t){ return Math.max(0, (t - 1) * ACADEMY_PER_TIER); }
+/* The Drillfield level that opens a given tier — what the UI has to name when it refuses. */
+export function academyForTier(t){
+  if(t >= TIERS.length) return ACADEMY_TOP;
+  return Math.max(0, (t - 1) * ACADEMY_PER_TIER);
+}
 /* Every level drills the muster, tier or no tier. Multiplied into tierPower for the same
    reason supply is: that is the one function every power figure in the game passes through,
    so no call site can forget to ask. */
