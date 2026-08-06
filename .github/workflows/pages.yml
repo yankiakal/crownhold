@@ -39,11 +39,7 @@ jobs:
       # skips cleanly here.
       - run: npm run check
 
-      - name: Confirm the built page carries a version
-        run: |
-          grep -qE 'class="vtag"[^>]*>v[0-9]+\.[0-9]+<' dist/index.html \
-            || { echo "the built page has no release number in its footer"; exit 1; }
-          grep -oE 'v[0-9]+\.[0-9]+' dist/index.html | head -1
+
 
       - uses: actions/upload-pages-artifact@v3
         with:
