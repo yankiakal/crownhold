@@ -1300,6 +1300,30 @@ export function tileAt(clientX, clientY){
     y: Math.round((py/(TH/2) - px/(TW/2)) / 2),
   };
 }
+/* ── the inverse of tileAt, so something in the DOM can sit on a building ──
+   Asked for: a shell like Whiteout Survival's, where a build timer floats over the thing being
+   built rather than living in a list somewhere else. That needs tile→screen, and only screen→tile
+   existed. Both directions now come from the same `iso`, `scale`, `originX/Y` and the same TH/2
+   nudge, which is the point of writing it here rather than approximating it in ui.js: the day
+   somebody changes the camera, the badges move with the buildings instead of drifting off them.
+
+   Returns page coordinates (client + scroll) because it is used to position an absolutely-placed
+   element, not to hit-test a pointer. Null when there is no canvas yet — the first render happens
+   before layout, and a badge at NaN,NaN is a badge in the top-left corner of the screen. */
+export function plotScreen(key){
+  if(!cv) return null;
+  const plot = PLOTS[key] || (key === 'wall' ? wallAnchor() : null);
+  if(!plot) return null;
+  const r = cv.getBoundingClientRect();
+  if(!r.width) return null;
+  // centre of the 2x2 footprint, in tile space
+  const { sx, sy } = iso(plot[0] + 0.5, plot[1] + 0.5);
+  return {
+    x: r.left + (sx + originX) * scale,
+    y: r.top + (sy + originY + TH/2) * scale,
+    scale,
+  };
+}
 export function pickBuilding(clientX, clientY){
   if(!cv) return null;
   const { x, y } = tileAt(clientX, clientY);

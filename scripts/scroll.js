@@ -64,8 +64,16 @@ const chrome = spawn(CHROME, ['--headless=new','--disable-gpu','--hide-scrollbar
   '--window-size=1200,1000',
   'http://localhost:' + PORT + '/tools/scroll.html'], { stdio:'ignore' });
 
-const clean = () => { try { chrome.kill('SIGKILL'); } catch {} try { srv.close(); } catch {}
-  rmSync(dir, { recursive:true, force:true }); };
+const clean = () => {
+  try { chrome.kill('SIGKILL'); } catch {}
+  try { srv.close(); } catch {}
+  /* Retries, and swallowed. A just-killed Chrome is still writing its profile directory, so a bare
+     rmSync throws ENOTEMPTY and turns a green probe into a non-zero exit — which is exactly the trap
+     verify-server.mjs already documents for the same reason. A leftover temp directory is not a
+     failure of the thing being measured. */
+  try { rmSync(dir, { recursive:true, force:true, maxRetries:10, retryDelay:80 }); }
+  catch { /* the OS will get it */ }
+};
 
 const report = await Promise.race([
   reported,
@@ -79,6 +87,12 @@ if(report == null){
   process.exit(1);
 }
 console.log(report.trim().split('\n').map(l => '  ' + l).join('\n'));
+
+/* The badge findings are assertions too, not decoration. Printing "OFF THE WALLS" and exiting 0
+   would make this a log rather than a check — which is the failure mode every harness in this repo
+   has had at least once. */
+const badgeFaults = ['MISSING', 'OFF THE WALLS', 'NO TIME SHOWN', 'NO SHEET',
+                     'NO BUILDABLE BUILDING'].filter(t => report.includes(t));
 
 const lost = (report.match(/LOST/g) || []).length;
 const kept = (report.match(/KEPT/g) || []).length;
@@ -96,4 +110,9 @@ if(blind){
   console.log('  ✗ ' + kept + ' held, but a surface could not be measured — see above');
   process.exit(1);
 }
-console.log('  ✓ ' + kept + ' surface(s) hold their scroll position across a render tick');
+if(badgeFaults.length){
+  console.log('  ✗ the scene badges: ' + badgeFaults.join(', '));
+  process.exit(1);
+}
+console.log('  ✓ ' + kept + ' surface(s) hold their scroll position across a render tick'
+  + (report.includes('ON THE WALLS') ? ', and a build timer sits on its building' : ''));

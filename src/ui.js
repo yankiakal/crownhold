@@ -44,6 +44,7 @@ import { REGALIA, WARGEAR, GEAR_MAX, GEAR_PER_LEVEL, gearCost, gearTime,
          regaliaTier, wargearTier, wargearTotal, gearLevels, costLabel } from './gear.js';
 import { SKILLS, SKILL_SLOTS, SLOT_AT, slotsOpen, legalSkills } from './skills.js';
 import { NOVICE_PEACE_TH } from './raid.js';
+import { plotScreen } from './iso.js';
 import { ISLE_W, ISLE_H, ISLE_TH, ISLE_SITES, RATION_COST, cellAt, charted } from './isle.js';
 import { COS_KINDS, CATALOGUE, HOLD_SKINS, SUBSCRIPTIONS, EARN, itemsOf, itemDef, isOwned, PURCHASES_ON } from './shop.js';
 import {
@@ -3015,6 +3016,66 @@ export function render(){
     if(sceneCanvas.parentNode !== slot) slot.appendChild(sceneCanvas);
     if(!sceneMounted){ mountScene(sceneCanvas, store); sceneMounted = true; }
     else sceneResize();
+    paintSceneBadges(S, slot);
+  }
+}
+
+/* ── timers that sit on the thing they are timing ──
+   Asked for: a shell like Whiteout Survival's. This is the piece that most makes it feel like one —
+   a build in progress announces itself ON the building, with the time left, and tapping it opens
+   that building. Before this, the only way to see what was under way was a strip near the top of a
+   scrolling panel, which is a list pretending to be a city.
+
+   Positioned from plotScreen, which is the exact inverse of the tap hit-test, so a badge cannot
+   drift off the building it belongs to. Written as real DOM rather than painted into the canvas
+   because it has to be tappable, and because the canvas is redrawn on a different cadence.
+
+   Deliberately only the QUEUE. Not production, not "collect me", not idle hints — one badge per
+   thing genuinely happening, or the walls disappear behind their own furniture, which is the
+   failure mode of every game this borrows from. */
+function paintSceneBadges(S, slot){
+  let layer = slot.querySelector('.scenebadges');
+  if(!layer){
+    layer = document.createElement('div');
+    layer.className = 'scenebadges';
+    slot.appendChild(layer);
+  }
+  const now = S.now || Date.now();
+  const want = [];
+  for(const q of QUEUE_KEYS){
+    const b = S[q];
+    if(!b || !b.key) continue;
+    const at = plotScreen(b.key);
+    if(!at) continue;
+    const left = Math.max(0, b.end - now);
+    want.push({ key: b.key, at, txt: left > 0 ? ftime(left) : 'done',
+                done: left <= 0, name: BUILDINGS[b.key] ? BUILDINGS[b.key].name : b.key });
+  }
+  const box = slot.getBoundingClientRect();
+  /* No layout, no badges. While the scene is off-screen or unmeasured the slot reports 0×0, and
+     subtracting that origin from a page coordinate yields a position relative to nothing — the
+     badge lands hundreds of pixels below the fold. Measured exactly that in the browser probe.
+     Hiding them costs nothing: there is no scene to sit on yet, and the next render re-places them. */
+  if(!box.width || !box.height){ layer.innerHTML = ''; layer.dataset.sig = ''; return; }
+  /* Rebuilt only when the SET changes, not every 250ms — otherwise the countdown text can never
+     animate and a tap lands on an element that is about to be replaced. The text is updated in
+     place, which is the whole reason for keying them. */
+  const sig = want.map(w => w.key + (w.done ? '!' : '')).join(',');
+  if(layer.dataset.sig !== sig){
+    layer.dataset.sig = sig;
+    layer.innerHTML = want.map(w =>
+      '<button class="sbadge'+(w.done ? ' done' : '')+'" data-act="detail" data-dtype="building"'
+      + ' data-key="'+w.key+'" data-badge="'+w.key+'"'
+      + ' aria-label="'+esc(w.name)+'" style="left:0;top:0"><b></b></button>').join('');
+  }
+  for(const w of want){
+    const el = layer.querySelector('[data-badge="'+w.key+'"]');
+    if(!el) continue;
+    const b = el.querySelector('b');
+    if(b && b.textContent !== w.txt) b.textContent = w.txt;
+    // page → slot-relative, and the slot scrolls horizontally, so its own scroll has to come back in
+    el.style.left = Math.round(w.at.x - box.left + slot.scrollLeft) + 'px';
+    el.style.top  = Math.round(w.at.y - box.top + slot.scrollTop) + 'px';
   }
 }
 

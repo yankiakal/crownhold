@@ -38,6 +38,11 @@ function played(){
     s.heroes[id] = { lvl:14, xp:120, stars:2, deeds:3, gear:{}, skills:[null,null,null] };
   s.court = ['steward','gatekeeper'];
   s.valor = 260; s.wave = 34; s.wavesWon = 33;
+  /* Enough to actually build with. Seeded from freshState the purse is 500/500/250 against
+     level-15 buildings, so every upgrade button rendered disabled and the badge probe reported
+     "no buildable building" as though that were a finding about the game. */
+  s.res = { food:9e5, wood:9e5, stone:9e5, iron:9e5, steel:9e5, runestone:9e5,
+            rations:0, isleore:0, electrum:0 };
   s.seenIntro = true; s.offersDone = 12;
   s.choice = null; s.choiceQueue = [];
   s.taught = { upkeep:1, pace:1, cover:1, load:1 };
@@ -129,6 +134,71 @@ try {
     // whichever layer actually overflows is the one the player drags
     return (card.scrollHeight - card.clientHeight) > 40 ? card : d.querySelector('.overlay');
   });
+
+  /* ── badges that sit on the buildings ──
+     The WoS-style build timer floats over the building it belongs to, positioned by plotScreen —
+     the exact inverse of the tap hit-test. Arithmetic like that cannot be checked by reading it:
+     it needs a real canvas with a real bounding box, which is why it is measured here rather than
+     in verify-ui, where every rect is a 360×360 stub.
+
+     Lives in this file rather than a second Chrome harness because booting the game in a browser is
+     the expensive part, and one probe that answers two questions beats two that each answer one. */
+  {
+    /* Close whatever the earlier probes left open FIRST. The gather sheet was still up, so the hold
+       pane underneath had no layout, the scene slot measured 0×0, and the badge was placed against
+       an origin of nothing — which looked like a positioning bug in the game and was a sequencing
+       bug in the probe. */
+    click('[data-act="detailClose"]');
+    await wait(200);
+    click('[data-act="tab"][data-key="hold"]');
+    await wait(700);
+    const before = d.querySelectorAll('.sbadge').length;
+    // start a real build the way a player would: the action the buttons dispatch
+    /* data-act="upgrade" — the name the buttons actually carry. "build" matched nothing, and the
+       probe dutifully reported NO BUILDABLE BUILDING, which reads like a finding about the game. */
+    const btn = Array.from(d.querySelectorAll('button[data-act="upgrade"]'))
+      .find(b => !b.disabled);
+    if(!btn){
+      const all = d.querySelectorAll('button[data-act="upgrade"]');
+      const q = d.querySelectorAll('.queue-strip').length;
+      say('scene badge'.padEnd(16) + ' NO BUILDABLE BUILDING — ' + all.length + ' upgrade buttons, '
+        + Array.from(all).filter(b => b.disabled).length + ' disabled, ' + q + ' queue strips already running');
+    }
+    else {
+      btn.click();
+      await wait(600);
+      const badges = Array.from(d.querySelectorAll('.sbadge'));
+      say('scene badge'.padEnd(16) + ' ' + before + ' → ' + badges.length + ' after starting a build'
+        + (badges.length > before ? '  APPEARED' : '  MISSING'));
+      if(badges.length){
+        const b = badges[0].getBoundingClientRect();
+        /* Re-queried HERE, not captured earlier. render() replaces app.innerHTML, so a reference
+           taken before the build started points at a detached node whose rect is 0×0 — which the
+           probe then reported as the badge being off the scene. The element was fine; the ruler
+           had been thrown away. */
+        /* Measured against the CANVAS, not the scroll viewport. The walls are wider than a phone, so
+           the slot scrolls — a badge on a building currently scrolled out of view is correctly
+           placed and outside the viewport, and comparing the two reported a real badge as
+           misplaced. The canvas is the coordinate space plotScreen works in, so it is the one to
+           check containment against. */
+        const cvr = d.getElementById('holdscene')?.getBoundingClientRect() || null;
+        const inside = cvr && b.left >= cvr.left - 30 && b.left <= cvr.right + 30
+                           && b.top >= cvr.top - 30 && b.top <= cvr.bottom + 30;
+        say('badge position'.padEnd(16) + ' ' + Math.round(b.left) + ',' + Math.round(b.top)
+          + ' on walls at ' + (cvr ? Math.round(cvr.left) + ',' + Math.round(cvr.top)
+              + ' ' + Math.round(cvr.width) + '×' + Math.round(cvr.height) : '?')
+          + (inside ? '  ON THE WALLS' : '  OFF THE WALLS'));
+        say('badge text'.padEnd(16) + ' "' + (badges[0].textContent || '').trim() + '"'
+          + (/\d/.test(badges[0].textContent || '') ? '  COUNTS DOWN' : '  NO TIME SHOWN'));
+        // and it has to be the way into that building
+        badges[0].click();
+        await wait(400);
+        say('badge opens it'.padEnd(16) + (d.querySelector('.overlay .card.dsheet') ? '  yes' : '  NO SHEET'));
+        click('[data-act="detailClose"]');
+        await wait(300);
+      }
+    }
+  }
 
   // ── and the page itself, which was never broken; here so a regression there would show
   {

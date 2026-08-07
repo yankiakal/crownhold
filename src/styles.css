@@ -935,3 +935,39 @@ input, textarea, [contenteditable]{
 /* Canvas drags are the game's own gesture — the map and the hold scene must not scroll the page
    underneath them or pan-and-tap fight each other. */
 canvas{ touch-action:none; }
+
+
+/* ── badges that live on the walls ──
+   A build in progress announces itself on the building, the way Whiteout Survival does it, and
+   tapping it opens that building's sheet. The layer is inert; only the badges take pointer events,
+   so a drag across the scene still pans the walls rather than being swallowed by an invisible box.
+
+   #scene-slot is the positioning context and it scrolls horizontally, which is why the badge
+   offsets add its scrollLeft back in — see paintSceneBadges. */
+#scene-slot{position:relative}
+.scenebadges{position:absolute;inset:0;pointer-events:none;z-index:4}
+.sbadge{
+  position:absolute;transform:translate(-50%,-140%);
+  pointer-events:auto;
+  display:flex;align-items:center;gap:.25rem;
+  min-height:1.6rem;padding:.15rem .45rem;
+  font-family:var(--sans);font-size:.62rem;font-variant-numeric:tabular-nums;
+  letter-spacing:.04em;
+  background:rgba(20,15,9,.92);color:#f0dfb2;
+  border:1px solid var(--gold-deep);border-radius:999px;
+  box-shadow:0 2px 8px rgba(0,0,0,.55);
+  white-space:nowrap;
+}
+.sbadge::before{content:'\1F528';font-size:.7rem}   /* 🔨 — the OS's own glyph, drawn at runtime */
+.sbadge.done{border-color:var(--good);color:#dff0cc}
+.sbadge.done::before{content:'\2713';color:var(--good)}
+/* the little stem, so it reads as attached to the building rather than floating near it */
+.sbadge::after{
+  content:'';position:absolute;left:50%;bottom:-4px;transform:translateX(-50%);
+  width:0;height:0;border:4px solid transparent;border-top-color:var(--gold-deep);
+}
+.sbadge.done::after{border-top-color:var(--good)}
+@media(prefers-reduced-motion:no-preference){
+  .sbadge.done{animation:sbpulse 1.6s ease-in-out infinite}
+}
+@keyframes sbpulse{50%{box-shadow:0 2px 14px rgba(127,166,90,.45)}}
