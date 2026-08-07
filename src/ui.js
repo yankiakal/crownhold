@@ -2062,13 +2062,16 @@ function renderDetail(S){
            decision — so the sheet states the fraction and the number beside the node's full worth. */
         /* marchWant/marchParty are the column the player is composing right now, which is the
            thing they are about to send — not a hypothetical best party. */
+        /* The ceiling is what the BEST available party could carry, so adding a captain raises what
+           you can reach rather than shrinking what you have — the bug the screenshots caught. */
         const pk = marchParty.length ? marchParty : bestLeaders(S, 3);
         const capNow = marchCapacity(S, pk);
+        const bestCap = marchCapacity(S, bestLeaders(S, 3));
         const fitNow = fitColumn(S, marchWant, pk);
-        const fillNow = capNow > 0 ? Math.min(1, fitNow.load / capNow) : 1;
+        const fillNow = bestCap > 0 ? Math.min(1, fitNow.load / bestCap) : 1;
         body += '<p class="d-row">Your column carries <b>'+Math.round(fillNow*100)+'%</b> of it — '
           + fmt(Math.round(gatherYield(S,tile)*fillNow))+' '+tt.res
-          + ' (' + fitNow.load + ' of ' + capNow + ' load filled). '
+          + ' (' + fitNow.load + ' of ' + bestCap + ' your captains could carry). '
           + (fillNow > 0.98 ? 'A full column takes the lot.'
              : 'Send more and you bring more; the node is spent either way.')
           + '</p>';

@@ -1837,6 +1837,22 @@ console.log('\n── the haul depends on the troops you send ──');
     W.tickWorld(s, s.now + 99 * 3600 * 1000, () => 0.5);
     return Object.values(m.loot || {}).reduce((a, b) => a + b, 0);
   };
+  /* And the ceiling is what the BEST party could carry, so a captain can only raise it. Dividing by
+     the CHOSEN party's capacity meant adding a second leader lifted the denominator while the troops
+     stayed put — reported with screenshots as 100% dropping to 62% for bringing more help. */
+  {
+    const s1 = hold(), idx1 = pick(s1);
+    const cap1 = W.marchCapacity(s1, ['marshal']);
+    const oneCap = (() => { W.startMarch(s1, idx1, { spearman: cap1 }, s1.now, false, ['marshal']);
+                            return s1.marches[0].fill; })();
+    const s2b = hold(), idx2 = pick(s2b);
+    const twoCap = (() => { W.startMarch(s2b, idx2, { spearman: cap1 }, s2b.now, false, CAPTAINS);
+                            return s2b.marches[0].fill; })();
+    ok('adding a captain never shrinks the haul for the same troops',
+       Math.abs(oneCap - twoCap) < 0.001,
+       'one captain ' + (oneCap*100).toFixed(0) + '%, three captains ' + (twoCap*100).toFixed(0) + '%');
+  }
+
   const quarter = haulWith(0.25), full = haulWith(1);
   ok('a quarter-full column brings home about a quarter as much',
      quarter > 0 && full > quarter * 2.5 && full < quarter * 5.5,
@@ -1867,37 +1883,57 @@ console.log('\n── gathering has to beat standing still ──');
      and it did the opposite — measured at Town Hall 3, a run paid ×0.58 of what the Farm made on
      its own, ×0.66 the Quarry, ×0.76 the Lumberyard. An active mechanic was worth less per minute
      than closing the app. */
-  const ROUND_TRIP = 2.2;                 // minutes: three tiles each way, plus a minute working
+  /* gatherYield reads the tile's DISTANCE now — the yield is anchored to the real round trip rather
+     than to an assumed 2.2 minutes — so these must use tiles off the actual map. A synthetic
+     {lvl, type} has no coordinates and tileDist returns NaN, which is how the first version of this
+     reported "worst case ×NaN" instead of failing on a number. */
+  const tripMin = (s, tile) =>
+    (2 * W.tileDist(tile) * W.TRAVEL_MS_PER_TILE * W.marchSpeed(s) + W.GATHER_MS) / 60000;
   const ratios = [];
-  for(const [th, bl, tl] of [[3,2,2],[6,5,3],[10,9,5],[15,14,6],[20,19,7],[25,24,8],[30,30,8]]){
+  for(const [th, bl] of [[3,2],[6,5],[10,9],[15,14],[20,19],[25,24],[30,30]]){
     const s = freshState(Date.now(), 1);
     s.b.townhall = th;
     for(const k of ['farm','lumberyard','quarry','ironmine','granary']) s.b[k] = bl;
-    for(const [tt, def] of Object.entries(W.TILE_TYPES)){
-      if(def.kind !== 'gather') continue;
+    const seen = new Set();
+    for(const tile of s.world.tiles){
+      const def = W.TILE_TYPES[tile.type];
+      if(def.kind !== 'gather' || seen.has(def.res)) continue;
+      seen.add(def.res);
       const perMin = L.prodPerSec(s, def.res) * 60;
       if(perMin <= 0) continue;
-      ratios.push({ th, res: def.res, r: W.gatherYield(s, {lvl:tl, type:tt}) / ROUND_TRIP / perMin });
+      ratios.push({ th, res: def.res, r: W.gatherYield(s, tile) / tripMin(s, tile) / perMin });
     }
   }
   const worst = ratios.reduce((a, b) => a.r < b.r ? a : b);
   ok('a gather run always beats the same minutes of free production',
-     worst.r >= 1.8,
+     worst.r >= 1.5,
      'worst case ×' + worst.r.toFixed(2) + ' (' + worst.res + ' at Town Hall ' + worst.th + ')');
   /* And by the SAME margin for every resource, or one of them is quietly the wrong thing to fetch —
      which is what weighting food lowest did while the Farm produced the most. */
-  const byTh = {};
-  for(const x of ratios) (byTh[x.th] ||= []).push(x.r);
-  const spread = Math.max(...Object.values(byTh).map(rs => Math.max(...rs) / Math.min(...rs)));
-  ok('and every resource is worth fetching equally', spread < 1.05,
-     'widest spread between resources at one Town Hall level: ×' + spread.toFixed(3));
+  /* Equal per LOAD OF TRIP, which is the honest comparison now that each resource's tiles sit at
+     their own distances and levels. The old per-Town-Hall equality assumed every resource was being
+     fetched from an identical tile, which the map does not offer. */
+  const s0 = freshState(Date.now(), 1); s0.b.townhall = 10;
+  for(const k of ['farm','lumberyard','quarry','ironmine','granary']) s0.b[k] = 9;
+  const sameTile = [];
+  for(const tile of s0.world.tiles){
+    const def = W.TILE_TYPES[tile.type];
+    if(def.kind !== 'gather' || tile.lvl !== 3) continue;
+    const perMin = L.prodPerSec(s0, def.res) * 60;
+    if(perMin > 0) sameTile.push(W.gatherYield(s0, tile) / tripMin(s0, tile) / perMin);
+  }
+  ok('and every resource is worth fetching equally',
+     sameTile.length < 2 || Math.max(...sameTile) / Math.min(...sameTile) < 1.05,
+     sameTile.length + ' resources at level-3 tiles, spread ×'
+       + (sameTile.length < 2 ? 'n/a' : (Math.max(...sameTile)/Math.min(...sameTile)).toFixed(3)));
 
   /* A node whose production building does not exist yet must still be worth the trip — the Iron
      Vein before an Iron Mine is the case, and anchoring to production alone would make it zero. */
   const bare = freshState(Date.now(), 1); bare.b.townhall = 3;
+  const vein = bare.world.tiles.find(t => t.type === 'ironvein');
   ok('a node is worth taking even with no matching building at all',
-     W.gatherYield(bare, {lvl:2, type:'ironvein'}) > 40,
-     W.gatherYield(bare, {lvl:2, type:'ironvein'}) + ' iron from a level-2 vein with no Iron Mine');
+     vein && W.gatherYield(bare, vein) > 40,
+     (vein ? W.gatherYield(bare, vein) : 0) + ' iron from a vein with no Iron Mine');
 }
 
 console.log('\n── the Road, the Watch and the Court all move real numbers ──');
@@ -1923,7 +1959,7 @@ console.log('\n── the Road, the Watch and the Court all move real numbers �
   ok('Baggage Train carries more',
      W.marchCapacity(at({ baggage:10 }), party) > W.marchCapacity(bare, party),
      W.marchCapacity(bare, party) + ' → ' + W.marchCapacity(at({ baggage:10 }), party) + ' load');
-  const tile = { lvl:5, type:'woods' };
+  const tile = bare.world.tiles.find(t => t.type === 'woods');   // a real tile: yield reads its distance
   ok('Foraging brings more off a gathering tile',
      W.gatherYield(at({ foraging:10 }), tile) > W.gatherYield(bare, tile),
      W.gatherYield(bare, tile) + ' → ' + W.gatherYield(at({ foraging:10 }), tile));

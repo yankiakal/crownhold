@@ -36,14 +36,26 @@ import { techBonus, techLvl } from './research.js';
    time is the price of richness. See tileBase(). */
 export const MAP_W = 15, MAP_H = 9, CX = 7, CY = 4;
 export const TILE_LVL_MAX = 8;
-export const TRAVEL_MS_PER_TILE = 12000, GATHER_MS = 60000, RUIN_MS = 25000;
+export const TRAVEL_MS_PER_TILE = 12000, RUIN_MS = 25000;
+/* Working a node took ONE MINUTE, flat — the only activity in the game that ignored TIME_SCALE, so
+   a column rode out for 36 seconds, worked for 60, and rode home. Reported as too short against
+   Kingshot and Whiteout, where a node is tens of minutes to hours. Ten minutes here, which against
+   the 75-second wave cadence is a real errand you set going rather than a button. */
+export const GATHER_MS = 600000;
 export const RESPAWN_MS = 240000;
 /* The long haul: send a column out for hours and they work the node properly.
    This is the thing to set going before you close the game — the troops are
    away the whole time and cannot defend the wall, so it is a real wager. */
-export const LONG_HAUL_WORK = GATHER_MS * 6 * TIME_SCALE, LONG_HAUL_YIELD = 9;
-/* How many minutes of a resource's own production one gather run is worth, before tile depth. */
-export const GATHER_MINUTES = 5;
+/* The long haul is six hours of work in one trip — the thing to set going before you close the app.
+   It used to be GATHER_MS × 6 × TIME_SCALE, which was 60 minutes only because GATHER_MS was a flat
+   minute; leaving that expression alone while lengthening the base would have made it ten hours. */
+export const LONG_HAUL_WORK = GATHER_MS * 6;
+/* Yield follows the CLOCK now (see gatherYield), so this only has to cover the difference in rate.
+   Set so the long haul pays a little better per minute than shuttling — the reward for committing
+   troops off the wall for an hour — rather than the 9× that predated a time-derived yield. */
+export const LONG_HAUL_YIELD = 6.2;
+/* How many times over a gather run beats leaving the same wall-clock to passive production. */
+export const GATHER_RATIO = 2;
 
 export const TILE_TYPES = {
   woods:    {icon:'🌲', name:'Deep Woods',  kind:'gather', res:'wood'},
@@ -336,9 +348,15 @@ export function gatherYield(s, tile){
      Farm produced the most is what made food the worst thing to go and fetch. */
   const res = TILE_TYPES[tile.type].res;
   const perMin = prodPerSec(s, res) * 60;
+  /* Anchored to the ROUND TRIP, not to a fixed number of minutes. The yield is worth GATHER_RATIO
+     times what the same wall-clock would have produced for free — so the ratio holds by construction
+     whatever the travel distance or the work time, and lengthening either one pays for itself
+     automatically. The earlier version assumed a 2.2-minute trip, which stopped being true the
+     moment the work time changed. */
+  const trip = (2 * tileDist(tile) * TRAVEL_MS_PER_TILE * marchSpeed(s) + GATHER_MS) / 60000;
   // deeper tiles are worth more, and they cost more travel to reach — the two pay for each other
   const depth = 0.62 + 0.13 * tile.lvl;
-  const base = perMin * GATHER_MINUTES * depth;
+  const base = perMin * trip * GATHER_RATIO * depth;
   /* A floor for a hold whose production building is still at zero, so a node is never worthless —
      the Iron Vein before an Iron Mine exists is the case that matters. */
   const floor = (34 + 10 * Math.pow(tile.lvl, 1.36)) * th
@@ -438,7 +456,13 @@ export function startMarch(s, idx, want, now, longHaul, heroes){
 
      Stored at DEPARTURE because the captains that set the capacity leave with the column, so it
      cannot be recomputed honestly on the way home. */
-  const fill = cap > 0 ? Math.min(1, columnLoad(troops) / cap) : 1;
+  /* Measured against what the HOLD could carry, not against this column's own capacity. Dividing by
+     `cap` meant adding a captain raised the denominator while the troops stayed put, so a second
+     leader dropped the haul from 100% to 62% — reported with screenshots, and a straight regression:
+     bringing more help made you worse off. The denominator is the best party available, so a captain
+     can only ever raise the ceiling you are filling toward. */
+  const best = marchCapacity(s, bestLeaders(s, MARCH_HEROES));
+  const fill = best > 0 ? Math.min(1, columnLoad(troops) / best) : 1;
   if(total === 0) return false;
   for(const [k,n] of Object.entries(troops)) s.t[k] -= n;
   const travel = Math.round(tileDist(tile)*TRAVEL_MS_PER_TILE*marchSpeed(s)
