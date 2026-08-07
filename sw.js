@@ -1,6 +1,6 @@
 // Crownhold service worker: the whole game is one self-contained page —
 // cache it so the hold loads instantly and works offline.
-const CACHE = 'crownhold-1124460';
+const CACHE = 'crownhold-03fd9df';
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(['./'])));
