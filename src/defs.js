@@ -660,8 +660,37 @@ export const LOAD = {spearman:1, archer:1, knight:2, ballista:4};
    of them. So ranged troops and engines only fight at full worth behind a line, and the
    spearman — worth 55% of a knight in raw power — becomes the thing that makes the rest
    of your army work. */
-export const HOLDS = {spearman:1, knight:0.7, archer:0.15, ballista:0};   // stands in front
-export const NEEDS = {spearman:0, knight:0.15, archer:0.8, ballista:1};   // wants one there
+/* ── and the number that actually decides the meta ──
+   The structure above was right and the values were not, for a reason that took a proper
+   measurement to see. Power-per-load was levelled BEFORE cover — archer 5.0, knight 5.5,
+   ballista 6.0, a spread of ×1.20 that the ladder test happily passed — and then the cover
+   system rebuilt the ladder AFTER it. The tax a line pays alone is 0.5 × (NEEDS − HOLDS):
+
+       spearman  3.00/load  tax 0.000  →  3.00      knight  5.50/load  tax 0.000  →  5.50
+       archer    5.00/load  tax 0.325  →  3.38      ballista 6.00/load  tax 0.500  →  3.00
+
+   Three lines clustered at 3.0–3.4 and the knight stood alone at 5.5, because it was the only
+   one with a damage line's power and a screen's cover profile. Measured consequences: knights
+   won on ALL THREE constraints — load ×1.00 against 0.55–0.61, cost ×1.00 against 0.55–0.73,
+   upkeep ×1.00 against 0.48–0.77 — the optimal column was 65% knights and 35% battlemages with
+   spearmen and archers in none of the top six, and a spearman column, the knight's own designated
+   predator, still LOST to it by 29%. The triangle cannot arbitrate a 63% raw gap with ±30%.
+
+   The fix is not mono parity, which would flatten the interdependence this system exists for. A
+   damage line never fights alone; it fights behind spearmen. So the governing quantity is
+   ESCORTED EFFICIENCY — the line plus the screen it obliges you to bring, over the load the two
+   consume together:
+
+       (power/load + 3 × drain) / (1 + drain),   drain = NEEDS − HOLDS
+
+   Ballistae sat at 4.50, archers 4.21, and knights at 5.50 because a negative drain means they
+   bring no escort at all. Solving both back to the ballista's 4.50 needs a drain of 0.333 for
+   archers and 0.667 for knights — and NO change to power, load, cost or upkeep, which is why
+   none of those moved. The four top compositions now score identically (35/30/30/5, 35/35/20/10,
+   35/40/10/15, 40/20/20/20), so composition stops being arithmetic with one answer and becomes
+   the matchup question the triangle is there to settle. */
+export const HOLDS = {spearman:1, knight:0.2, archer:0.15, ballista:0};   // stands in front
+export const NEEDS = {spearman:0, knight:0.87, archer:0.48, ballista:1};  // wants one there
 export const EXPOSED_LOSS = 0.5;      // how much of its worth a wholly uncovered unit loses
 
 /* ── the counter triangle ──

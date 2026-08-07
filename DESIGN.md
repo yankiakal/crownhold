@@ -1446,6 +1446,55 @@ Electrum 47. Prospecting also lifts Isle Ore by up to two fifths, which takes El
 seasons of perfect sailing to ~6: the branch that studies the Isle makes the metal it yields come
 faster, which is the intended shape.
 
+### The ladder was levelled before cover, and cover rebuilt it (v1.75)
+
+Counting capacity as LOAD levelled power-per-slot and the ladder test passed at ×1.20. It was
+measuring the wrong moment. The tax a line pays alone is `0.5 × (NEEDS − HOLDS)`, and applying it
+rebuilds the ladder the load system had just flattened:
+
+| line | power/load | cover tax | post-cover |
+|---|---|---|---|
+| Spearmen | 3.00 | 0.000 | 3.00 |
+| Archers | 5.00 | 0.325 | 3.38 |
+| **Knights** | **5.50** | **0.000** | **5.50** |
+| Battlemages | 6.00 | 0.500 | 3.00 |
+
+Three lines clustered at 3.0–3.4; the knight stood alone at 5.5, the only line with a damage
+line's power and a screen's cover profile. Pre-cover spread ×1.20 — passing. Post-cover, which is
+what a player actually fields, ×1.83.
+
+Measured consequences: knights won on **all three** constraints (load ×1.00 against 0.55–0.61,
+cost ×1.00 against 0.55–0.73, upkeep ×1.00 against 0.48–0.77); the optimal column was 65% knights
+and 35% battlemages with spearmen and archers in none of the top six; and a spearman column — the
+knight's own designated predator — still lost to it by 29%, because a ±30% triangle cannot
+arbitrate a 63% raw gap.
+
+**The fix is not mono parity.** Flattening pure columns would delete the interdependence the cover
+system exists for. A damage line never fights alone — it fights behind spearmen — so the governing
+quantity is **escorted efficiency**: the line plus the screen it obliges you to bring, over the
+load the two consume together.
+
+```
+(power/load + 3 × drain) / (1 + drain)        drain = NEEDS − HOLDS
+```
+
+Ballistae sat at 4.50 and archers at 4.21, while knights kept the whole 5.50 because a *negative*
+drain means no escort at all. Solving both back to 4.50 needs a drain of 0.333 for archers and
+0.667 for knights — so `HOLDS.knight` 0.7 → 0.2, `NEEDS.knight` 0.15 → 0.87, `NEEDS.archer`
+0.8 → 0.48, and **no change to power, load, cost or upkeep**. None of that tuning was wrong; only
+the cover profile was.
+
+The four best compositions now score identically — 35/30/30/5, 35/35/20/10, 35/40/10/15,
+40/20/20/20 — so composition stops being arithmetic with one answer and becomes the matchup
+question the triangle exists to settle. The best pure column falls 7% short of the optimum, so
+mixing pays. Load, cost and upkeep are now won by three *different* lines.
+
+**The part worth remembering: this rebalance broke not one existing test.** Every guard measured
+power-per-load before cover, and a whole dominant strategy lived in the gap between that and what
+players field. Four new tests close it — escorted-efficiency parity, no line best on all three
+constraints, the optimal column must field three of four lines, and no line may escape the screen
+entirely — and all four were confirmed to go red against the old numbers before being kept.
+
 ## Pacing: can an addict finish it in a week? (v1.5)
 
 The honest failure the simulator exposed: with uncapped Valor, attention

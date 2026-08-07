@@ -1708,6 +1708,94 @@ console.log('\n── a save from before the Electrum rename carries over ──
      stale.join(', ') || 'clean');
 }
 
+console.log('\n── no line may be the answer to every question ──');
+{
+  /* These exist because retuning the knight's cover profile — the change that ended a
+     two-of-four meta — broke NOT ONE existing test. Every guard here measured power-per-load
+     BEFORE cover, which the old numbers passed at ×1.20 while the spread a player actually
+     fielded was ×1.83. A whole dominant strategy lived in that gap, undetected. */
+
+  const s = hold();
+  s.b.townhall = 25; s.b.wall = 0; s.b.academy = 30;
+  s.tier = { spearman:5, archer:5, knight:5, ballista:5 };
+  s.research = {}; s.now = Date.now();
+  const KEYS = Object.keys(D.TROOPS);
+
+  /* 1. ESCORTED EFFICIENCY — the quantity that actually decides composition. A damage line does
+        not fight alone; it fights behind spearmen, and its drain says how many it must bring. */
+  const SP = D.TROOPS.spearman.power / D.LOAD.spearman;
+  const escorted = k => {
+    const drain = Math.max(0, D.NEEDS[k] - D.HOLDS[k]);
+    return (D.TROOPS[k].power / D.LOAD[k] + SP * drain) / (1 + drain);
+  };
+  const effs = KEYS.filter(k => k !== 'spearman').map(escorted);
+  ok('every damage line costs the same per point of power, screen included',
+     Math.max(...effs) / Math.min(...effs) < 1.08,
+     KEYS.filter(k => k !== 'spearman').map(k => k.slice(0,2) + ' ' + escorted(k).toFixed(2)).join(', ')
+       + ' → ×' + (Math.max(...effs)/Math.min(...effs)).toFixed(3));
+  /* The knight's old profile is the specific thing this refuses: a negative drain means no escort
+     at all, so the line keeps its whole power-per-load and every other line pays a tax it does not. */
+  ok('and none of them escapes the screen entirely',
+     KEYS.every(k => k === 'spearman' || D.NEEDS[k] > D.HOLDS[k]),
+     KEYS.filter(k => k !== 'spearman')
+       .map(k => k.slice(0,2) + ' drain ' + (D.NEEDS[k] - D.HOLDS[k]).toFixed(2)).join(', '));
+
+  /* 2. NO LINE BEST ON EVERY CONSTRAINT. A player is limited by column load when marching, by
+        resources when building, and by food when standing an army. Knights used to top all three. */
+  const monoPower = (k, n) => {
+    const t = { spearman:0, archer:0, knight:0, ballista:0, [k]: n };
+    return L.tierPower(s, k) * n * L.coverMult(k, L.coverOf(t, 0));
+  };
+  const per = {
+    load:   k => D.LOAD[k],
+    cost:   k => Object.values(D.TROOPS[k].cost).reduce((a,b) => a+b, 0) * L.tierCostMult(s, k),
+    upkeep: k => L.tierUpkeep(s, k),
+  };
+  const winners = {};
+  for(const [axis, cost] of Object.entries(per)){
+    const budget = axis === 'load' ? 400 : axis === 'cost' ? 100000 : 60;
+    let best = null;
+    for(const k of KEYS){
+      const p = monoPower(k, Math.floor(budget / cost(k)));
+      if(!best || p > best.p) best = { k, p };
+    }
+    winners[axis] = best.k;
+  }
+  const sweep = KEYS.filter(k => Object.values(winners).every(w => w === k));
+  ok('no single line is the best answer on load AND cost AND upkeep', sweep.length === 0,
+     Object.entries(winners).map(([a,k]) => a + '→' + k).join(', '));
+
+  /* 3. THE OPTIMAL COLUMN USES THE ARMY. Searched over every composition in 5% steps — the old
+        numbers answered 65% knights / 35% battlemages with spearmen and archers in none of the
+        top six, which is a two-of-four meta wearing a four-troop game's clothes. */
+  const LOADB = 400;
+  const powerOf = cnt => {
+    const cov = L.coverOf(cnt, 0);
+    return KEYS.reduce((a, k) => a + L.tierPower(s, k) * (cnt[k] || 0) * L.coverMult(k, cov), 0);
+  };
+  let top = null; const step = 0.05;
+  for(let a = 0; a <= 1.0001; a += step)
+    for(let b = 0; a + b <= 1.0001; b += step)
+      for(let c = 0; a + b + c <= 1.0001; c += step){
+        const d = 1 - a - b - c; if(d < -1e-9) continue;
+        const share = { spearman:a, archer:b, knight:c, ballista:d }, cnt = {};
+        for(const k of KEYS) cnt[k] = Math.floor(LOADB * share[k] / D.LOAD[k]);
+        const p = powerOf(cnt);
+        if(!top || p > top.p) top = { share, p };
+      }
+  const used = KEYS.filter(k => top.share[k] > 0.001);
+  ok('the best column in the game fields at least three of the four lines',
+     used.length >= 3,
+     KEYS.map(k => k.slice(0,2) + Math.round(top.share[k]*100) + '%').join(' '));
+
+  /* 4. AND MIXING MUST PAY. Cover is the whole reason to bring a screen; if a pure column ever
+        matched the best mix, the interdependence would be decorative. */
+  const bestMono = Math.max(...KEYS.map(k => monoPower(k, Math.floor(LOADB / D.LOAD[k]))));
+  ok('and beats every pure column', bestMono < top.p,
+     'best mono ' + Math.round(bestMono) + ' against the optimum ' + Math.round(top.p)
+       + ' (' + ((bestMono/top.p - 1) * 100).toFixed(0) + '%)');
+}
+
 console.log('\n── per-line mastery must not pay for specialising ──');
 {
   /* "Do all the troop masteries cost the same? Else people could focus on one type." They do NOT
