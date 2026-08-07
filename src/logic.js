@@ -19,7 +19,7 @@ import {
   COST_EXP, TIME_EXP, TIERS, TIER_POWER, TIER_UPKEEP, TIER_COST, ACADEMY_PER_TIER, ACADEMY_TOP, ACADEMY_POWER,
   PROMOTE_MS_PER_TROOP, PROMOTE_MS_MIN,
   REFINE, STEEL_FROM, RUNE_FROM,
-  buildTimeCap, TIME_SCALE, SECOND_QUEUE_TH,
+  buildTimeCap, earlyRamp, TIME_SCALE, SECOND_QUEUE_TH,
   VALOR_QUOTA_BASE, VALOR_QUOTA_PER_TH, VALOR_OVERFLOW,
   REST_CAP_MS, REST_PROD_BONUS, REST_QUOTA_BONUS,
   WAVE_MS, FIRST_WAVE_MS, masteryLvl,
@@ -780,7 +780,8 @@ export function buildCost(s,k){
 export function buildTime(s,k){
   const spoilMult = Math.max(0.4, 1 - spoilBonus(s,'buildTime') - allyBonus(s,'buildSpeed'));
   return Math.min(buildTimeCap(s.b[k]), BUILDINGS[k].time * Math.max(1, Math.pow(s.b[k], TIME_EXP))
-    * (perk(s,5)?0.88:1) * (perk(s,18)?0.9:1) * spoilMult) * 1000 * TIME_SCALE;
+    * (perk(s,5)?0.88:1) * (perk(s,18)?0.9:1) * spoilMult)
+    * 1000 * TIME_SCALE * earlyRamp(s.b[k]);
 }
 
 /* ── the Town Hall cannot outpace its hold ──

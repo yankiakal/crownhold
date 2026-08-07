@@ -701,6 +701,44 @@ console.log('\n── a pre-skills save is inert, not broken ──');
   ok('maxing every building is months of queue, not days', days > 45 && days < 400,
      days.toFixed(0) + ' days of continuously busy queue at TIME_SCALE ' + D.TIME_SCALE);
 
+  /* ── the first two minutes ──
+     Reported from play: "first thing you do in the game, build quarry and you wait 2 mins, nothing
+     else." Both halves of that were true and neither was visible to any existing test — the pacing
+     test above measures the whole 106-day climb, which is exactly the wrong end of the telescope. */
+  {
+    const first = k => { const s = freshState(Date.now(), 1); return L.buildTime(s, k) / 1000; };
+    for(const k of ['farm', 'lumberyard', 'quarry', 'barracks']){
+      ok('a level-1 ' + D.BUILDINGS[k].name + ' takes seconds, not minutes', first(k) < 20,
+         first(k).toFixed(0) + 's');
+    }
+    /* And the full weight still arrives: the ramp is a ramp, not a discount. */
+    const s = freshState(Date.now(), 1); s.b.quarry = D.RAMP_LEVELS;
+    ok('and the ramp is fully paid off by level ' + (D.RAMP_LEVELS + 1),
+       D.earlyRamp(D.RAMP_LEVELS) === 1 && L.buildTime(s, 'quarry') / 60000 > 30,
+       'a level-' + (D.RAMP_LEVELS+1) + ' Quarry is '
+         + (L.buildTime(s, 'quarry') / 60000).toFixed(0) + ' min');
+
+    /* The purse was the other half. 120 wood bought exactly two buildings, and the rest of the
+       first session was watching it accrue at 1.6/s. Seeded stock has to clear a few builds AND
+       stay under the Town Hall 1 storage cap, or the first tick clamps the surplus away and the
+       generosity is invisible — the same clamp that hid three measurements elsewhere in this file. */
+    const fresh = freshState(Date.now(), 1);
+    const openers = ['farm', 'lumberyard', 'quarry', 'barracks'];
+    let purse = { ...fresh.res }, bought = 0;
+    for(const k of openers){
+      const c = L.buildCost(fresh, k);
+      if(Object.entries(c).every(([r, v]) => (purse[r] || 0) >= v)){
+        for(const [r, v] of Object.entries(c)) purse[r] -= v;
+        bought++;
+      }
+    }
+    ok('the opening purse pays for every level-1 building at once', bought === openers.length,
+       bought + ' of ' + openers.length + ' affordable from the starting stock');
+    ok('and none of it is above the storage cap, so none is clamped away',
+       ['food','wood','stone'].every(r => fresh.res[r] <= L.capFor(fresh, r)),
+       ['food','wood','stone'].map(r => r + ' ' + fresh.res[r] + '/' + Math.round(L.capFor(fresh, r))).join(', '));
+  }
+
   /* The second crew has to arrive EARLY, and this test used to say the opposite by accident. Its
      bound was `> 5`, written when the crew sat at Town Hall 10 to stop it drifting later still —
      but Town Hall 10 is 39 hours of continuously busy queue, three or four days, and for every one

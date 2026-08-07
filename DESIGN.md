@@ -1563,6 +1563,35 @@ players field. Four new tests close it — escorted-efficiency parity, no line b
 constraints, the optimal column must field three of four lines, and no line may escape the screen
 entirely — and all four were confirmed to go red against the old numbers before being kept.
 
+### The first two minutes (v1.83)
+
+Reported from play: *"first thing you do in the game, build quarry and you wait 2 mins, nothing
+else"* and *"we need to be like ks/wos, first few levels are in seconds not minutes."* Both true,
+and the cause was two separate things stacked.
+
+**Time.** `TIME_SCALE = 10` exists to stretch the whole climb to months, and it was applied flat —
+including to level 1, the one level whose entire job is to teach the loop. Measured: Farm 1.3 min,
+Lumberyard 1.3 min, Quarry 2.0 min, Barracks 2.5 min. The scale now ramps in over the first eight
+levels, so the Quarry reads **4s, 6s, 35s, 2min, 5min, 11min** and has the full weight on it by
+level 9.
+
+**The purse.** 120 wood bought exactly two buildings, and the rest of the first session was watching
+wood accrue at 1.6/s. Simulated with production and waiting, the opening was **2 levels in the first
+two minutes and 93% of it idle**. The starting stock is 500/500/250, which gets it to **11 levels and
+43% idle** — the point where build times themselves become the limit rather than the money.
+
+500 rather than more because the **Town Hall 1 storage cap is 800**: seeded above it, the first tick
+clamps the surplus away and the generosity is invisible. That clamp has now hidden four separate
+measurements in this project, and a test asserts the opening stock sits under it.
+
+**Neither half was visible to any existing test.** The pacing test measures the whole 106-day climb —
+the wrong end of the telescope entirely — and it passed throughout, before and after, because the
+first eight levels of each building are a rounding error against months of queue. Seven new tests
+cover the opening specifically: every level-1 building under 20 seconds, the ramp fully paid off by
+level 9, the opening purse clearing all four level-1 builds, and none of it above the cap.
+
+Total length unchanged: 106 days of continuously busy queue to max every building.
+
 ### The early game had nothing to press (v1.81)
 
 Reported from play, not from a test: the first days are boring, because there are no extra marches

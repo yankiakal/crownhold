@@ -17,7 +17,13 @@ export function freshState(now, seed){
     world: genWorld(seed != null ? seed : Math.floor(Math.random()*2**31)),
     isle: genIsle(seed != null ? seed : Math.floor(Math.random()*2**31), seasonNo(now)),
     marches: [], watch: [], watching: [],
-    res:{food:120,wood:120,stone:60,iron:0,steel:0,runestone:0,rations:0,isleore:0,electrum:0},
+    /* A hold opens with enough to BUILD with. 120 wood bought exactly two buildings and then the
+       first session was 111 seconds of watching wood accrue at 1.6/s — measured, 2 levels in the
+       first two minutes and 93% of it idle. At 500 it is 11 levels and 43%, which is where the
+       build times themselves become the limit rather than the purse.
+       Under the Town Hall 1 storage cap of 800 on purpose: seeded above it, the first tick would
+       clamp the surplus away and the generosity would be invisible. */
+    res:{food:500,wood:500,stone:250,iron:0,steel:0,runestone:0,rations:0,isleore:0,electrum:0},
     achieved:{}, campsBurned:0, ruinsRaided:0, winStreak:0, bestStreakWon:0,
     valorDay:0, valorToday:0, rest:0,
     research:{}, rq:null, allyBonus:null, ev:null, daily:null,

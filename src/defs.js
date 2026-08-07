@@ -921,6 +921,26 @@ export const TIME_SCALE = 10;
 // Build times cap per level, not globally: a level-3 hut is minutes, a level-28
 // keep is a day. This makes the queue — not your stamina — the wall.
 export const buildTimeCap = lvl => 600 + 400 * lvl;   // seconds, before TIME_SCALE
+
+/* ── and the first levels are SECONDS, not minutes ──
+   Reported from play: "first thing you do in the game, build quarry and you wait 2 mins, nothing
+   else." Measured and exactly right — the opening levels were Farm 1.3 min, Lumberyard 1.3 min,
+   Quarry 2.0 min, Barracks 2.5 min, with one crew, so the first session was press one thing and
+   watch it. TIME_SCALE exists to stretch the whole climb to months and it was being applied flat,
+   including to level 1, which is the one level whose entire job is to teach the loop.
+
+   Kingshot and Whiteout both open in seconds. So the scale ramps in over the first eight levels
+   instead of arriving whole: a level-1 building is a few seconds, level 3 about half a minute, and
+   by level 8 the full weight is on. Measured on the Quarry — 4s, 6s, 35s, 2min, 5min, 11min — so
+   the first minutes are dense and the long game is untouched, because the hours were always in the
+   late levels rather than the early ones. */
+export const RAMP_LEVELS = 8;
+export const RAMP_FLOOR = 0.035;
+export const earlyRamp = lvl => {
+  if(lvl >= RAMP_LEVELS) return 1;
+  const t = lvl / RAMP_LEVELS;
+  return RAMP_FLOOR + t * t * (1 - RAMP_FLOOR);
+};
 // a second crew, earned by growing the hold
 /* Town Hall 5, not 10. Measured, TH10 is 39 HOURS of continuously busy build queue — three or
    four days of real play — and for all of it you have one crew and one column. The build queue is
