@@ -3,7 +3,7 @@
 //
 // CACHE is rewritten per build by scripts/release.js, so every deploy gets its own cache and the
 // activate handler below deletes the previous one.
-const CACHE = 'crownhold-a138963';
+const CACHE = 'crownhold-2b7677a';
 
 self.addEventListener('install', e => {
   /* cache:'reload' matters here. GitHub Pages serves the page with `cache-control: max-age=600`,
