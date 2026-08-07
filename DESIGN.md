@@ -1446,6 +1446,44 @@ Electrum 47. Prospecting also lifts Isle Ore by up to two fifths, which takes El
 seasons of perfect sailing to ~6: the branch that studies the Isle makes the metal it yields come
 faster, which is the intended shape.
 
+### Three more branches, over the last systems with none (v1.77)
+
+Research was 24 studies and 84 days, which is thin for a game meant to run for years. The room was
+already identified: marching, the wall between raids, and the captains had **no research at all**.
+
+- **The Road** — Roadwork (march speed), Baggage Train (column capacity), Foraging (gather yield),
+  Outriders (losses on the road), Relay Posts (an extra march).
+- **The Watch** — Ramparts (wear per assault), Mortarwork (mend rate), Quarrymen (mend cost),
+  the Vigil (Writ capacity).
+- **The Court** — Tutelage (hero xp), Heraldry (lead bonus), the High Table (a court seat).
+
+Every lever already existed, so nothing here is a new mechanic. Now **36 studies, 387 levels,
+97 days**.
+
+Three things worth keeping from building them:
+
+**Hero xp needed a funnel.** Five separate places award it — two in the arena, one per wave, one per
+march, one per voyage — so a percentage applied at each call site is how one silently ends up
+unresearched. `gainHeroXp` is the single door, and a test counts direct writes to `.xp` and demands
+exactly one: the funnel's own. Same lesson as `techLine` living inside `tierPower`.
+
+**Two studies were quietly nearly dead.** Baggage multiplied `MARCH_BASE_CAP` before the three
+captains were added, and almost all of a column's capacity comes from the captains — a maxed study
+moved a real column from 225 to 227. It multiplies the whole capacity now: 225 → 293. And the High
+Table added court seats without lifting `COURT_MAX`, which the Town Hall already reaches at level
+12 — so it would have done nothing for exactly the holds deep enough to have studied it.
+
+**The storage clamp hid a measurement for the third time.** The Quarrymen probe seeded 500,000
+stone against a Town Hall 20 cap near 168,000; the tick clamped the overflow and reported it as
+spending, so the masons' 75-stone saving sat inside a 330,900 swing. Seeded below the cap it reads
+250 → 175 stone a minute. The wave-plunder fixture and the Salvage haul were the first two. **Any
+fixture that seeds a resource should seed it below `capFor`.**
+
+A fork needs siblings at the same Library rank, not just the same prerequisite. Row is
+`max(libRank, 1 + depth(dep))`, so a sibling one Library level higher is silently pushed down a row
+and the branch renders as a straight line — which is what all three did until their `lib` values
+were aligned.
+
 ### Why the triangle names three troops and not four (v1.76)
 
 `BEATS` has three entries against four lines, and the battlemage is in none of them. Tabulating

@@ -14,7 +14,7 @@ import {
   coverOf, coverMult, matchupEdge, powerShares,
   effLvl, addDeeds, petBonus, gainBond, gainPetXp,
   skillTotal, skillClass, skillCond,
-  gainRes, gainValor, gainShield, gainMastery, pushLog, showBanner, fmt, ftime,
+  gainRes, gainValor, gainShield, gainMastery, gainHeroXp, pushLog, showBanner, fmt, ftime,
 } from './logic.js';
 /* Seafaring research reaches into the voyage: the crossing, the victuals, the ore, the losses,
    the ring charted on landing, and the rest of the haul. */
@@ -238,9 +238,13 @@ export function marchParty(m){ return m.heroes || (m.hero ? [m.hero] : []); }
 /* The Command Center is what lets you field more columns at once, and move them
    faster — march capacity is its whole job. */
 export function marchSlots(s){
-  return 1 + Math.floor((s.b.command || 0) / 5) + (s.b.townhall >= 10 ? 1 : 0);
+  return 1 + Math.floor((s.b.command || 0) / 5) + (s.b.townhall >= 10 ? 1 : 0)
+           + techLvl(s, 'relays');          // Relay Posts: one more column per level, two levels
 }
-export function marchSpeed(s){ return Math.max(0.5, 1 - 0.02 * (s.b.command || 0)); }
+export function marchSpeed(s){
+  // Roadwork shortens every march on top of the Command Center, floored so it never nears zero
+  return Math.max(0.5, 1 - 0.02 * (s.b.command || 0)) * Math.max(0.6, 1 - techBonus(s, 'roadwork'));
+}
 export function tileBusy(s, idx){ return (s.marches||[]).some(m => m.tile===idx); }
 
 /* A column's strength: the hold's standing bonuses, plus what its three leaders
@@ -284,6 +288,10 @@ export function marchCapacity(s, heroes){
     .filter(id => s.heroes[id] && HERO_POOL[id]).slice(0, MARCH_HEROES);
   let cap = MARCH_BASE_CAP + skillTotal(s, list, 'cap');
   for(const id of list) cap += CAP_PER_HERO + CAP_PER_LEVEL * effLvl(s, id);
+  /* Baggage multiplies the WHOLE column, captains included. Applied to MARCH_BASE_CAP alone — the
+     obvious first placement — it moved a real column from 225 to 227, because almost all of the
+     capacity comes from the three leaders that are added afterwards. */
+  cap *= (1 + techBonus(s, 'baggage'));
   return Math.max(1, Math.round(cap));
 }
 /* The strongest available party, highest level first — used to preview capacity
@@ -304,7 +312,7 @@ export function gatherYield(s, tile){
   const th = s.b.townhall;
   const base = (26 + 15*Math.pow(tile.lvl, 1.36)) * th;
   const scale = {wood:1, food:1, stone:0.55, iron:0.3}[TILE_TYPES[tile.type].res];
-  return Math.round(base * scale);
+  return Math.round(base * scale * (1 + techBonus(s, 'foraging')));
 }
 
 /* Trim a requested column to what is actually available and commandable:
@@ -431,7 +439,7 @@ function resolveHunt(s, m, now, rand){
   m.woundedBack = {};
   if(mine >= enemy){
     const ratio = enemy/Math.max(mine,1);
-    const lf = 0.22*ratio*ratio*guard;
+    const lf = 0.22*ratio*ratio*guard * Math.max(0.5, 1 - techBonus(s, 'outriders'));
     for(const k of Object.keys(m.troops)){
       const l = Math.round(m.troops[k]*lf);
       m.troops[k] = Math.max(0, m.troops[k]-l);
@@ -477,7 +485,7 @@ function resolveArrival(s, m, now, rand){
     const mine = marchPower(s, m.troops, party, 'camp', tile.def);
     if(mine >= enemy){
       const ratio = enemy/Math.max(mine,1);
-      const lf = 0.25*ratio*ratio*guard;
+      const lf = 0.25*ratio*ratio*guard * Math.max(0.5, 1 - techBonus(s, 'outriders'));
       // the fallen from a march are counted when the column gets home
       m.hurt = 0;
       for(const k of Object.keys(m.troops)){
@@ -552,7 +560,7 @@ function resolveReturn(s, m, now, rand){
   if(m.mxp) gainMastery(s, Math.round(m.mxp
     * (1 + leadTotal(s, party, 'lore')) * (1 + skillTotal(s, party, 'lore'))), now);
   // heroes who actually rode learn more than those who sat at the table
-  for(const id of party) if(s.heroes[id]) s.heroes[id].xp += 40 + (m.long ? 120 : 0);
+  for(const id of party) gainHeroXp(s, id, 40 + (m.long ? 120 : 0));
   // and the ride itself counts toward their next star
   addDeeds(s, party, m.long ? 'longHaul' : (m.report||'').startsWith('⚔️') ? 'camp' : 'march', now);
   // the hunt is what brings companions in, and what teaches the one at your side
@@ -690,7 +698,7 @@ export function voyageStep(s, now, rand = Math.random){
     if(d.mxp) gainMastery(s, d.mxp * c.tier, now);
     if(d.writ){ gainShield(s, 1); bits.push('a Writ of Peace'); }
     addDeeds(s, party, 'longHaul', now);
-    for(const id of party) if(s.heroes[id]) s.heroes[id].xp += 160;
+    for(const id of party) gainHeroXp(s, id, 160);
     c.spent = true;
     const found = revealAround(s.isle, v.x, v.y, ISLE_REVEAL + techLvl(s, 'spyglass'));
     s.isle.sailed = (s.isle.sailed || 0) + 1;

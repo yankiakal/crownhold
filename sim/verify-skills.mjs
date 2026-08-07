@@ -1700,6 +1700,95 @@ console.log('\n── Seafaring: six studies, measured by actually sailing ─�
      String(W.voyageBlockedBy(two, 3, 6)));
 }
 
+console.log('\n── the Road, the Watch and the Court all move real numbers ──');
+{
+  /* Three branches over the last systems with no research on them: marching, the wall between
+     raids, and the captains. Every lever already existed — marchSpeed, marchCapacity, gatherYield,
+     the road's loss factor, marchSlots, the wear per assault, the masons' rate and their stone,
+     the Writ ceiling, hero xp, leadBonus and the court's seats — so nothing here is a new mechanic
+     and nothing is a filler rung. Each is measured against the function it claims to change. */
+  const at = res => {
+    const s = hold();
+    s.b.townhall = 20; s.b.command = 20; s.b.wall = 10; s.b.library = 24;
+    s.research = res; s.now = Date.now();
+    return s;
+  };
+  const bare = at({});
+
+  // ── The Road ──
+  ok('Roadwork shortens every march',
+     W.marchSpeed(at({ roadwork:10 })) < W.marchSpeed(bare),
+     W.marchSpeed(bare).toFixed(2) + ' → ' + W.marchSpeed(at({ roadwork:10 })).toFixed(2));
+  const party = ['marshal','gatekeeper','forager'];
+  ok('Baggage Train carries more',
+     W.marchCapacity(at({ baggage:10 }), party) > W.marchCapacity(bare, party),
+     W.marchCapacity(bare, party) + ' → ' + W.marchCapacity(at({ baggage:10 }), party) + ' load');
+  const tile = { lvl:5, type:'woods' };
+  ok('Foraging brings more off a gathering tile',
+     W.gatherYield(at({ foraging:10 }), tile) > W.gatherYield(bare, tile),
+     W.gatherYield(bare, tile) + ' → ' + W.gatherYield(at({ foraging:10 }), tile));
+  ok('Relay Posts open another column, one per level',
+     W.marchSlots(at({ relays:2 })) === W.marchSlots(bare) + 2,
+     W.marchSlots(bare) + ' → ' + W.marchSlots(at({ relays:2 })) + ' marches');
+
+  // ── The Watch ──
+  const wearAfter = res => { const s = at(res); s.wallWear = 0; L.batterWall(s, 1); return s.wallWear; };
+  ok('Ramparts means an assault loosens less of the wall',
+     wearAfter({ ramparts:10 }) < wearAfter({}),
+     wearAfter({}).toFixed(3) + ' → ' + wearAfter({ ramparts:10 }).toFixed(3) + ' per hit');
+  const mend = res => { const s = at(res); s.wallWear = 0.3; return L.wallMendPerSec(s); };
+  ok('Mortarwork has the masons working faster',
+     mend({ mortar:10 }) > mend({}),
+     mend({}).toFixed(2) + ' → ' + mend({ mortar:10 }).toFixed(2) + ' per second');
+  /* Quarrymen acts inside the tick, where the masons are actually paid, so it is measured by
+     running one and comparing the stone that left the vault. */
+  const stoneSpent = res => {
+    const s = at(res); s.wallWear = 0.3;
+    /* Stone must start BELOW the storage cap. Seeded at 500,000 against a Town Hall 20 cap near
+       168,000, the tick clamped the overflow away and reported it as spending: the masons' 75-stone
+       bill sat inside a 330,900 swing that was pure clamp. Third time this cap has swallowed a
+       measurement in this suite — the wave-plunder fixture and the Salvage haul were the others. */
+    s.res.stone = Math.round(L.capFor(s, 'stone') * 0.5);
+    s.b.forge = 0; s.b.runeworks = 0; s.b.crucible = 0;   // and they eat stone too
+    const before = s.res.stone;
+    L.tick(s, s.now + 60000, 60);          // (s, now, dt) — omitting dt is what made this NaN
+    return before - s.res.stone;
+  };
+  ok('Quarrymen makes the same mending cost less stone',
+     stoneSpent({ quarrymen:10 }) < stoneSpent({}),
+     Math.round(stoneSpent({})) + ' → ' + Math.round(stoneSpent({ quarrymen:10 })) + ' stone a minute');
+  ok('the Vigil holds one more Writ per level',
+     L.shieldCap(at({ vigil:2 })) === L.shieldCap(bare) + 2,
+     L.shieldCap(bare) + ' → ' + L.shieldCap(at({ vigil:2 })) + ' Writs');
+
+  // ── The Court ──
+  const xpGain = res => {
+    const s = at(res);
+    s.heroes.marshal = { lvl:5, xp:0, stars:0, deeds:0, gear:{}, skills:[] };
+    return L.gainHeroXp(s, 'marshal', 100);
+  };
+  ok('Tutelage teaches captains faster', xpGain({ tutelage:10 }) > xpGain({}),
+     xpGain({}) + ' → ' + xpGain({ tutelage:10 }) + ' xp from the same deed');
+  /* And it must reach EVERY grant. There are five, and the point of the funnel is that none of
+     them can be left behind — so no file may still add to a hero's xp by hand. */
+  const handGrants = ['../src/logic.js', '../src/world.js', '../src/arena.js'].flatMap(f => {
+    const src = readFileSync(new URL(f, import.meta.url), 'utf8');
+    return (src.match(/\.xp\s*\+=/g) || []).map(() => f);
+  });
+  /* Exactly one, and it is the funnel's own `h.xp += got`. Any second is a site that skipped it. */
+  ok('and every xp grant in the game goes through that one funnel', handGrants.length === 1,
+     handGrants.length + ' direct writes to .xp (want 1, the funnel itself)');
+  ok('Heraldry has a captain leading harder',
+     L.leadBonus(at({ heraldry:10 }), 'marshal', D.HERO_POOL.marshal.lead.key)
+       > L.leadBonus(bare, 'marshal', D.HERO_POOL.marshal.lead.key));
+  /* The High Table lifts the CEILING. A hold at Town Hall 20 already sits at COURT_MAX, which is
+     exactly the hold deep enough to have studied it — a study that only added seats would do
+     nothing for its own audience. */
+  ok('the High Table seats one more even at a maxed court',
+     L.courtSeats(at({ chairs:1 })) === L.courtSeats(bare) + 1,
+     L.courtSeats(bare) + ' → ' + L.courtSeats(at({ chairs:1 })) + ' chairs');
+}
+
 console.log('\n── a save from before the Electrum rename carries over ──');
 {
   /* Truegold was Kingshot's resource name shipping verbatim, so the metal became Electrum and the
@@ -2192,7 +2281,10 @@ console.log('\n── no study moves nothing (the bug Electrum itself was) ─�
      and comparing what came home. Being on this list means "measured somewhere better", never
      "unmeasured": the grep below is the floor, and every name here also has a real assertion. */
   const expected = ['siegecraft', 'statecraft', 'medicine', 'smelting',
-                    'cartography', 'victualling', 'spyglass', 'prospecting', 'seamanship', 'salvage'];
+                    'cartography', 'victualling', 'spyglass', 'prospecting', 'seamanship', 'salvage',
+                    'roadwork', 'baggage', 'foraging', 'outriders', 'relays',
+                    'ramparts', 'mortar', 'quarrymen', 'vigil',
+                    'tutelage', 'heraldry', 'chairs'];
   const unexplained = dead.filter(k => !expected.includes(k));
   ok('every study moves a number this harness can see', unexplained.length === 0,
      unexplained.length ? 'DEAD: ' + unexplained.join(', ') : dead.length + ' deferred to their own tests');
@@ -2201,7 +2293,7 @@ console.log('\n── no study moves nothing (the bug Electrum itself was) ─�
      than measurement, but it is what catches a study nothing consumes at all. world.js is in the
      list because that is where a voyage lives; logic.js alone would have called all six Seafaring
      studies unread. */
-  const src = ['../src/logic.js', '../src/world.js']
+  const src = ['../src/logic.js', '../src/world.js', '../src/arena.js']
     .map(f => readFileSync(new URL(f, import.meta.url), 'utf8')).join('\n');
   const unread = expected.filter(k => !src.includes("'" + k + "'"));
   ok('and every deferred study is consumed by name in logic.js or world.js', unread.length === 0,

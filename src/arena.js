@@ -17,7 +17,7 @@
 import { TROOPS, HERO_POOL } from './defs.js';
 import {
   armyBreakdown, tierPower, gainValor, gainMastery, pushLog, showBanner, fmt,
-  arenaTeam, classMult, leadTotal, addDeeds, skillTotal, skillCond,
+  arenaTeam, classMult, leadTotal, addDeeds, gainHeroXp, skillTotal, skillCond,
 } from './logic.js';
 import { scoreDeed } from './events.js';
 import { takeCasualties } from './logic.js';
@@ -173,8 +173,8 @@ export function resolveArena(att, def, opts, now, rand = Math.random){
   // both sides' fives earn from the fight — defending counts, even asleep
   addDeeds(att, attFive, won ? 'arenaWin' : 'arena', now);
   addDeeds(def, defFive, won ? 'arena' : 'arenaWin', now);
-  for(const id of attFive) if(att.heroes[id]) att.heroes[id].xp += won ? 60 : 25;
-  for(const id of defFive) if(def.heroes[id]) def.heroes[id].xp += won ? 25 : 60;
+  for(const id of attFive) gainHeroXp(att, id, won ? 60 : 25);
+  for(const id of defFive) gainHeroXp(def, id, won ? 25 : 60);
 
   const stanceNote = sm > 1 ? ' Your ' + attStance + ' broke their ' + defStance + '.'
                    : sm < 1 ? ' Their ' + defStance + ' answered your ' + attStance + '.' : '';

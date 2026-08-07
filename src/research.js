@@ -71,6 +71,9 @@ import { TIME_SCALE, TROOPS } from './defs.js';
 export const BRANCHES = {
   growth:    {name:'Growth', icon:'🌾', blurb:'Land, stores, and the speed of every crew.'},
   battle:    {name:'Battle', icon:'⚔️', blurb:'The army, the wall, and what comes home.'},
+  road:      {name:'The Road', icon:'🛤️', blurb:'Columns on the march — how far, how fast, how much they carry.'},
+  watch:     {name:'The Watch', icon:'🛡️', blurb:'The wall between raids, and the peace you are owed.'},
+  court:     {name:'The Court', icon:'👑', blurb:'Captains: how quickly they learn and how many may sit.'},
   seafaring: {name:'Seafaring', icon:'🧭', blurb:'The crossing to the Salt Isle, and what the ship brings back.'},
   electrum:  {name:'Electrum', icon:'🏵️', blurb:'The deepest study in the Reach, paid for in Electrum from the Salt Isle.'},
 };
@@ -112,6 +115,61 @@ export const RESEARCH = {
   siegecraft:   {name:'Plunder',       short:'Plunder',       icon:'🧺', branch:'battle', max:10, per:5,  th:8,  lib:6,  unit:'%',
                  fx:'raid loot', cost:{wood:420, iron:180}, time:200,
                  needs:{medicine:2}},
+
+  /* ── The Road ──
+     Marching had no research at all, which is odd for the thing you spend the most time doing.
+     Every lever below already exists: marchSpeed, marchCapacity, gatherYield, the road losses in
+     resolveMarch, and marchSlots. Slots are the interesting one — an extra column is the single
+     biggest quality-of-life gain in the game, so it is two levels and dear, not ten and cheap. */
+  roadwork:     {name:'Roadwork',      short:'Roadwork',  icon:'🛤️', branch:'road', max:10, per:2,   th:6,  lib:4,  unit:'%',
+                 fx:'faster on the march', cost:{stone:400, wood:300}, time:150},
+  baggage:      {name:'Baggage Train', short:'Baggage',   icon:'🐴', branch:'road', max:10, per:3,   th:7,  lib:5,  unit:'%',
+                 fx:'bigger columns', cost:{wood:520, food:380}, time:180,
+                 needs:{roadwork:2}},
+  foraging:     {name:'Foraging',      short:'Foraging',  icon:'🧺', branch:'road', max:10, per:4,   th:8,  lib:5,  unit:'%',
+                 fx:'more from every gathering tile', cost:{food:600, wood:450}, time:200,
+                 needs:{roadwork:4}},
+  outriders:    {name:'Outriders',     short:'Outriders', icon:'🏇', branch:'road', max:10, per:3,   th:10, lib:8,  unit:'%',
+                 fx:'fewer lost on the road', cost:{iron:520, food:700}, time:220,
+                 needs:{foraging:3}},
+  /* Two levels, like the Spyglass, and for the same reason: a march slot is an integer. Spread
+     over ten levels it would be eight rungs that visibly do nothing. */
+  relays:       {name:'Relay Posts',   short:'Relays',    icon:'📯', branch:'road', max:2,  per:1,   th:13, lib:11, unit:' march',
+                 fx:'another column on the road', cost:{stone:2600, steel:90}, time:900,
+                 needs:{outriders:4}},
+
+  /* ── The Watch ──
+     The wall between raids. Wear, mending and Writs were all unresearched, and they are what the
+     defensive half of the game is made of. */
+  ramparts:     {name:'Ramparts',      short:'Ramparts',  icon:'🧱', branch:'watch', max:10, per:3,  th:6,  lib:4,  unit:'%',
+                 fx:'the wall loosens less per assault', cost:{stone:520, wood:260}, time:160},
+  mortar:       {name:'Mortarwork',    short:'Mortar',    icon:'🪣', branch:'watch', max:10, per:4,  th:7,  lib:5,  unit:'%',
+                 fx:'masons mend the wall faster', cost:{stone:680, iron:200}, time:190,
+                 needs:{ramparts:2}},
+  quarrymen:    {name:'Quarrymen',     short:'Quarrymen', icon:'⛏️', branch:'watch', max:10, per:3,  th:9,  lib:5,  unit:'%',
+                 fx:'mending costs less stone', cost:{stone:900, food:500}, time:210,
+                 needs:{ramparts:4}},
+  /* Writ capacity is an integer too — and it is the strongest single defensive lever in the game,
+     so it is the shallowest and dearest study here. */
+  vigil:        {name:'The Vigil',     short:'Vigil',     icon:'🕊️', branch:'watch', max:2,  per:1,  th:14, lib:12, unit:' Writ',
+                 fx:'one more Writ of Peace held at once', cost:{stone:3200, steel:110}, time:900,
+                 needs:{quarrymen:4}},
+
+  /* ── The Court ──
+     Captains were the one system with no study at all, and they are the thing the whole column
+     hangs off. Deliberately the smallest branch: heroes are drafted, never bought, and research
+     that made them arrive faster would edge toward the gacha this game exists to avoid. What is
+     studied is how quickly they LEARN and how many may sit — not who shows up. */
+  tutelage:     {name:'Tutelage',      short:'Tutelage',  icon:'📖', branch:'court', max:10, per:4,  th:8,  lib:6,  unit:'%',
+                 fx:'captains learn faster', cost:{food:700, stone:400}, time:200},
+  heraldry:     {name:'Heraldry',      short:'Heraldry',  icon:'🎖️', branch:'court', max:10, per:2,  th:11, lib:9,  unit:'%',
+                 fx:'a captain leads harder', cost:{stone:1100, iron:420}, time:240,
+                 needs:{tutelage:3}},
+  /* One extra chair, once. COURT_MAX is 8 and the Town Hall already grants up to that, so this
+     study raises the ceiling itself rather than the rate — hence a single level. */
+  chairs:       {name:'The High Table',short:'High Table',icon:'🪑', branch:'court', max:1,  per:1,  th:16, lib:14, unit:' chair',
+                 fx:'one more seat at court', cost:{steel:140, stone:2400}, time:1200,
+                 needs:{heraldry:4}},
 
   /* ── Seafaring ──
      The Salt Isle was a whole second map with no research touching it at all: its only study was

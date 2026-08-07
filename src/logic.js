@@ -145,7 +145,11 @@ export function rollPetOffer(s, rand){
    roster grow to thirty-odd without the hold's power growing with it: drafting
    a new hero widens your options, it never widens your stat block. */
 export function courtSeats(s){
-  return Math.min(COURT_MAX, COURT_BASE + Math.floor((s.b.townhall||1) / COURT_PER_TH));
+  /* The study lifts the CAP, not the rate. COURT_BASE 4 plus one per three Town Hall levels already
+     reaches COURT_MAX at Town Hall 12, so a study that only added seats would be dead on arrival
+     for exactly the holds deep enough to have researched it. */
+  const cap = COURT_MAX + techLvl(s, 'chairs');
+  return Math.min(cap, COURT_BASE + Math.floor((s.b.townhall||1) / COURT_PER_TH) + techLvl(s, 'chairs'));
 }
 export function heroAway(s, id){
   return (s.marches||[]).some(m => m.heroes ? m.heroes.includes(id) : m.hero === id);
@@ -228,7 +232,7 @@ export function heroBonus(s, key){
 export function leadBonus(s, id, key){
   const d = HERO_POOL[id], h = s.heroes[id];
   if(!d || !h || !d.lead || d.lead.key !== key) return 0;
-  return d.lead.val * effLvl(s, id);
+  return d.lead.val * effLvl(s, id) * (1 + techBonus(s, 'heraldry'));
 }
 /* Three heroes ride per column, so every lead trait is a sum over the party.
    Accepts a single id too, so older callers and saves keep working. */
@@ -372,7 +376,10 @@ export function spoilBonus(s, key){
 
 /* ── derived values ── */
 export function perk(s,n){ return masteryLvl(s)>=n; }
-export function shieldCap(s){ return 2 + (perk(s,7)?1:0) + (perk(s,14)?1:0) + spoilBonus(s,'shieldCap'); }
+export function shieldCap(s){
+  return 2 + (perk(s,7)?1:0) + (perk(s,14)?1:0) + spoilBonus(s,'shieldCap')
+           + techLvl(s, 'vigil');            // the Vigil: one more Writ held at once, per level
+}
 export function storageCapFor(s, thLvl){
   return Math.round(800 * Math.pow(thLvl,1.7)
     * (1 + 0.03*(s.b.granary||0) + techBonus(s,'logistics') + techBonus(s,'el_hoard')
@@ -1092,11 +1099,13 @@ export function wallPower(s){
    normal state — this is a bill for being attacked, not a standing tax. */
 export function wallMendPerSec(s){
   if(!(s.b.wall > 0) || wallWear(s) <= 0) return 0;
-  return WALL_MEND_RATE * wallMendCost(s.b.wall);
+  return WALL_MEND_RATE * wallMendCost(s.b.wall) * (1 + techBonus(s, 'mortar'));
 }
 export function batterWall(s, hits = 1){
   if(!(s.b.wall > 0)) return;
-  s.wallWear = Math.min(WALL_WEAR_MAX, (s.wallWear || 0) + WALL_WEAR_PER_HIT * hits);
+  // Ramparts: the same assault knocks less of the wall loose
+  const per = WALL_WEAR_PER_HIT * Math.max(0.4, 1 - techBonus(s, 'ramparts'));
+  s.wallWear = Math.min(WALL_WEAR_MAX, (s.wallWear || 0) + per * hits);
 }
 
 export function armyBreakdown(s){
@@ -1128,6 +1137,17 @@ export function bluntMult(s){ return bluntFor(s, s.b.watchtower); }
 // relative worth however TIME_SCALE is dialled
 export function finishCost(endTs, now){ return Math.max(1, Math.ceil((endTs-now)/(4000*TIME_SCALE))); }
 export function xpNeed(lvl){ return Math.round(50*Math.pow(lvl,1.4)); }
+/* Every grant of hero experience in the game goes through here. Tutelage is a percentage on it,
+   and there are FIVE places that award xp — two in the arena, one per wave, one per march, one per
+   voyage — so multiplying at each call site is how one of them silently ends up unresearched.
+   Same reason techLine lives in tierPower rather than at each power sum. */
+export function gainHeroXp(s, id, n){
+  const h = s.heroes && s.heroes[id];
+  if(!h) return 0;
+  const got = Math.round(n * (1 + techBonus(s, 'tutelage')));
+  h.xp += got;
+  return got;
+}
 export function unlockedSlots(s){ return HERO_SLOTS.filter(sl=>sl.check(s)).length; }
 
 /* ── events, log, rewards ── */
@@ -1769,7 +1789,7 @@ export function resolveWave(s, now, rand=Math.random){
     for(const [r,v] of Object.entries(loot)) gainRes(s,r,v);
     const valor = Math.round((5+Math.min(w,15)) * (isWB?2:1) * mods.valorX);
     gainValor(s, valor);
-    for(const h of Object.values(s.heroes)) h.xp += (12+3*w)*(isWB?2:1);
+    for(const id of Object.keys(s.heroes)) gainHeroXp(s, id, (12+3*w)*(isWB?2:1));
     gainMastery(s, (8+2*w)*(isWB?2:1), now);
     s.wavesWon++; s.wave++; s.streak = 0;
     batterWall(s);   // even a wave you threw back left marks on the stonework
@@ -1858,8 +1878,9 @@ export function tick(s, now, dt, rand=Math.random){
      Nothing collapses and nothing is lost — the wall is just worth less until it is paid
      for, which is the same bargain the supply rule strikes with the army. */
   if(wallWear(s) > 0 && s.b.wall > 0){
-    const want = WALL_MEND_RATE * dt;                       // fraction we would like to fix
-    const price = wallMendCost(s.b.wall);                   // stone for a whole repair
+    // Mortarwork speeds the masons; Quarrymen makes the same repair cost less stone
+    const want = WALL_MEND_RATE * dt * (1 + techBonus(s, 'mortar'));
+    const price = wallMendCost(s.b.wall) * Math.max(0.5, 1 - techBonus(s, 'quarrymen'));
     const afford = price > 0 ? Math.min(want, Math.max(0, s.res.stone) / price) : want;
     if(afford > 0){
       s.res.stone = Math.max(0, s.res.stone - afford * price);
