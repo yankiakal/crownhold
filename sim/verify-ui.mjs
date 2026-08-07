@@ -414,6 +414,50 @@ try {
     NET.logout();
   }
 
+  /* ── every timer in the hold shows up in the queue sheet ──
+     Asked for: "we also need to see queues like a popup menu — building queue, research queue,
+     marching queue, like in WoS." Nine kinds of timer exist, and the failure mode of a panel like
+     this is a kind that is silently absent: the sheet looks right, and the one thing you were
+     waiting for is the one it does not list. So this runs every kind at once and asserts the COUNT,
+     which is the only assertion a missing row cannot pass. */
+  {
+    const q = ST.freshState(now, 5);
+    q.seenIntro = true;
+    Object.assign(q.b, { townhall:20, library:10, barracks:10, hospital:8, forge:8, command:20 });
+    q.now = now;
+    const at = now + 600000;
+    q.bq  = { key:'farm', start:now, end:at };
+    q.bq2 = { key:'wall', start:now, end:at + 1000 };
+    q.rq  = { key:'husbandry', start:now, end:at + 2000 };
+    q.tq  = { spearman:{ key:'spearman', count:40, start:now, end:at + 3000 } };
+    q.hq  = { troops:{ spearman:12 }, start:now, end:at + 4000 };
+    q.gq  = { who:'lord', slot:'blade', to:3, start:now, end:at + 5000 };
+    q.pq  = { key:'archer', to:2, start:now, end:at + 6000 };
+    q.marches = [{ tile:0, troops:{ spearman:10 }, out:60000,
+                   arriveAt:now + 60000, homeAt:at + 7000, resolved:false }];
+    q.isle = q.isle || { cells:[] };
+    q.isle.voyage = { x:1, y:1, troops:{ spearman:10 }, heroes:[], end:at + 8000 };
+    q.exped = { route:'kingsroad', end:at + 9000 };
+
+    const rows = UI.holdQueues(q);
+    const kinds = new Set(rows.map(r => r.kind));
+    const WANT = ['Build','Study','Drill','Tending','Forge','Reforge','Column','Voyage','Party'];
+    const missing = WANT.filter(k => !kinds.has(k));
+    ok('every kind of timer reaches the queue sheet', missing.length === 0,
+       missing.length ? 'MISSING: ' + missing.join(', ') : WANT.length + ' kinds, ' + rows.length + ' rows');
+    ok('both build slots are listed, not just one',
+       rows.filter(r => r.kind === 'Build').length === 2,
+       rows.filter(r => r.kind === 'Build').length + ' build rows');
+    ok('and they are ordered by what finishes soonest',
+       rows.every((r, i) => i === 0 || rows[i-1].left <= r.left),
+       rows.map(r => Math.round(r.left / 1000)).join('s ≤ ') + 's');
+    ok('no row says undefined or NaN',
+       !rows.some(r => /undefined|NaN/.test(r.kind + r.what)),
+       rows.map(r => r.what).join(' | ').slice(0, 90));
+    /* And an idle hold must report zero rather than a stale count — the chip's whole job. */
+    ok('an idle hold has an empty sheet', UI.holdQueues(ST.freshState(now, 6)).length === 0);
+  }
+
   /* ── the phone shell: who you are, and what was said ──
      Two pieces of the Whiteout-Survival-shaped shell. The chip carries the Town Hall level where the
      wordmark used to sit, and the chat bubble carries the last line anyone said rather than the word

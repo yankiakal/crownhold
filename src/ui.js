@@ -150,6 +150,10 @@ function renderHeader(S){
     + (who ? 'Your account' : 'Play online') + '"><b>TH' + th + '</b>'
     + (who ? ' ' + esc(who) : ' ☁') + '</button>'
     + '<h1>CROWNHOLD</h1><span class="tag">hold the frontier</span>'
+    /* The way in. A count rather than a label, because the number IS the information — an idle hold
+       reads 0 at a glance and a busy one does not need explaining. */
+    + '<button class="qchip'+(holdQueues(S).length ? ' busy' : '')+'" data-act="queues" '
+    + 'aria-label="What is under way"><span aria-hidden="true">⏳</span>'+holdQueues(S).length+'</button>'
     + '</div><div class="res-row">';
   for(const [r,m] of Object.entries(RES_META)){
     if(!isUnlocked(S, r)) continue;                   // refined goods appear once you can make them
@@ -921,6 +925,85 @@ function renderLesson(S){
    The version chip is here on purpose. The footer carries it on a desktop, and hiding the footer
    on phones would have hidden the one piece of build metadata that exists specifically so you can
    tell which build you are looking at — the whole reason it was added. */
+/* ── every timer in the hold, in one sheet ──
+   Asked for: "we also need to see queues like a popup menu — building queue, research queue,
+   marching queue, like in WoS."
+
+   There are NINE kinds of timer running in this game — two build slots, research, four drilling
+   yards, the infirmary, the forge, the reforge, every column on the frontier, the voyage, and the
+   expedition — and until now each was only visible on the panel that owned it. Finding out what was
+   underway meant visiting four tabs. That is the single biggest difference between a hold that feels
+   busy and one that feels idle, and it was entirely a presentation problem: the state was all there.
+
+   Every row is READ from the queue's own fields, taken from the write sites rather than guessed —
+   `{key,start,end}` for a build, `{key,count,...}` for a drill, `{troops,...}` for the infirmary,
+   `{who,slot,to,...}` for the forge, `homeAt` for a column. Twice today I have reached for a field
+   name that did not exist and shipped something that quietly did nothing, so this time the shapes
+   were grepped first.
+
+   Sorted by what finishes soonest, because that is the only order anyone wants: the question a queue
+   panel answers is "what do I wait for", not "what kinds of thing exist". */
+export function holdQueues(S){
+  const out = [];
+  const now = S.now || Date.now();
+  const add = (kind, icon, what, end, act) => {
+    if(!(end > 0)) return;
+    out.push({ kind, icon, what, left: Math.max(0, end - now), act });
+  };
+  for(const q of QUEUE_KEYS){
+    const b = S[q];
+    if(b && b.key) add('Build', '🔨', (BUILDINGS[b.key] ? BUILDINGS[b.key].name : b.key)
+      + ' → ' + ((S.b[b.key] || 0) + 1), b.end, 'hold');
+  }
+  if(S.rq && S.rq.key) add('Study', '📚',
+    (RESEARCH[S.rq.key] ? RESEARCH[S.rq.key].name : S.rq.key), S.rq.end, 'hold');
+  for(const t of Object.values(S.tq || {}))
+    if(t && t.key) add('Drill', '⚔️', t.count + ' ' + (TROOPS[t.key] ? TROOPS[t.key].plural : t.key), t.end, 'war');
+  if(S.hq) add('Tending', '⛑️',
+    Object.values(S.hq.troops || {}).reduce((a, b) => a + (b || 0), 0) + ' wounded', S.hq.end, 'war');
+  if(S.gq) add('Forge', '🔥', (S.gq.who === 'lord' ? 'Regalia' : 'Wargear')
+    + ' → tier ' + S.gq.to, S.gq.end, 'court');
+  if(S.pq && S.pq.key) add('Reforge', '🎓',
+    (TROOPS[S.pq.key] ? TROOPS[S.pq.key].plural : S.pq.key) + ' → Tier ' + TIERS[S.pq.to - 1],
+    S.pq.end, 'war');
+  for(const m of S.marches || []){
+    const to = m.beast != null && m.beast >= 0
+      ? ((S.world.beasts || [])[m.beast] ? BEASTS[S.world.beasts[m.beast].species].name : 'a herd')
+      : (S.world.tiles[m.tile] ? TILE_TYPES[S.world.tiles[m.tile].type].name : 'the frontier');
+    const leg = now < m.arriveAt ? 'riding to ' : now < m.homeAt - m.out ? 'working ' : 'riding home from ';
+    add('Column', '🐎', leg + to, m.homeAt, 'world');
+  }
+  const v = S.isle && S.isle.voyage;
+  if(v) add('Voyage', '⛵', 'at sea', v.end, 'world');
+  if(S.exped) add('Party', '🛤️',
+    (EXPEDITIONS[S.exped.route] ? EXPEDITIONS[S.exped.route].name : 'on the road'), S.exped.end, 'world');
+  return out.sort((a, b) => a.left - b.left);
+}
+
+function renderQueues(S){
+  if(!queuesOpen) return '';
+  const rows = holdQueues(S);
+  let h = '<div class="overlay" data-act-bg="queuesClose"><div class="card">'
+    + '<button class="sheet-x" data-act="queuesClose" aria-label="Close">✕</button>'
+    + '<h1 style="font-size:1.15rem">UNDER WAY</h1><div class="rule"></div>';
+  if(!rows.length){
+    h += '<p class="sub">Nothing is under way. Every crew, yard and column is idle — which is '
+      + 'never the best a hold can do.</p>';
+  } else {
+    h += '<p class="sub">' + rows.length + (rows.length === 1 ? ' thing' : ' things')
+      + ' running, soonest first. Tapping one takes you to it.</p>'
+      + '<div class="qlist">' + rows.map(r =>
+        '<button class="qrow" data-act="tab" data-key="' + r.act + '">'
+        + '<span class="q-ic" aria-hidden="true">' + r.icon + '</span>'
+        + '<span class="q-kind">' + r.kind + '</span>'
+        + '<span class="q-what">' + esc(r.what) + '</span>'
+        + '<span class="q-left">' + (r.left > 0 ? ftime(r.left) : 'done') + '</span>'
+        + '</button>').join('') + '</div>';
+  }
+  return h + '<button class="primary" data-act="queuesClose" style="margin-top:.7rem">Back to the walls</button>'
+    + '</div></div>';
+}
+
 /* ── the dock is gone ──
    Asked for: "we don't have a dock in the app do we? if we do then remove it, UI will be like WoS."
    Right — a floating column of five icons down the right edge of the walls is this game's own
@@ -2997,7 +3080,7 @@ export function render(){
     + '</div>'
     + '</main>' + renderFooter() + renderTabBar());
   writeKeepingScroll(fx, renderFx(S) + renderLesson(S) + renderLore(S) + renderStore(S) + renderSettings(S)
-    + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : ''));
+    + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) + renderQueues(S) : ''));
   setSkinTint((HOLD_SKINS[(S.cos && S.cos.hold) || 'default'] || {}).tint);
   drawMap(S);
   /* The header's real height, published to CSS. A sheet has to start below the resource row —
@@ -3144,6 +3227,8 @@ const VIEW_ACTIONS = {
   },
   detail: b => { detail = {type:b.dataset.dtype, key:b.dataset.key}; },
   detailClose: () => { detail = null; skillSlotOpen = null; },
+  queues: () => { queuesOpen = true; },
+  queuesClose: () => { queuesOpen = false; },
   // expanding a skill slot's menu is a view state, not a change to the hold
   skillPick: b => {
     const hero = b.dataset.mode, slot = Number(b.dataset.n);
@@ -3353,6 +3438,7 @@ function runAction(btn){
 const acctBox = document.createElement('div');
 document.body.appendChild(acctBox);
 let acctOpen = false, acctMsg = '';
+let queuesOpen = false;
 
 /* ── chat ──
    Also outside the tick loop: an input that gets rebuilt four times a second
