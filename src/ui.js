@@ -341,16 +341,24 @@ function renderRoad(S){
   return h + '</div>';
 }
 
-function renderHold(S){
-  let h = '<section class="panel"><h2>The Hold'
-    + '<button class="info-btn" data-act="holdView" style="letter-spacing:0">'
-    + (listView ? '🏰 scene' : '▤ list') + '</button></h2>';
+function renderScene(S){
+  /* The base view is the CAMERA now, nothing else. Reported with a screenshot: the hold was a
+     scrolling column of panels with the map as one item in the middle — a document, not a city.
+     Everything that stood around the scene lives in the Build sheet; on a phone this panel's own
+     chrome is stripped by CSS and the slot is fixed over the whole viewport. */
+  return '<section class="panel scenewrap"><h2>The Hold</h2>'
+    + '<div id="scene-slot"></div>'
+    + '<div class="stat-note">Tap a building to inspect or raise it. '
+    + '<span style="color:var(--good)">↑</span> marks one you can afford now.</div>'
+    + '</section>';
+}
+
+function renderHoldPanels(S){
+  let h = '<section class="panel"><h2>The Hold</h2>';
   for(const q of QUEUE_KEYS){
     if(!S[q]) continue;
     const d = BUILDINGS[S[q].key];
     h += queueStrip(S, S[q], d.icon+' '+d.name+' → '+(S.b[S[q].key]+1), 'finishBuild', q)
-      /* Called off, with everything paid returned. Nothing could be cancelled before, so a
-         misplaced tap cost the whole build and the only way out was to wait for it. */
       + '<div style="display:flex;justify-content:flex-end;margin:-.45rem 0 .6rem">'
       + '<button data-act="cancelBuild" data-key="'+q+'" style="font-size:.66rem">'
       + '✕ Call it off, refund '+Object.entries(S[q].paid || buildCost(S, S[q].key))
@@ -359,24 +367,12 @@ function renderHold(S){
   if(buildSlots(S) > 1 && activeQueues(S).length < 2)
     h += '<div class="stat-note">🔨 '+(2-activeQueues(S).length)+' crew idle — two builds can run at once.</div>';
   h += renderRoad(S);
-  if(!listView){
-    // the canvas itself is a persistent element re-parented after each render,
-    // so the 60fps scene survives the 4Hz DOM rebuild
-    h += '<div id="scene-slot"></div>'
-      + '<div class="stat-note">Tap a building to inspect or raise it. '
-      + '<span style="color:var(--good)">↑</span> marks one you can afford now.</div>'
-      + '</section>';
-    return h;
-  }
-  /* Buildings you cannot yet raise are not shown at all — the hold visibly
-     grows new ground as the Town Hall rises, instead of greeting a new player
-     with twenty-one greyed-out cards. Only the count is teased, so there is
-     still something to look forward to. */
+  /* Buildings you cannot yet raise are not shown at all — the hold visibly grows new ground as the
+     Town Hall rises, instead of greeting a new player with twenty-one greyed-out cards. */
   const all = Object.entries(BUILDINGS);
   const shown = all.filter(([k,d]) => !d.th || S.b.townhall >= d.th || S.b[k] > 0);
   const hidden = all.length - shown.length;
   const nextAt = all.filter(([,d]) => d.th > S.b.townhall).map(([,d]) => d.th).sort((a,b)=>a-b)[0];
-
   h += '<div class="bgrid">';
   for(const [k,d] of shown){
     const lvl = S.b[k];
@@ -410,8 +406,7 @@ function renderHold(S){
   if(hidden > 0)
     h += '<div class="stat-note">🏗 <b>'+hidden+'</b> more structure'+(hidden===1?'':'s')
       + ' still want ground you have not cleared. The next breaks earth at <b>Town Hall '+nextAt+'</b>.</div>';
-  h += '</section>';
-  return h;
+  return h + '</section>';
 }
 
 function renderMuster(S){
@@ -1985,7 +1980,7 @@ let resetArmedUntil = 0; // two-tap raze confirmation window
    panel state, so it survives the 4Hz re-render and clears when Settings closes. */
 let delMsg = '';
 let arenaStance = 'balanced', arenaFrac = 0.5;
-let listView = false, sceneMounted = false;
+let sceneMounted = false;
 const sceneCanvas = document.createElement('canvas');
 sceneCanvas.id = 'holdscene';
 let detail = null; // {type:'building'|'troop'|'hero', key} — the tap-to-inspect sheet
@@ -3074,6 +3069,7 @@ function drawMap(S){
    march does not want the Chronicle between them and the frontier. */
 const TABS = [
   { key:'hold',    icon:'🏰', name:'Hold' },
+  { key:'build',   icon:'🔨', name:'Build' },
   { key:'war',     icon:'⚔️', name:'War' },
   { key:'world',   icon:'🗺️', name:'Frontier' },
   { key:'court',   icon:'👑', name:'Court' },
@@ -3128,12 +3124,12 @@ export function render(){
      820px they become real boxes and all but one is hidden. */
   writeKeepingScroll(app, renderHeader(S) + renderThreat(S)
     + inTab('world', renderWorld(S) + renderIsle(S))
-    + '<main>' + inTab('hold', renderHold(S))
+    + '<main>' + inTab('hold', renderScene(S))
     + '<div class="rail">'
       + inTab('war',    renderMuster(S) + renderWatch(S) + renderRaid(S) + renderArena(S)
                       + renderRally(S) + renderBoss(S))
       + inTab('court',  renderHeroes(S) + renderPets(S) + renderRegalia(S) + renderSpoils(S))
-      + inTab('hold',   renderDecrees(S) + renderResearch(S))
+      + inTab('build',  renderHoldPanels(S) + renderDecrees(S) + renderResearch(S))
       + inTab(paneFor('ally'), renderAlliance(S) + renderMusterRoll(S) + renderRealm(S) + renderRift(S))
       + inTab('ledger', renderHoldTools(S) + renderQuest(S) + renderDaily(S) + renderEvent(S) + renderCalendar(S)
                       + renderLeaderboard(S) + renderMastery(S) + renderAchievements(S)
@@ -3196,6 +3192,10 @@ export function render(){
      the bottom-middle of the grid, so an un-scrolled view starts on the left wall. */
   if(slot && !sceneCentred && slot.scrollWidth > slot.clientWidth){
     slot.scrollLeft = (slot.scrollWidth - slot.clientWidth) / 2;
+    /* both axes: under the cover-fit camera the canvas is taller than the screen too, and an
+       uncentred start looks at the empty sky above the walls */
+    if(slot.scrollHeight > slot.clientHeight)
+      slot.scrollTop = (slot.scrollHeight - slot.clientHeight) / 2;
     sceneCentred = true;
   }
   if(slot){
@@ -3386,7 +3386,6 @@ const VIEW_ACTIONS = {
     marchWant = {};
     for(const k of Object.keys(TROOPS)) marchWant[k] = Math.min(f.troops[k]||0, store.s.t[k]||0);
   },
-  holdView:    () => { listView = !listView; sceneMounted = false; },
   arenaStance: b => { arenaStance = b.dataset.key; },
   researchBranch: b => { researchBranch = b.dataset.key; branchScrollWanted = true; },
   arenaFrac:   b => { arenaFrac = Number(b.dataset.key); },

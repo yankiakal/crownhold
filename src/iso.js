@@ -917,11 +917,31 @@ function resize(){
      Narrow: fill the HEIGHT and let it pan sideways, because fitting 576 logical pixels into a
      393px phone left the walls 255px tall — a third of the screen, an illustration rather than
      the subject. Whiteout Survival's city is bigger than the screen and you move it. */
+  /* ── three modes now ──
+     Wide: fit the width — the hold sits in a column beside the rail, as it always did.
+     Narrow, in flow: fill 46vh and pan sideways (the old phone layout, kept for any embed).
+     Narrow, FIXED: the slot is the whole screen and the camera fits it. Reported with a
+     screenshot: "this UI ain't like WoS — the camera has to fit the screen and it should be only
+     map and buttons." The whole grid is scaled to sit inside the viewport, so there is nothing to
+     pan and the map IS the screen. The signal is the slot's own computed position, because that is
+     the one fact that distinguishes the layouts — a media query re-implemented here in pixels would
+     drift from the stylesheet's the first time either changed. */
+  const fixed = cv.parentElement && typeof getComputedStyle === 'function'
+    && getComputedStyle(cv.parentElement).position === 'fixed';
+  const boxH = fixed ? (cv.parentElement.clientHeight || window.innerHeight) : 0;
   const narrow = boxW < 820;
   const wantH = narrow ? Math.max(300, Math.round(window.innerHeight * 0.46)) : 0;
-  const next = narrow ? Math.min(1.6, wantH / hgt) : Math.min(1, boxW / w);
-  if(boxW === lastCssW && Math.abs(next - scale) < 0.001) return;  // reallocating clears the buffer
-  lastCssW = boxW;
+  /* COVER, not contain. The first cut fitted the whole grid inside the viewport, and the phone
+     harness returned its own verdict: "the walls 393×255 — 30% of the screen ✗ too small to be the
+     subject" — an illustration again, just centred this time. Whiteout Survival's city is bigger
+     than the screen and you move the camera. So the grid fills the viewport in BOTH axes and the
+     slot pans; the map is the screen, edge to edge. */
+  const next = fixed ? Math.min(1.6, Math.max(boxW / w, boxH / hgt))
+             : narrow ? Math.min(1.6, wantH / hgt)
+             : Math.min(1, boxW / w);
+  const sizeKey = boxW + 'x' + boxH;
+  if(sizeKey === lastCssW && Math.abs(next - scale) < 0.001) return;  // reallocating clears the buffer
+  lastCssW = sizeKey;
   scale = next;
 
   const cssW = Math.round(w * scale);
