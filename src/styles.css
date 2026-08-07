@@ -62,6 +62,7 @@ header{
   font-size:1.25rem;font-weight:600;letter-spacing:.12em;
   color:var(--gold);
 }
+.holdchip{display:none}
 .brand span{
   font-family:var(--sans);font-size:.6rem;letter-spacing:.22em;
   text-transform:uppercase;color:var(--ink-dim);
@@ -104,9 +105,19 @@ html,body{overflow-x:hidden}
      the tab panes, so every pixel is paid six times. Measured: 51% of the first screen before
      any content. The wordmark shrinks and the tagline goes; the resources get the top line. */
   header{padding:.45rem 0 .5rem;gap:.5rem}
-  .brand{flex-direction:row;align-items:baseline;gap:.4rem}
-  .brand span{display:none}
-  .brand h1{font-size:.92rem;letter-spacing:.1em}
+  .brand{flex-direction:row;align-items:center;gap:.45rem}
+  .brand .tag{display:none}
+  /* the chip takes the corner and the wordmark steps back to a quiet mark beside it */
+  .holdchip{
+    display:inline-flex;align-items:baseline;gap:.3rem;
+    font-family:var(--sans);font-size:.62rem;letter-spacing:.08em;
+    text-transform:none;color:var(--ink-dim);
+    background:var(--panel-2);border:1px solid var(--edge);border-radius:999px;
+    padding:.2rem .5rem;max-width:9rem;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .holdchip b{color:var(--gold);font-weight:600;font-variant-numeric:tabular-nums}
+  .brand h1{font-size:.8rem;letter-spacing:.1em;color:var(--gold-deep)}
   .res-row{gap:.55rem;margin-left:0;width:100%}
   .res{font-size:.78rem}
   .res .lbl{display:none}          /* the icon carries it — this is why they were added */
@@ -627,7 +638,20 @@ footer button{font-size:.68rem;padding:.25rem .6rem}
   position:fixed;right:1rem;bottom:1rem;z-index:60;
   background:var(--panel-2);border:1px solid var(--gold-deep);color:var(--gold);
   padding:.5rem .9rem;border-radius:20px;box-shadow:0 4px 16px rgba(0,0,0,.5);
+  display:flex;align-items:center;gap:.45rem;
+  max-width:min(19rem, calc(100vw - 2rem));
+  text-align:left;
 }
+.chat-fab .cf-icon{font-size:.95rem;line-height:1;flex:none}
+.chat-fab .cf-msg{
+  font-family:var(--sans);font-size:.7rem;color:var(--ink-dim);
+  /* one line, always. A bubble that grows with the message covers the frontier the moment somebody
+     pastes a wall of text into state chat, which is a thing players reliably do. */
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;
+}
+.chat-fab .cf-msg b{color:var(--ink);font-weight:600}
+/* something was said since you last looked — the border does the work, no red dot to chase */
+.chat-fab.said{border-color:var(--gold)}
 .chat-panel{
   position:fixed;right:1rem;bottom:1rem;z-index:60;
   width:min(24rem, calc(100vw - 2rem));

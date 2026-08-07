@@ -77,7 +77,9 @@ appendFileSync(join(dir, 'src', 'ui.js'),
   '\nexport { renderColumnComposer as _composer };' +
   '\nexport function _pick(ids, want){ marchParty = ids.slice(); marchWant = want; }' +
   // the settings sheet is behind a footer tap, and its open flag is module-local
-  '\nexport function _openSettings(){ settingsOpen = true; }\n');
+  '\nexport function _openSettings(){ settingsOpen = true; }' +
+  // chatBox is createElement'd and appended to body, so the stub's getElementById never sees it
+  '\nexport { chatBox as _chatBox };\n');
 /* Same seam for net.js: the session is module-local, and the App Store's account-deletion control
    only exists when signed in — so without a way to fake a session there is nothing to assert, and
    the requirement would be untested until a reviewer found it missing. */
@@ -410,6 +412,32 @@ try {
     ok('and warned that it cannot be undone', /cannot be undone/i.test(signedIn));
     ok('the sheet still names the account being deleted', /Aldis/.test(signedIn));
     NET.logout();
+  }
+
+  /* ── the phone shell: who you are, and what was said ──
+     Two pieces of the Whiteout-Survival-shaped shell. The chip carries the Town Hall level where the
+     wordmark used to sit, and the chat bubble carries the last line anyone said rather than the word
+     "Chat" — a button tells you chat exists, a bubble tells you whether it is worth opening. */
+  {
+    const NET2 = await from('net.js');
+    ST.store.s = s;
+    UI.render();
+    const head = (nodes.app && nodes.app.innerHTML) || '';
+    ok('the header carries a hold chip with the Town Hall level',
+       /class="holdchip"><b>TH20<\/b>/.test(head),
+       (head.match(/class="holdchip">[^<]*<b>[^<]*<\/b>[^<]*/) || ['(absent)'])[0]);
+
+    /* The bubble only exists online — there is nobody to talk to solo. Rendered through the same
+       fake-session seam the account-deletion test uses. */
+    NET2._fakeSession('Aldis');
+    UI.renderChat(true);
+    const bub = UI._chatBox.innerHTML || '';
+    ok('a chat bubble is offered when signed in', /class="chat-fab/.test(bub),
+       bub ? bub.slice(0, 90) : '(nothing rendered)');
+    ok('and it has room for a message, not just a label', /cf-msg/.test(bub));
+    NET2.logout();
+    UI.renderChat(true);
+    ok('and no bubble at all when solo', !/chat-fab/.test(UI._chatBox.innerHTML || ''));
   }
 
   /* ── one quality ladder, and every colour on it earns its keep ──

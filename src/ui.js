@@ -129,7 +129,21 @@ function costHtml(S, cost){
 }
 
 function renderHeader(S){
-  let h = '<header><div class="brand"><h1>CROWNHOLD</h1><span>hold the frontier</span></div><div class="res-row">';
+  /* ── who you are, where the game's name used to be ──
+     Asked for: a shell like Whiteout Survival's, which puts your own hold and its level in the top
+     corner. The wordmark is the right thing on a desktop and the wrong thing on a phone: a player
+     who has opened the app knows what it is called, and that corner is the most expensive real
+     estate on the screen. So the chip carries the Town Hall level — the number the whole game is
+     paced against — and the account name when there is one.
+
+     A span, not a button, deliberately. Every interactive element has to clear 44px or the phone
+     harness fails the layout, and a chip that size would either be a giant lozenge or a lie about
+     being tappable. The Town Hall is one tap away on the walls behind it. */
+  const th = S.b.townhall || 1;
+  const who = net.isOnline() ? net.accountName() : null;
+  let h = '<header><div class="brand">'
+    + '<span class="holdchip"><b>TH' + th + '</b>' + (who ? ' ' + esc(who) : '') + '</span>'
+    + '<h1>CROWNHOLD</h1><span class="tag">hold the frontier</span></div><div class="res-row">';
   for(const [r,m] of Object.entries(RES_META)){
     if(!isUnlocked(S, r)) continue;                   // refined goods appear once you can make them
     let rate, rateTxt;
@@ -3355,7 +3369,27 @@ export function renderChat(force){
   chatSig = sig;
 
   if(!chatOpen){
-    chatBox.innerHTML = '<button class="chat-fab" data-act="chatToggle">💬 Chat</button>';
+    /* ── the bubble carries the last thing anyone said ──
+       Asked for: a shell like Whiteout Survival's, where chat is a bubble in the corner showing the
+       most recent line rather than a button labelled "Chat". The difference matters more than it
+       looks: a button tells you chat exists, a bubble tells you whether it is worth opening. An
+       alliance that has been talking is visible from the walls.
+
+       Truncated hard and kept to one line. The corner of a phone screen is not a transcript, and a
+       bubble that grows with the message would cover the frontier the moment someone paste-bombed
+       it — which is a thing players do. */
+    /* `from` and `text` — the keys pushMsg actually writes. A first pass reached for who/name and
+       txt, so every author would have rendered as a dash. And text arrives ALREADY escaped by the
+       server, which is why it is inserted here the same way the open panel inserts it: escaping it
+       again turns an apostrophe into &amp;#39; on screen. */
+    const last = msgs.length ? msgs[msgs.length - 1] : null;
+    chatBox.innerHTML = '<button class="chat-fab'+(last ? ' said' : '')+'" data-act="chatToggle">'
+      + '<span class="cf-icon">💬</span>'
+      + (last
+          ? '<span class="cf-msg"><b>'+String(last.from || '').slice(0, 14)+'</b> '
+            + String(last.text || '').slice(0, 48)+'</span>'
+          : '<span class="cf-msg">Chat</span>')
+      + '</button>';
     return;
   }
   const tabs = [['state','🌍 State'], ['alliance','🛡 Alliance']];
