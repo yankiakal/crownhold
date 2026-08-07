@@ -104,8 +104,13 @@ i=0
 while [ "$i" -lt 40 ]; do
   i=$((i + 1))
   LIVE=$(curl -s --max-time 20 "$URL" | grep -oE '[0-9a-f]{7}\+? · [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}' | head -1 || true)
-  if [ "$LIVE" = "$STAMP" ]; then
-    echo "deploy: live and verified — $URL is $STAMP"
+  # Compare the COMMIT only. The timestamp is stamped per BUILD, not per commit, and when Pages
+  # builds from source rather than serving the pushed artefact it produces its own — so matching
+  # the full stamp reported FAILED TO VERIFY on a deploy that had in fact published correctly,
+  # which is the worst possible direction for this check to be wrong in.
+  LIVE_SHA=${LIVE%% *}
+  if [ -n "$LIVE_SHA" ] && [ "$LIVE_SHA" = "$SHA" ]; then
+    echo "deploy: live and verified — $URL is serving $LIVE"
     exit 0
   fi
   [ $((i % 4)) -eq 0 ] && echo "  still $([ -n "$LIVE" ] && echo "$LIVE" || echo 'unreadable')  (attempt $i/40)"
@@ -114,6 +119,6 @@ done
 
 echo ""
 echo "deploy: FAILED TO VERIFY. The push succeeded but $URL still reports"
-echo "        '${LIVE:-nothing}' rather than '$STAMP' after ten minutes."
+echo "        '${LIVE:-nothing}' rather than commit $SHA after ten minutes."
 echo "        GitHub's Pages workflow is what publishes this — check its run history."
 exit 1
