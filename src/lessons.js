@@ -51,7 +51,7 @@ export const LESSONS = [
     id: 'cover', hold: true, icon: '🛡️', title: 'Some troops need a line in front',
     when: s => (s.t.archer || 0) + (s.t.ballista || 0) >= 10,
     body: 'Archers and battlemages fight at a fraction of their worth with nobody standing in '
-        + 'front of them — a battlemage in the open is worth half of one behind a line. '
+        + 'front of them — a battlemage in the open is worth 50% of one behind a line. '
         + 'Spearmen hold that line, which is why the cheapest unit in the game is what makes '
         + 'the dearest one work. The march builder shows your cover before you commit.',
   },

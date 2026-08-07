@@ -285,6 +285,36 @@ try {
   const noLook = Object.keys(D.BUILDINGS).filter(k => k !== 'wall' && !ISO.LOOK[k]);
   ok('every building has a plot', noPlot.length === 0, noPlot.join(', ') || 'all placed');
   ok('every building has a look', noLook.length === 0, noLook.join(', ') || 'all styled');
+  /* ── numbers, not English fractions ──
+     Asked for directly: "instead of using English, use numbers everywhere so it's easier to
+     understand for people all over the world" — "production rises a fifth", "drilling is a third
+     faster". A written-out fraction needs English to parse; a percentage reads the same anywhere.
+
+     The decrees were also the worst case of a second problem: the prose had drifted from the numbers
+     beside it. "A third faster" sat next to trainTime 0.35 and "a fifth" next to production 0.20, so
+     the copy was both unreadable to most of the world AND wrong. Those lines are generated from the
+     values now, which is why this test can be strict. */
+  const PROSE = /\b(a|one) (fifth|third|quarter|half|tenth|sixth|eighth)\b|\bdouble\b|\btwice\b|\bhalf of\b|counts double/i;
+  const prose = [];
+  for(const [k, d] of Object.entries(D.DECREES))
+    if(PROSE.test(d.fx)) prose.push('decree ' + k + ': ' + d.fx);
+  for(const m of D.MASTERY) if(PROSE.test(m.fx)) prose.push('mastery: ' + m.fx);
+  for(const [k, b] of Object.entries(D.BUILDINGS)) if(PROSE.test(b.fx || '')) prose.push('building ' + k + ': ' + b.fx);
+  ok('no player-facing effect describes a number in words', prose.length === 0,
+     prose.join(' | ') || 'decrees, mastery and buildings all numeric');
+
+  /* And every decree line must actually carry a figure, or "numeric" is satisfied by saying nothing. */
+  const vague = Object.entries(D.DECREES).filter(([, d]) => !/[0-9]+%/.test(d.fx));
+  ok('and every decree states its effect as a percentage', vague.length === 0,
+     vague.map(([k]) => k).join(', ') || Object.keys(D.DECREES).length + ' decrees, all with figures');
+
+  /* The generated line has to agree with the values it was generated from — including the sign flip
+     on the inverted keys, which is the part a human writing this by hand got wrong. */
+  ok('a reduction reads as a minus even though its value is positive',
+     D.DECREES.ration.fx.includes('−33% upkeep'), D.DECREES.ration.fx);
+  ok('and a penalty reads as a plus when the penalty is more of something',
+     D.DECREES.blood.fx.includes('+25% casualties'), D.DECREES.blood.fx);
+
   ok('the wall is deliberately plotless', ISO.PLOTS.wall === null);
   /* ...but plotless must not mean voiceless. Reported from play: "to build wall you can't see an
      arrow on the scene view, so I couldn't figure out what to build and went into list view."

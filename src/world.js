@@ -411,7 +411,7 @@ export function startHunt(s, bi, want, now, heroes){
   if(total === 0) return false;
   for(const [k,n] of Object.entries(troops)) s.t[k] -= n;
   const travel = Math.round(tileDist(b)*TRAVEL_MS_PER_TILE*marchSpeed(s)
-    * Math.max(0.4, 1 - leadTotal(s, party, 'speed') - petBonus(s, 'speed')));
+    * Math.max(0.4, 1 - leadTotal(s, party, 'speed') - petBonus(s, 'speed') - heroBonus(s, 'speed')));
   s.marches.push({
     beast: bi, troops, heroes: party, out: travel,
     arriveAt: now+travel, homeAt: now+travel+travel,
@@ -466,7 +466,8 @@ export function startMarch(s, idx, want, now, longHaul, heroes){
   if(total === 0) return false;
   for(const [k,n] of Object.entries(troops)) s.t[k] -= n;
   const travel = Math.round(tileDist(tile)*TRAVEL_MS_PER_TILE*marchSpeed(s)
-    * Math.max(0.4, (1 - leadTotal(s, party, 'speed')) * (1 - skillTotal(s, party, 'speed'))));
+    * Math.max(0.4, (1 - leadTotal(s, party, 'speed')) * (1 - skillTotal(s, party, 'speed'))
+                    * (1 - heroBonus(s, 'speed'))));
   const work = kind==='gather' ? (long ? LONG_HAUL_WORK : GATHER_MS) : kind==='ruin' ? RUIN_MS : 0;
   const boost = !!s.marchBoost;                   // Fair Winds, spent on this column
   s.marchBoost = false;
@@ -546,7 +547,11 @@ function resolveArrival(s, m, now, rand){
   const tt = TILE_TYPES[tile.type];
   m.resolved = true;
   const party = marchParty(m);
-  const haul = (1 + leadTotal(s, party, 'haul') + petBonus(s, 'haul') + (m.boost ? 0.5 : 0))
+  /* heroBonus carries the DECREES, and Forced March's whole bargain is speed against haul. Neither
+     half was read: `speed` and `haul` were consulted through leadTotal, skillTotal and petBonus only,
+     so a decree costing 40 Valor changed nothing at all in either direction. */
+  const haul = (1 + leadTotal(s, party, 'haul') + petBonus(s, 'haul') + heroBonus(s, 'haul')
+                  + (m.boost ? 0.5 : 0))
     * (1 + skillTotal(s, party, 'haul'));
   const guard = Math.max(0.25, (1 - leadTotal(s, party, 'guard')) * (1 - skillTotal(s, party, 'guard')));
   if(tt.kind==='camp'){

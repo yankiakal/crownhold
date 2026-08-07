@@ -257,28 +257,58 @@ export function wallMendCost(lvl){ return 26 * lvl * lvl; }
    decree needs no plumbing at the point of use: the same lesson the Muster Roll learned by
    reading counters that already existed. */
 export const DECREE_MS = 10 * 60 * 1000;
+/* ── the effect lines are written by the code ──
+   They used to be prose: "Production rises a fifth", "Drilling is a third faster". Two problems.
+   A written-out fraction needs English to parse, and this is a game for anyone anywhere — a number
+   reads the same in every language. And the prose had already drifted from the values sitting beside
+   it: "a third faster" next to trainTime 0.35, "a fifth" next to production 0.20. Hand-written copy
+   describing hand-written numbers disagrees eventually, always.
+
+   So the text is GENERATED from up/down. It cannot drift, and it comes out numeric.
+
+   The sign needs care. upkeep, trainTime and casualties are consumed as `1 − bonus`, so a POSITIVE
+   value there is a REDUCTION and has to print with a minus; production, troopPower, speed and haul
+   are consumed as `1 + bonus`. `inv` marks which is which. */
+const FX_LABEL = {
+  speed:      { txt: 'march speed',   inv: false },
+  haul:       { txt: 'haul carried',  inv: false },
+  upkeep:     { txt: 'upkeep',        inv: true  },
+  trainTime:  { txt: 'training time', inv: true  },
+  production: { txt: 'production',    inv: false },
+  troopPower: { txt: 'troop power',   inv: false },
+  casualties: { txt: 'casualties',    inv: true  },
+};
+export function fxText(effects){
+  return Object.entries(effects).map(([k, v]) => {
+    const m = FX_LABEL[k] || { txt: k, inv: false };
+    const up = m.inv ? v < 0 : v > 0;      // an inverted key flips the SIGN SHOWN, not the maths
+    return (up ? '+' : '−') + Math.round(Math.abs(v) * 100) + '% ' + m.txt;
+  }).join(', ');
+}
+export function decreeFx(def){ return fxText(def.up) + ' · ' + fxText(def.down); }
+
 export const DECREES = {
   march:  {name:'Forced March',  icon:'🥁', cost:40,
-           fx:'Columns ride 30% faster — and carry a quarter less home.',
            why:'For when the frontier matters more than the haul.',
            up:{speed:0.30},      down:{haul:-0.25}},
   ration: {name:'Rationing',     icon:'🍲', cost:35,
-           fx:'Upkeep falls by a third; the drill yards run a quarter slower.',
            why:'For a muster larger than your farms.',
            up:{upkeep:0.33},     down:{trainTime:-0.25}},
   levy:   {name:'The Levy',      icon:'📯', cost:45,
-           fx:'Drilling is a third faster; the fields give 15% less.',
            why:'For rebuilding a muster in a hurry.',
            up:{trainTime:0.35},  down:{production:-0.15}},
   harvest:{name:'Full Granaries',icon:'🌾', cost:35,
-           fx:'Production rises a fifth; every soldier fights 10% weaker.',
            why:'For a quiet fortnight spent growing.',
            up:{production:0.20}, down:{troopPower:-0.10}},
   blood:  {name:'Bloody Work',   icon:'🗡️', cost:50,
-           fx:'Troops hit 12% harder and take a quarter more casualties.',
            why:'For a fight you intend to win whatever it costs.',
            up:{troopPower:0.12}, down:{casualties:-0.25}},
 };
+/* fx is a getter rather than a stored string, so every existing reader of `def.fx` keeps working
+   untouched and can never be handed a stale line. */
+for(const d of Object.values(DECREES))
+  Object.defineProperty(d, 'fx', { get(){ return decreeFx(this); }, enumerable: true });
+
 export const SUPPLY_RES = ['wood', 'iron'];
 /* Running dry does NOT kill anybody. Desertion is right for hunger — an unfed soldier
    leaves — but wrong for equipment: blunt arrows and lame horses make an army weaker, not
@@ -312,15 +342,15 @@ export const MASTERY = [
   {need:400,  fx:'Expedition cooldown −12s'},
   {need:700,  fx:'+15% storage'},
   {need:1100, fx:'−12% build & training time'},
-  {need:1600, fx:'Another champion answers (hero slot)'},
-  {need:2200, fx:'Writ of Peace capacity +1'},
+  {need:1600, fx:'+1 hero slot — another champion answers'},
+  {need:2200, fx:'+1 Writ of Peace held at once'},
   {need:2900, fx:'+8% production & troop power'},
-  {need:3700, fx:'Expeditions return double resources'},
+  {need:3700, fx:'+100% expedition yield'},
   {need:4600, fx:'+15% troop power — High Sovereign'},
   {need:5800, fx:'+8% production'},
   {need:7300, fx:'+8% troop power'},
   {need:9200, fx:'+10% storage'},
-  {need:11600,fx:'Writ of Peace capacity +1'},
+  {need:11600,fx:'+1 Writ of Peace held at once'},
   {need:14700,fx:'−10% casualties'},
   {need:18600,fx:'−8% army upkeep'},
   {need:23500,fx:'+15% raid loot'},
@@ -332,7 +362,7 @@ export const MASTERY = [
   {need:96000,  fx:'+15% storage'},
   {need:121000, fx:'−10% army upkeep'},
   {need:152000, fx:'+20% refining speed'},
-  {need:191000, fx:'Writ of Peace capacity +1'},
+  {need:191000, fx:'+1 Writ of Peace held at once'},
   {need:240000, fx:'−12% build & training time'},
   {need:301000, fx:'+20% raid loot'},
   {need:378000, fx:'+15% Valor earned'},
@@ -406,9 +436,9 @@ export const HERO_POOL = {
   quartermaster:{name:'Petra, Quartermaster',    icon:'⚖️', rarity:'common', season:0, cls:'archer', fx:l=>'+'+(3*l)+'% raid loot',              bonus:{loot:0.03}, lead:{key:'haul', val:0.015},
                  order:{name:'Plunder Wagons',  desc:'Next win: loot ×2.',                      cd:4, key:'plunder'}},
   gatekeeper:   {name:'Bram, Gatekeeper',        icon:'🚪', rarity:'common', season:0, cls:'spearman', fx:l=>'+'+(6*l)+' wall power',              bonus:{wallPower:6}, lead:{key:'guard', val:0.015},
-                 order:{name:'Brace the Gates', desc:'Next battle: wall counts double.',        cd:4, key:'brace'}},
+                 order:{name:'Brace the Gates', desc:'Next battle: +100% wall power.',        cd:4, key:'brace'}},
   forager:      {name:'Isolde, Forager',         icon:'🧺', rarity:'common', season:0, cls:'archer', fx:l=>'+'+(4*l)+'% expedition yield',       bonus:{patrolYield:0.04}, lead:{key:'haul', val:0.015},
-                 order:{name:'Rich Trails',     desc:'Next expedition: double yield, no ambush.', cd:3, key:'richtrails'}},
+                 order:{name:'Rich Trails',     desc:'Next expedition: +100% yield, no ambush.', cd:3, key:'richtrails'}},
   drillmaster:  {name:'Corin, Drillmaster',      icon:'🥁', rarity:'rare',   season:0, cls:'knight', fx:l=>'+'+(2*l)+'% troop power, −'+(2*l)+'% training time', bonus:{troopPower:0.02, trainTime:0.02}, lead:{key:'power', val:0.01},
                  order:{name:'Crash Course',    desc:'Next training batch: −75% time.',         cd:4, key:'crashcourse'}},
   spymaster:    {name:'Sable, Spymaster',        icon:'🗝️', rarity:'rare',   season:0, cls:'archer', fx:l=>'+'+(1*l)+'% raid blunting',          bonus:{blunt:0.01}, lead:{key:'speed', val:0.0075},
@@ -424,7 +454,7 @@ export const HERO_POOL = {
 
   /* ── Season 1 · The Iron Winter ── */
   icewright:    {name:'Halla Icewright',         icon:'❄️', rarity:'common', season:1, cls:'spearman', fx:l=>'+'+(6*l)+' wall power',              bonus:{wallPower:6}, lead:{key:'guard', val:0.015},
-                 order:{name:'Frozen Ground',   desc:'Next battle: wall counts double.',        cd:4, key:'brace'}},
+                 order:{name:'Frozen Ground',   desc:'Next battle: +100% wall power.',        cd:4, key:'brace'}},
   hearthkeep:   {name:'Ulf Hearthkeeper',        icon:'🔥', rarity:'common', season:1, cls:'spearman', fx:l=>'−'+(2.5*l)+'% army upkeep',          bonus:{upkeep:0.025}, lead:{key:'guard', val:0.015},
                  order:{name:'Bank the Fires',  desc:'Upkeep paused for 60s.',                  cd:5, key:'ration'}},
   snowrunner:   {name:'Ylva Snowrunner',         icon:'🐺', rarity:'rare',   season:1, cls:'archer', fx:l=>'+'+(4*l)+'% expedition yield',       bonus:{patrolYield:0.04}, lead:{key:'speed', val:0.0075},
