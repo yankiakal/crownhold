@@ -237,8 +237,13 @@ export function tileDist(t){ return Math.max(Math.abs(t.x-CX), Math.abs(t.y-CY))
 export function marchParty(m){ return m.heroes || (m.hero ? [m.hero] : []); }
 /* The Command Center is what lets you field more columns at once, and move them
    faster — march capacity is its whole job. */
+/* Columns you can have on the road at once. The second one used to wait for Town Hall 10 — 39
+   hours of build queue — so the entire early game was send one column, then watch it. It arrives at
+   6 now, and the Command Center grants another every FOUR levels rather than five, so the curve
+   from there is denser too. */
 export function marchSlots(s){
-  return 1 + Math.floor((s.b.command || 0) / 5) + (s.b.townhall >= 10 ? 1 : 0)
+  return 1 + Math.floor((s.b.command || 0) / 4) + (s.b.townhall >= 6 ? 1 : 0)
+           + (s.b.townhall >= 14 ? 1 : 0)   // and a third, where TH10's used to be the second
            + techLvl(s, 'relays');          // Relay Posts: one more column per level, two levels
 }
 export function marchSpeed(s){

@@ -35,7 +35,7 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
      identical, so the ladder gets counted rather than assumed. */
   const campsAt = {}, gathersAt = {};
   const colChoice = {};   // which column shape the bot judged best, and how often
-  const probe = { ticks:0, busy:0, couldBuild:0, onlyPoor:0, nothingLegal:0, capped:0, thPace:0, readySum:0, actSum:0, nothingToDo:0, noPick:0, startFailed:{} };
+  const probe = { ticks:0, busy:0, couldBuild:0, onlyPoor:0, nothingLegal:0, capped:0, thPace:0, readySum:0, actSum:0, nothingToDo:0, crewFree:0, noPick:0, startFailed:{} };
   const mm = t => String(Math.floor(t/60)).padStart(3,' ')+':'+String(t%60).padStart(2,'0');
   const note = (t,txt) => ev.push(mm(t)+'  '+txt);
 
@@ -374,6 +374,12 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
       }
       probe.capped += capped;
       if(!L.freeSlot(s)) probe.busy++;
+      /* THE METRIC THE COMPLAINT WAS ABOUT. "things to do" counted whether ANY track anywhere
+         could be started — Valor to spend, a draft waiting, a promotion — so it read 0% nothing-to-do
+         while the player was locked out of the single most common action in the game. What matters
+         is whether the BUILD action specifically is available, because that is the one you reach for
+         and the one a second crew doubles. */
+      if(L.freeSlot(s)) probe.crewFree++;
       else if(ready > 0) probe.couldBuild++;
       else if(poor > 0) probe.onlyPoor++;
       else probe.nothingLegal++;
@@ -438,6 +444,8 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
   console.log('-- valor left '+Math.floor(s.valor)+' spent '+valorSpent+' | famine events (recent log) '+famines
     +' | build-idle '+Math.round(100*idleBuild/T)+'% | at-cap '+Math.round(100*cappedTime/T)+'%');
   const pc = n => Math.round(100*n/Math.max(1,probe.ticks))+'%';
+  console.log('-- a crew was FREE to build '+pc(probe.crewFree)+' of the time'
+    + ' (one crew until Town Hall '+D.SECOND_QUEUE_TH+', two after)');
   console.log('-- build queue: busy '+pc(probe.busy)
     +' | free & something affordable '+pc(probe.couldBuild)
     +' | free but too poor '+pc(probe.onlyPoor)

@@ -1563,6 +1563,49 @@ players field. Four new tests close it — escorted-efficiency parity, no line b
 constraints, the optimal column must field three of four lines, and no line may escape the screen
 entirely — and all four were confirmed to go red against the old numbers before being kept.
 
+### The early game had nothing to press (v1.81)
+
+Reported from play, not from a test: the first days are boring, because there are no extra marches
+and no second build queue. Measured, and correct on both counts.
+
+The second crew and the second march both waited for **Town Hall 10 — 39 hours of continuously
+busy build queue**, three or four days of real play. For all of it: one crew, one column. And the
+simulator shows the build queue busy **77–91%** of the time, so the single most common action in
+the game was unavailable nine times in ten, with a further 23–30% of the free time unaffordable.
+
+Two dead zones, both visible once counted as parallel tracks:
+
+| Town Hall | build | train | research | marches | tracks |
+|---|---|---|---|---|---|
+| 1–2 | 1 | 1 | 0 | 1 | **3** |
+| 7–9 | 1 | 4 | 1 | 1 | 7 — and nothing new for 30 hours |
+| 10 | 2 | 4 | 1 | 2 | 9 |
+
+Town Hall 8 and 9 granted no building, no crew and no march at all.
+
+Changed: the second crew moves to **Town Hall 4** (about an hour of queue, inside the first
+session, but late enough that levels 1–3 still teach one thing at a time). The Command Center
+opens at **4** instead of 6 and grants a march every **four** levels instead of five, and the
+Town Hall's own march bonus moves from 10 to **6**, with a third at 14. Marches are therefore
+driven mostly by a building the player *chooses* to level rather than by a Town Hall gate — which
+fills the gap and hands over the agency at the same time.
+
+**A test was holding the problem in place.** It asserted `SECOND_QUEUE_TH > 5`, written when the
+crew sat at 10 to stop it drifting *later*, and its floor made the fix fail. The invariant was
+never "partway up the climb"; it is "inside the first session and not free at level 1".
+
+**And the simulator's own idle metric was measuring the wrong thing.** "NOTHING to do 0% of the
+time" counted whether *any* track anywhere could be started — Valor to spend, a draft waiting, a
+promotion available — so it read perfectly healthy while the build queue was locked. It now also
+reports how often a crew was actually **free to build**: 43% and 30% on the short runs, 16% and 8%
+on the long ones, where the answer before was one crew busy 77–91%. Same family of mistake as the
+audio harness measuring peak but not variation, and the combat guard measuring power before cover.
+
+Total length is unchanged in the band that matters — 108 days of continuously busy queue to max
+every building, against a 45–400 day guard — because the game's hours are in the late levels. What
+moved is the first three days. The simulator's 240-minute run now reaches Town Hall 11 and wave 272
+where it reached Town Hall 7 and wave 120.
+
 ## Pacing: can an addict finish it in a week? (v1.5)
 
 The honest failure the simulator exposed: with uncapped Valor, attention

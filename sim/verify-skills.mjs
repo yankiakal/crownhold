@@ -701,9 +701,15 @@ console.log('\n── a pre-skills save is inert, not broken ──');
   ok('maxing every building is months of queue, not days', days > 45 && days < 400,
      days.toFixed(0) + ' days of continuously busy queue at TIME_SCALE ' + D.TIME_SCALE);
 
-  /* The second crew has to matter, or Town Hall 10 is a hollow milestone. */
-  ok('a second crew opens partway up, not at the end',
-     D.SECOND_QUEUE_TH > 5 && D.SECOND_QUEUE_TH < D.BUILDINGS.townhall.max / 2,
+  /* The second crew has to arrive EARLY, and this test used to say the opposite by accident. Its
+     bound was `> 5`, written when the crew sat at Town Hall 10 to stop it drifting later still —
+     but Town Hall 10 is 39 hours of continuously busy queue, three or four days, and for every one
+     of them the player has one crew against a build queue that the simulator shows busy 77–91% of
+     the time. The most common action in the game was unavailable nine times in ten, and the test
+     was holding that in place. The invariant is not "partway up", it is "inside the first session
+     and not free at level 1". */
+  ok('a second crew opens inside the first session',
+     D.SECOND_QUEUE_TH >= 2 && D.SECOND_QUEUE_TH <= 6,
      'Town Hall ' + D.SECOND_QUEUE_TH + ' of ' + D.BUILDINGS.townhall.max);
 
   /* Valor has to stay worth roughly the same amount of time however the scale is dialled —

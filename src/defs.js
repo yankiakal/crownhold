@@ -40,8 +40,8 @@ export const BUILDINGS = {
               cost:{stone:150,iron:60}, time:25, max:30, th:4},
   hospital:  {name:'Infirmary',   icon:'⛑️', fx:'−4% casualties, and more of the fallen come back wounded instead of dead.',
               cost:{wood:120,food:80},  time:18, max:25, th:4},
-  command:   {name:'Command Center',icon:'🎖️', fx:'+1 march every 5 levels; marches travel 2% faster per level.',
-              cost:{stone:220,wood:160},time:24, max:30, th:6},
+  command:   {name:'Command Center',icon:'🎖️', fx:'+1 march every 4 levels; marches travel 2% faster per level.',
+              cost:{stone:220,wood:160},time:24, max:30, th:4},
   warehouse: {name:'Warehouse',  icon:'📦', fx:'Defeats plunder 4% less of your stores per level.',
               cost:{stone:130,wood:80}, time:18, max:20, th:5},
   library:   {name:'Great Library',icon:'📚', fx:'Houses your scholars. Its level is the ceiling on every study.',
@@ -922,7 +922,18 @@ export const TIME_SCALE = 10;
 // keep is a day. This makes the queue — not your stamina — the wall.
 export const buildTimeCap = lvl => 600 + 400 * lvl;   // seconds, before TIME_SCALE
 // a second crew, earned by growing the hold
-export const SECOND_QUEUE_TH = 10;
+/* Town Hall 5, not 10. Measured, TH10 is 39 HOURS of continuously busy build queue — three or
+   four days of real play — and for all of it you have one crew and one column. The build queue is
+   busy 77–91% of the time in the simulator, so one crew means the single most common action in the
+   game is unavailable nine times in ten, and a further quarter of the time it IS free you cannot
+   afford anything. Kingshot and Whiteout front-load parallelism for exactly this reason: the early
+   game's job is to always have something to press. Town Hall 4 is about an hour of queue — inside
+   the first session, so it shapes how the game feels from the start, but far enough in that levels
+   1 to 3 still teach one thing at a time.
+
+   This barely moves the total length, because the game's hours are in the LATE levels — TH10 is 39
+   hours of a 2,544-hour climb. What it moves is the first three days. */
+export const SECOND_QUEUE_TH = 4;
 export const VALOR_QUOTA_BASE = 100, VALOR_QUOTA_PER_TH = 25;
 export const VALOR_OVERFLOW = 0.25;              // earning rate once the quota is spent
 export const REST_PER_MS_AWAY = 0.5;             // an hour away banks half an hour of Rest
