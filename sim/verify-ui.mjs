@@ -286,6 +286,14 @@ try {
   ok('every building has a plot', noPlot.length === 0, noPlot.join(', ') || 'all placed');
   ok('every building has a look', noLook.length === 0, noLook.join(', ') || 'all styled');
   ok('the wall is deliberately plotless', ISO.PLOTS.wall === null);
+  /* ...but plotless must not mean voiceless. Reported from play: "to build wall you can't see an
+     arrow on the scene view, so I couldn't figure out what to build and went into list view."
+     Being absent from PLOTS dropped the Wall out of BOTH the badge loop and the name plates, so it
+     was the one building in the game that could never ask to be built. The test above only ever
+     checked that it was plotless on purpose — it never asked whether anything downstream noticed. */
+  ok('but the wall still gets a badge and a name at the gatehouse',
+     typeof ISO.wallAnchor === 'function' && Array.isArray(ISO.wallAnchor()),
+     'gate anchor ' + (typeof ISO.wallAnchor === 'function' ? JSON.stringify(ISO.wallAnchor()) : 'MISSING'));
 
   // two buildings must never share a tile, or one silently hides the other
   const seen = new Map(), clashes = [];

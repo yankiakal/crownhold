@@ -848,13 +848,29 @@ function drawRaiders(ctx, secs, wave, t){
 
 /* ── badges: what needs your attention ── */
 
+/* The Wall has no plot — it is the perimeter — so its badge hangs over the GATEHOUSE, which is
+   the one part of the perimeter that reads as a structure you could tap.
+
+   Reported from play: "to build wall, you can't see an arrow to build on the scene view, so I
+   couldn't figure out what to build so I went into list view." Exactly right, and it was a
+   one-line consequence of `wall: null`: the badge loop skips anything without a plot, so the Wall
+   was the single building in the game that could never ask for attention. The comment above PLOTS
+   already records this project doing the same thing to two buildings in v1.28 — invisible, and no
+   error to say so. Same absence, one table down. */
+const GATE_PLOT = [4, GRID - 1];
+let ctxWallLvl = 0;      // set each frame, so the badge floats at the gatehouse's real height
+/* exported so verify-ui can assert the Wall has somewhere to hang its badge and its name */
+export const wallAnchor = () => [...GATE_PLOT];
+
 function drawBadge(ctx, key, kind, t){
-  const plot = PLOTS[key];
+  const plot = PLOTS[key] || (key === 'wall' ? GATE_PLOT : null);
   if(!plot) return;
   const { sx, sy } = iso(plot[0], plot[1]);
   const look = LOOK[key];
   const bob = Math.sin(t/300) * 2.5;
-  const y = sy - (look ? look.h : 20) - 26 + bob;
+  // the gatehouse's own height, since the Wall has no LOOK entry to read one from
+  const hgt = key === 'wall' ? 16 + Math.min(ctxWallLvl, 20) * 1.1 : (look ? look.h : 20);
+  const y = sy - hgt - 26 + bob;
   ctx.fillStyle = 'rgba(0,0,0,.35)';
   ctx.beginPath(); ctx.arc(sx, y + 1.5, 8.5, 0, Math.PI*2); ctx.fill();
   ctx.fillStyle = kind === 'ready' ? '#7fa65a' : '#d9a441';
@@ -966,6 +982,7 @@ function renderStatic(S, threat){
   drawGround(c, S);
 
   const wallLvl = S.b.wall || 0;
+  ctxWallLvl = wallLvl;                    // for the gatehouse badge's height
   const wallBody = tinted(threat ? '#6e5347' : '#5d5449');
 
   /* Every shadow before any structure, so no shadow lands on a building behind
@@ -1004,6 +1021,23 @@ function renderStatic(S, threat){
       for(const [x,y] of [[i,0],[i,GRID-1],[0,i],[GRID-1,i]]){
         if(x === 4 && y === GRID-1) continue;                   // the gatehouse, below
         items.push({ d: x + y, draw: cx => wallSegment(cx, x, y, wallLvl, wallBody) });
+      }
+  else if((S.b.townhall || 1) >= (BUILDINGS.wall.th || 1))
+    /* An UNBUILT wall gets the same dashed footprint every other unbuilt building gets — drawn
+       around the perimeter, because that is the wall's plot. Without it the wall was the one
+       building with nothing in the scene to say it existed: no structure, no footprint, and (until
+       drawBadge learned about the gatehouse) no badge either. Reported from play as not being able
+       to find what to build without switching to the list. */
+    for(let i=0;i<GRID;i++)
+      for(const [x,y] of [[i,0],[i,GRID-1],[0,i],[GRID-1,i]]){
+        items.push({ d: x + y, draw: cx => {
+          const g = iso(x, y);
+          cx.strokeStyle = 'rgba(217,164,65,.22)';
+          cx.setLineDash([3,3]); cx.lineWidth = 1;
+          path(cx, [[g.sx, g.sy], [g.sx+TW/2*0.8, g.sy+TH/2*0.8],
+                    [g.sx, g.sy+TH*0.8], [g.sx-TW/2*0.8, g.sy+TH/2*0.8]]);
+          cx.stroke(); cx.setLineDash([]);
+        }});
       }
   items.sort((a,b) => a.d - b.d);
   for(const it of items) it.draw(c);
@@ -1049,6 +1083,20 @@ function drawLabels(ctx, S){
     const h = look.h * (0.62 + 0.62 * grow / 1.9);
     plates.push({ d: plot[0] + plot[1], sx, sy: sy - h - 14,
                   txt: def.name + (lvl > 0 ? ' ' + lvl : ' …'), underway });
+  }
+  /* And the Wall, over the gatehouse. It has no plot and no LOOK, so it fell out of this loop as
+     well as out of drawBadge — leaving its badge as an unlabelled arrow floating on the perimeter,
+     which is a mystery rather than an invitation. Named whether it stands or not, because the whole
+     point of the report was not being able to tell what the thing at the edge WAS. */
+  {
+    const wl = S.b.wall || 0;
+    const underway = QUEUE_KEYS.some(q => S[q] && S[q].key === 'wall');
+    if((S.b.townhall || 1) >= (BUILDINGS.wall.th || 1)){
+      const g = iso(GATE_PLOT[0], GATE_PLOT[1]);
+      const h = wl > 0 ? 16 + Math.min(wl, 20) * 1.1 : 10;
+      plates.push({ d: GATE_PLOT[0] + GATE_PLOT[1], sx: g.sx, sy: g.sy - h - 14,
+                    txt: BUILDINGS.wall.name + (wl > 0 ? ' ' + wl : ' …'), underway });
+    }
   }
   plates.sort((a, b) => a.d - b.d);
 
@@ -1225,7 +1273,8 @@ function frame(now){
 
   // attention badges: affordable upgrades
   for(const key of Object.keys(PLOTS)){
-    if(!PLOTS[key]) continue;
+    // the Wall is allowed through without a plot: drawBadge hangs it over the gatehouse
+    if(!PLOTS[key] && key !== 'wall') continue;
     const d = BUILDINGS[key];
     const lvl = S.b[key] || 0;
     if(!d) continue;
