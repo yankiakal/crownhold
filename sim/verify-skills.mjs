@@ -1744,6 +1744,70 @@ console.log('\n── Seafaring: six studies, measured by actually sailing ─�
      String(W.voyageBlockedBy(two, 3, 6)));
 }
 
+console.log('\n── an expedition has to actually go somewhere ──');
+{
+  /* Reported from play: "expeditions should give rewards after they are complete, not when you send
+     them." They paid out on the press and set a cooldown, so the log line said "returns" about a
+     party that had never left — an instant payout dressed as a journey. */
+  const hold = () => {
+    const s = freshState(Date.now(), 1);
+    s.b.townhall = 8; s.b.tavern = 3;
+    s.res = { food:5000, wood:5000, stone:5000, iron:5000, steel:0, runestone:0,
+              rations:0, isleore:0, electrum:0 };
+    /* No troops. A garrison EATS — 200 spearmen drained food during the tick and during
+       applyOffline, and the first version of these assertions read that upkeep as the expedition
+       paying out early, then as it failing to pay at all. Isolate the thing being measured. */
+    s.t = { spearman:0, archer:0, knight:0, ballista:0 };
+    s.patrolReady = 0; s.now = Date.now();
+    return s;
+  };
+  const s = hold();
+  const before = { ...s.res }, valor = s.valor;
+  ok('sending one takes it out of the yard', L.expedition(s, 'kingsroad', s.now) === true);
+  ok('and NOTHING arrives on the press',
+     s.res.food === before.food && s.res.wood === before.wood && s.valor === valor,
+     'food ' + s.res.food + ', wood ' + s.res.wood + ', valor ' + s.valor);
+  ok('the party is recorded as away', !!L.expedPending(s),
+     JSON.stringify(L.expedPending(s) && L.expedPending(s).route));
+  ok('and a second cannot be sent while it is out',
+     L.expedition(s, 'barrows', s.now) === false);
+
+  /* The reward lands when it comes home, and the tick is what brings it. */
+  const end = L.expedPending(s).end;
+  L.tick(s, end - 1000, 1);
+  /* Assert the STATE, not the stockpile: the Farm produces during the tick, so "food is unchanged"
+     was never going to hold — it read 4990 with a garrison eating and 5002 without one. Both times
+     the number moved for reasons that had nothing to do with the expedition. */
+  ok('still away a second before it is due',
+     !!L.expedPending(s) && (s.res.food - before.food) < 10,
+     'pending, and only +' + (s.res.food - before.food).toFixed(1) + ' food from production');
+  L.tick(s, end + 1000, 1);
+  ok('and the goods land when it returns',
+     s.res.food > before.food && s.res.wood > before.wood && s.valor > valor,
+     '+' + Math.round(s.res.food - before.food) + ' food, +'
+       + Math.round(s.res.wood - before.wood) + ' wood, +' + Math.round(s.valor - valor) + ' Valor');
+  ok('and the road is open again', !L.expedPending(s));
+
+  /* Sent, then the app closes. It must be home and paid when you come back, not waiting to be
+     noticed — the same contract applyOffline already keeps for production and the caravan. */
+  const s2 = hold();
+  L.expedition(s2, 'kingsroad', s2.now);
+  const f2 = s2.res.food;
+  s2.now = L.expedPending(s2).end + 60000;
+  ST.applyOffline(s2, 3600000);
+  ok('a party sent before the app closed is home and paid when you return',
+     !L.expedPending(s2) && s2.res.food > f2,
+     'food ' + Math.round(f2) + ' → ' + Math.round(s2.res.food));
+
+  /* And the cadence is unchanged: the cooldown BECAME the journey rather than being added to it. */
+  const s3 = hold();
+  const dur = L.expedCdMs(s3);
+  L.expedition(s3, 'kingsroad', s3.now);
+  ok('the journey is exactly the old cooldown, so pacing did not move',
+     Math.abs((L.expedPending(s3).end - s3.now) - dur) < 2 && s3.patrolReady === s3.now + dur,
+     'journey ' + Math.round(dur/1000) + 's, next available at the same moment');
+}
+
 console.log('\n── the haul depends on the troops you send ──');
 {
   /* Reported from play: "gathering nodes should be collected based on troops sent — if I send a full

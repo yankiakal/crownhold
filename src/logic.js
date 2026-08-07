@@ -1463,11 +1463,46 @@ export function setCaravan(s, route, now){
   return true;
 }
 
+/* ── expeditions leave, and then they come back ──
+   Reported from play: "expeditions should give rewards after they are complete, not when you send
+   them." They granted everything on the press and set a cooldown, so the log said "returns" about a
+   column that had never left — an instant payout dressed as a journey, which is a slot-machine lever
+   rather than something you set going.
+
+   Split into a departure and a return, and the COOLDOWN BECOMES THE JOURNEY: the same wait, the same
+   cadence, the reward at the far end of it instead of the near end. Nothing about pacing moves.
+
+   The roll happens on RETURN, not on departure — the Wildwood ambush included. That is the rule the
+   Salt Isle already states in its own comment: "the site resolves on RETURN, not on departure, so a
+   voyage is a wager rather than a purchase." Same principle, and it means a boost spent on a run is
+   spent on a run whose outcome is still open. */
 export function expedition(s, route, now, rand=Math.random){
   s.now = now;
   if(now < s.patrolReady || !EXPEDITIONS[route]) return false;
-  s.patrolReady = now + expedCdMs(s);
-  const boost = s.expedBoost ? 2 : 1;
+  if(s.exped) return false;                       // one column on the road at a time
+  const dur = expedCdMs(s);
+  s.patrolReady = now + dur;
+  s.exped = { route, end: now + dur, boost: !!s.expedBoost };
+  s.expedBoost = false;
+  pushLog(s, EXPEDITIONS[route].icon + ' ' + EXPEDITIONS[route].name
+    + ' — the party sets out. Back in ' + ftime(dur) + '.');
+  return true;
+}
+
+/* Resolve a returning expedition. Called from tick, and from applyOffline, so a party sent before
+   the app closed is waiting on the table rather than lost. */
+export function expedStep(s, now, rand=Math.random){
+  const e = s.exped;
+  if(!e || now < e.end) return false;
+  s.exped = null;
+  grantExpedition(s, e.route, now, rand, e.boost);
+  return true;
+}
+
+export function expedPending(s){ return s.exped ? { ...s.exped } : null; }
+
+function grantExpedition(s, route, now, rand, boosted){
+  const boost = boosted ? 2 : 1;
   const mult = expedMult(s) * boost;
   const th = s.b.townhall;
   const R = n => Math.round(n*mult);
@@ -1477,7 +1512,7 @@ export function expedition(s, route, now, rand=Math.random){
     gainRes(s,'food',f); gainRes(s,'wood',w); gainValor(s,3); gainMastery(s,4,now);
     pushLog(s, "🛤️ The King's Road expedition returns: +"+f+' food, +'+w+' wood, +3 Valor.', 'gold');
   }else if(route==='wildwood'){
-    if(!s.expedBoost && rand() < 0.35){
+    if(!boosted && rand() < 0.35){
       let lost = 0;
       for(const k of Object.keys(TROOPS)){
         if(s.t[k] > 0){ const l = Math.ceil(s.t[k]*0.04); s.t[k] -= l; lost += l; }
@@ -1497,7 +1532,6 @@ export function expedition(s, route, now, rand=Math.random){
     if(rand() < 0.15){ gainShield(s,1); extra = ' A sealed Writ of Peace lay among the barrow-gifts!'; }
     pushLog(s, '⚱️ The Barrow Hills expedition returns changed: +'+f+' food, +6 Valor, +8 Mastery.'+extra, 'gold');
   }
-  s.expedBoost = false;
   return true;
 }
 
@@ -1853,6 +1887,7 @@ export function tick(s, now, dt, rand=Math.random){
 
   for(const r of Object.keys(RES_META)) gainRes(s, r, prodPerSec(s,r)*dt);
   refineStep(s, dt);
+  expedStep(s, now, rand);            // a party on the road comes home on its own
   restStep(s, dt);
 
   // armies eat: upkeep drains food; an unfed muster deserts

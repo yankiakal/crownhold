@@ -420,7 +420,14 @@ function renderMuster(S){
     }
   }
   const now = Date.now(), cd = S.patrolReady - now;
+  /* A party ON THE ROAD says so, and says what it went for. The wait used to be a cooldown after an
+     instant payout, so "next in 40s" was the whole story; now the same seconds are a journey with a
+     reward at the end, and the panel has to show which. */
+  const away = S.exped;
   let note = cd>0 ? 'next in '+ftime(cd) : 'a road is open';
+  if(away) note = EXPEDITIONS[away.route].icon + ' the party is on the ' + EXPEDITIONS[away.route].name
+    + ' — home in ' + ftime(Math.max(0, away.end - now))
+    + (away.boost ? ' · <b style="color:var(--gold)">×2 and safe</b>' : '');
   if(cd<=0 && S.caravan) note = '⛺ caravan departs in '+ftime(S.patrolReady+15000-now)+' — dispatch by hand for full yield';
   h += '<div style="margin-top:.7rem">'
     + '<div class="stat-note">Expeditions — '+note
@@ -428,8 +435,10 @@ function renderMuster(S){
     + '<div class="exped-row">';
   for(const [k,e] of Object.entries(EXPEDITIONS)){
     h += '<div class="exped-col">'
-      + '<button class="exped-btn" data-act="expedition" data-key="'+k+'" '+(cd>0?'disabled':'')+' title="'+e.desc+'">'
-      + e.icon+' '+e.name+'<span>'+e.desc+'</span></button>'
+      + '<button class="exped-btn" data-act="expedition" data-key="'+k+'" '+(cd>0||away?'disabled':'')+' title="'+e.desc+'">'
+      + e.icon+' '+e.name+'<span>'
+      + (away && away.route===k ? 'away — home in '+ftime(Math.max(0, away.end-now)) : e.desc)
+      + '</span></button>'
       + '<button class="cara-btn'+(S.caravan===k?' active':'')+'" data-act="caravan" data-key="'+k+'" '
       + 'title="Standing caravan: auto-runs this road at half yield — resources only, no Valor, no ambush">'
       + (S.caravan===k?'⛺ caravan assigned':'⛺ set caravan')+'</button>'

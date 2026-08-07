@@ -1,7 +1,7 @@
 // Crownhold state: fresh-state shape, persistence, save migration.
 
 import { RES_META, BUILDINGS, FIRST_WAVE_MS, EXPEDITIONS, SUPPLY_RES } from './defs.js';
-import { prodPerSec, upkeepPerSec, supplyPerSec, storageCap, capFor, refineStep, bankRest, pushLog, fmt,
+import { prodPerSec, upkeepPerSec, supplyPerSec, storageCap, capFor, refineStep, expedStep, bankRest, pushLog, fmt,
          courtSeats, expedCdMs, caravanYields, CARAVAN_GRACE } from './logic.js';
 import { genWorld } from './world.js';
 import { genIsle } from './isle.js';
@@ -51,7 +51,7 @@ export function freshState(now, seed){
     trained:0, trainedBy:{},
     mxp:0, shields:0, shieldUntil:0, warbandsWon:0, streak:0, famineAcc:0,
     questIdx:0,
-    patrolReady:0, caravan:null,
+    patrolReady:0, caravan:null, exped:null,
     short:{wood:0, iron:0}, wallWear:0,
     log:[], banner:null,
     seenIntro:false, taught:{}, lesson:null,
@@ -87,6 +87,10 @@ export function applyOffline(s, awayMs){
     if(made >= 1) gained.push('+'+fmt(made)+' '+RES_META[r].lbl.toLowerCase());
   }
   if(gained.length) pushLog(s, 'While you were away, the hold produced '+gained.join(', ')+' (after feeding the muster).', 'gold');
+  /* A party already on the road when the app closed. Without this it would sit unresolved until the
+     next foreground tick, which for an overnight absence means the reward arrives whenever you happen
+     to look rather than when it was earned. */
+  if(s.exped && s.now >= s.exped.end) expedStep(s, s.now);
   if(s.caravan){
     const cycles = Math.floor(awayMs / (expedCdMs(s) + CARAVAN_GRACE));
     const y = caravanYields(s);
@@ -121,6 +125,7 @@ export function migrate(s, now){
     if(s.streak==null) s.streak = 0;
     if(s.wavesLost==null) s.wavesLost = 0;
     if(s.famineAcc==null) s.famineAcc = 0;
+    if(s.exped===undefined) s.exped = null;   // v1.88: expeditions travel now
     if(s.t.ballista==null) s.t.ballista = 0;
     /* v1.69: Truegold became Electrum, and Isle Ore's key stopped deriving from it.
        Truegold is Kingshot's own resource name and we were shipping it verbatim, so the metal was
