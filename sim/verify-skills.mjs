@@ -1297,8 +1297,42 @@ console.log('\n── a pre-skills save is inert, not broken ──');
      L.armyBreakdown(walled).cover > L.armyBreakdown(bare).cover,
      'no wall ' + L.armyBreakdown(bare).cover.toFixed(2) + ' → wall 12 ' + L.armyBreakdown(walled).cover.toFixed(2));
 
+  /* ── why BEATS names three troops and not four ──
+     Anyone reading BEATS sees three entries against four lines and reaches for the missing one. I
+     did: I tabulated PURE columns, found the battlemage row and column all zeroes, called it "a
+     quarter of the army exempt from matchups" and proposed closing the loop into a four-cycle.
+
+     That was measuring a column nobody can field. Drain 1.0 means a battlemage force must bring
+     one load of spearman per load of mage or lose half its worth, and a screened mage host is
+     already exposed — archers beat spearmen, so archers are its predator at about -18%, while it
+     takes knights at +16%. The counterplay runs through the SCREEN, which is the interesting part
+     of the design rather than a gap in it.
+
+     So the roster carries two KINDS of weakness on purpose: three lines are countered relationally
+     by a specific type, and the battlemage is countered structurally by needing a line in front.
+     Closing the cycle would flatten both into one, double-penalise the line already paying the
+     game's highest cover tax, and — since mages would beat spearmen — make a mage host its own
+     predator, because it is half spearmen. The test below pins the reasoning so the next person to
+     spot the "missing" fourth entry finds out why it is missing. */
   console.log('\n── the triangle gives every specialist a predator ──');
   const shares = k => ({ [k]: 1 });
+  {
+    const bodies = c => { const tot = Object.values(c).reduce((a,b) => a+b, 0), o = {};
+      for(const k of Object.keys(D.TROOPS)) o[k] = (c[k] || 0) / tot; return o; };
+    /* 50/50 by LOAD, which is what drain 1.0 obliges: 200 spearmen screen 50 battlemages. */
+    const mageHost = bodies({ spearman:200, ballista:50 });
+    const archerHost = bodies({ archer:150, spearman:50 });
+    const knightHost = bodies({ knight:100, spearman:50 });
+    ok('a battlemage host is NOT exempt from matchups — its screen exposes it',
+       L.matchupEdge(archerHost, mageHost) > 0.1,
+       'archers take a mage host by ' + Math.round(L.matchupEdge(archerHost, mageHost) * 100) + '%');
+    ok('and it preys on something in turn',
+       L.matchupEdge(mageHost, knightHost) > 0.1,
+       'a mage host takes knights by ' + Math.round(L.matchupEdge(mageHost, knightHost) * 100) + '%');
+    ok('so BEATS is deliberately three entries, not an unfinished four',
+       Object.keys(D.BEATS).length === 3 && !D.BEATS.ballista,
+       Object.entries(D.BEATS).map(([a,b]) => a + '>' + b).join(' '));
+  }
   ok('pikes stop cavalry', L.matchupEdge(shares('spearman'), shares('knight')) > 0.2);
   ok('cavalry runs down archers', L.matchupEdge(shares('knight'), shares('archer')) > 0.2);
   ok('archers shoot the slow line', L.matchupEdge(shares('archer'), shares('spearman')) > 0.2);

@@ -1446,6 +1446,36 @@ Electrum 47. Prospecting also lifts Isle Ore by up to two fifths, which takes El
 seasons of perfect sailing to ~6: the branch that studies the Isle makes the metal it yields come
 faster, which is the intended shape.
 
+### Why the triangle names three troops and not four (v1.76)
+
+`BEATS` has three entries against four lines, and the battlemage is in none of them. Tabulating
+PURE columns makes that look like an unfinished job — the battlemage row and column are all zeroes,
+so it preys on nothing and nothing preys on it. I read it that way and proposed closing the loop
+into a four-cycle, routing "archers shoot the slow line" through the mage.
+
+That was measuring a column nobody can field. Drain 1.0 means a battlemage force brings one load
+of spearman per load of mage or loses half its worth, and a *screened* mage host is already fully
+exposed:
+
+| mage host (50/50 screened) vs | edge |
+|---|---|
+| archer host | **−18%** — its predator |
+| knight host | +16% — its prey |
+| balanced | −4% |
+
+The counterplay runs through the **screen**. Archers beat spearmen; a mage host is half spearmen;
+so archers are the answer to mages, and that was true all along.
+
+The asymmetry is the better structure, for a reason worth naming: the roster carries **two kinds of
+weakness**. Three lines are countered *relationally* — they lose to a specific type. The battlemage
+is countered *structurally* — it cannot fight without a line in front, and that dependency is what
+drags it into the triangle second-hand. Closing the cycle would have flattened both into one,
+double-penalised the line already paying the game's highest cover tax, and — since mages would then
+beat spearmen — made a mage host its own predator, being half spearmen.
+
+Three tests now pin the reasoning rather than just the numbers, because "the fourth entry is
+missing" is the natural misreading and it will be made again.
+
 ### The ladder was levelled before cover, and cover rebuilt it (v1.75)
 
 Counting capacity as LOAD levelled power-per-slot and the ladder test passed at ×1.20. It was
