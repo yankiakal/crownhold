@@ -12,7 +12,8 @@ import {
 /* LOAD and SCREEN already arrive through the main defs import above — this second one
    carries only what is not already in scope. */
 import { TIERS, SUPPLY_RES, SUPPLY, HOLDS, NEEDS, BEATS, MATCHUP,
-         DECREES, DECREE_MS, decreeUp, decreeDown, QUALITY, QUALITY_TAG, qualityBand, WAVE_LOSS_FLOOR, WAVE_LOSS_SPAN, WAVE_PLUNDER_FLOOR, WAVE_PLUNDER_SPAN } from './defs.js';
+         DECREES, DECREE_MS, decreeUp, decreeDown, QUALITY, QUALITY_TAG, qualityBand,
+         ALLY_FROM, canAlly, allyBlockedWhy, WAVE_LOSS_FLOOR, WAVE_LOSS_SPAN, WAVE_PLUNDER_FLOOR, WAVE_PLUNDER_SPAN } from './defs.js';
 import {
   TILE_TYPES, MAP_W, MAP_H, CX, CY, TRAVEL_MS_PER_TILE, GATHER_MS,
   tileDist, marchSlots, tileBusy, marchPower, campPower, gatherYield, startMarch,
@@ -1627,6 +1628,23 @@ function renderAlliance(S){
       + 'Alliance members shave real time off each other&#39;s builds — in this game your allies are the speedups.</p></section>';
   const d = net.allianceData();
   const a = d && d.alliance;
+  /* ── the Embassy is the door ──
+     Asked directly: "when can players join alliances? In WoS the alliance building comes at a
+     certain level, which unlocks alliances." It used to be from your first second, because nothing
+     gated it at all. The server enforces this; here it is EXPLAINED, with the road to it, because a
+     locked button with no reason attached is the thing that makes a player think it is broken. */
+  if(!a && !canAlly(S)){
+    const emb = BUILDINGS[ALLY_FROM];
+    const short = (S.b.townhall || 0) < emb.th;
+    return '<section class="panel"><h2>Alliance <span style="letter-spacing:.05em">'
+      + emb.icon + ' needs the ' + emb.name + '</span></h2>'
+      + '<div class="stat-note">' + allyBlockedWhy(S) + '</div>'
+      + '<p style="font-size:.85rem;color:var(--ink-dim)">Allies shave real time off each other&#39;s '
+      + 'builds, free, from a person — in this game your alliance <b>is</b> the speedup, which is why it '
+      + 'is worth a building of its own. ' + (short
+          ? 'Your Town Hall is ' + (S.b.townhall || 0) + '; the ' + emb.name + ' opens at ' + emb.th + '.'
+          : 'You may raise it now — it is in the build list.') + '</p></section>';
+  }
   let h = '<section class="panel"><h2>Alliance'
     + (a ? ' <span style="letter-spacing:.05em">['+a.tag+'] '+a.members.length+' holds · '+fmt(a.power)+' power</span>' : '')
     + '<button class="info-btn" data-act="allianceOpen">'+(a?'manage':'join')+'</button></h2>';

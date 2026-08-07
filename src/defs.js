@@ -21,7 +21,7 @@ export const BUILDINGS = {
      across all of them. Identifiers are for the machine; the player never sees one. */
   siegeyard: {name:'Mage Spire', icon:'☄️', fx:'Trains Battlemages, on its own queue.',
               cost:{wood:240,iron:90},  time:24, max:30, th:7},
-  embassy:   {name:'Embassy',    icon:'🕊️', fx:'+2 alliance helps your builds may take, per level.',
+  embassy:   {name:'Embassy',    icon:'🕊️', fx:'Opens alliances. +2 alliance helps your builds may take, per level.',
               cost:{stone:180,wood:120},time:18, max:25, th:5},
   wall:      {name:'Wall',       icon:'🧱', fx:'+18 defense power per level.',
               cost:{stone:90,wood:40},  time:18, max:30, th:2},
@@ -1034,6 +1034,30 @@ export const RES_META = {
    uniform cap gave it — and the other three land at ×2.96 or better. Anyone who raises a stone
    cost past that headroom gets a failure from verify-skills.mjs naming the building, which is the
    only reason it is safe to derive caps from a rate at all. */
+/* ── alliances open with a building, not with an account ──
+   Asked directly: "when can players join alliances? In WoS the alliance building comes at a certain
+   level, which unlocks alliances."
+
+   They could join from their first second, which was never a decision — there was simply no gate on
+   /api/alliance/join at all. Two reasons that is wrong beyond not matching the reference games.
+   Alliance Help is this game's ENTIRE answer to Kingshot's speedup store, so handing it to a hold
+   that has not yet learnt what a build queue is spends the best social mechanic on someone with
+   nothing to spend it on. And the Embassy already existed, at Town Hall 5, already described as the
+   building that governs how many helps your builds may take — it just was not the door.
+
+   Now it is the door. The rule lives HERE rather than in either the client or the server, because
+   the server has to enforce it and the client has to explain it, and two copies of a gate is how
+   you end up with a button that is offered and then refused. The level hint is the Embassy's own
+   `th`, so raising that constant moves the gate and the explanation together. */
+export const ALLY_FROM = 'embassy';
+export const allyTh = () => BUILDINGS[ALLY_FROM].th;
+export function canAlly(s){ return ((s && s.b && s.b[ALLY_FROM]) || 0) >= 1; }
+export function allyBlockedWhy(s){
+  if(canAlly(s)) return null;
+  const d = BUILDINGS[ALLY_FROM];
+  return 'Raise the ' + d.name + ' to treat with other holds — it opens at Town Hall ' + d.th + '.';
+}
+
 export const CAP_RATE_DIVISOR = 1.035;
 export const rawRate = (res) =>
   Object.values(BUILDINGS).filter(d => d.prod === res).reduce((a, d) => a + d.rate, 0);

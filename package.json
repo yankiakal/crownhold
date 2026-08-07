@@ -19,7 +19,8 @@
     "phone": "node scripts/phone.js",
     "screens": "node scripts/screens.js",
     "sounds": "node scripts/emit-sounds.js",
-    "scroll": "node scripts/scroll.js"
+    "scroll": "node scripts/scroll.js",
+    "ally": "node scripts/ally-lab.js"
   },
   "devDependencies": {
     "vite": "^6.0.0",

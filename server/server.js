@@ -21,7 +21,8 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { tick, armyPower, armyBreakdown, tierPower, gainRes, masteryLvl, upkeepPerSec, gainValor, gainMastery, pushLog,
          takeCasualties, capFor } from '../src/logic.js';
 import { SEASON_MS as DEFAULT_SEASON_MS, SEASON_EPOCH, SEASON_ARCS,
-         seasonNo as defSeasonNo, seasonEndsIn as defSeasonEndsIn } from '../src/defs.js';
+         seasonNo as defSeasonNo, seasonEndsIn as defSeasonEndsIn,
+         canAlly, allyBlockedWhy } from '../src/defs.js';
 import { tickWorld, fitColumn, marchPower, marchSpeed, bestLeaders } from '../src/world.js';
 import { freshState, applyOffline, migrate } from '../src/state.js';
 import { applyAction, isGameAction } from '../src/actions.js';
@@ -88,6 +89,18 @@ function publicState(u){ return { name: u.name, state: u.state, alliance: u.alli
 const HELP_CAP = 20;                 // so a full alliance can cut ~30% off a build
 const HELP_FRACTION = 0.015;
 const HELP_MIN_MS = 5000;
+/* ── and the ceiling the comment above was already promising ──
+   The line above says a flat minimum "let two friends erase a short build entirely", and then
+   HELP_MIN_MS sits underneath it being exactly that flat minimum. The comment described a hazard
+   the code still had. Measured the first time anything tested Help at all: ONE help took 4 seconds
+   off a 4-second build — the whole thing — and since earlyRamp made level-1 builds seconds rather
+   than minutes, that is every build in the opening hour.
+
+   So the cut is clamped to a share of the build as well as floored. The floor still does its job on
+   the medium builds it was written for (1.5% of a 60s farm is under a second, which is not worth
+   tapping for, so it becomes 5s); the ceiling means no single help can ever take more than a tenth
+   of anything. A long keep is unaffected — 1.5% is already far below 10%. */
+const HELP_MAX_SHARE = 0.10;
 
 /* ── alliance research ──
    This is what makes Help feel like it matters. An unresearched alliance shaves
@@ -201,7 +214,7 @@ function musterView(a, u, now){
   };
 }
 
-function allianceView(tag, now){
+function allianceView(tag, now, viewer){
   const a = db.alliances[tag];
   if(!a) return null;
   const members = a.members.map(n => {
@@ -228,7 +241,10 @@ function allianceView(tag, now){
     helpAvailable: members.reduce((t,m) => t + m.builds.length, 0),
     tech: allyTechView(a),
     helpPct: +(allyHelpFraction(a) * 100).toFixed(2),
-    helpCap: allyHelpCap(a),
+    /* The VIEWER's cap, not the bare base. Each Embassy level lets your own builds take two more
+       helps, so a hold with an Embassy 3 can take 26 — and the panel was reporting 20 to everyone,
+       understating the building it is meant to sell. Found by reading the lab's own printout. */
+    helpCap: allyHelpCap(a, viewer || null),
   };
 }
 
@@ -1195,21 +1211,25 @@ async function api(req, res, url){
     if(!/^[\w '-]{3,24}$/.test(name)) return send(res, 400, { error:'Name must be 3–24 characters.' });
     if(!/^[A-Z0-9]{2,4}$/.test(tag)) return send(res, 400, { error:'Tag must be 2–4 letters or digits.' });
     if(u.alliance) return send(res, 400, { error:'Leave your current alliance first.' });
+    /* The Embassy is the door — enforced here because the client cannot be trusted with a rule,
+       and explained there because a refusal a player cannot act on is just a locked button. */
+    if(!canAlly(u.state)) return send(res, 403, { error: allyBlockedWhy(u.state) });
     if(db.alliances[tag]) return send(res, 409, { error:'That tag is taken.' });
     db.alliances[tag] = { name, tag, leader: u.name, members: [u.name], created: now };
     u.alliance = tag; markDirty(); flush();
-    return send(res, 200, { alliance: allianceView(tag, now) });
+    return send(res, 200, { alliance: allianceView(tag, now, u) });
   }
 
   if(path === '/api/alliance/join'){
     const tag = String(body.tag || '').trim().toUpperCase();
     const a = db.alliances[tag];
     if(!a) return send(res, 404, { error:'No alliance with that tag.' });
-    if(u.alliance === tag) return send(res, 200, { alliance: allianceView(tag, now) });
+    if(u.alliance === tag) return send(res, 200, { alliance: allianceView(tag, now, u) });
     if(u.alliance) return send(res, 400, { error:'Leave your current alliance first.' });
+    if(!canAlly(u.state)) return send(res, 403, { error: allyBlockedWhy(u.state) });
     if(a.members.length >= 30) return send(res, 400, { error:'That alliance is full (30).' });
     a.members.push(u.name); u.alliance = tag; markDirty(); flush();
-    return send(res, 200, { alliance: allianceView(tag, now) });
+    return send(res, 200, { alliance: allianceView(tag, now, u) });
   }
 
   if(path === '/api/alliance/leave'){
@@ -1226,7 +1246,7 @@ async function api(req, res, url){
   if(path === '/api/alliance/info'){
     advance(u, now);
     return send(res, 200, {
-      alliance: u.alliance ? allianceView(u.alliance, now) : null,
+      alliance: u.alliance ? allianceView(u.alliance, now, u) : null,
       directory: Object.values(db.alliances)
         .map(a => ({ tag:a.tag, name:a.name, members:a.members.length }))
         .sort((x,y) => y.members - x.members).slice(0, 20),
@@ -1261,7 +1281,7 @@ async function api(req, res, url){
     gainValor(u.state, Math.min(40, Math.round(effort / 200)));
     gainMastery(u.state, Math.min(120, Math.round(effort / 80)), now);
     markDirty(); flush();
-    return send(res, 200, { effort, levelled, alliance: allianceView(u.alliance, now) });
+    return send(res, 200, { effort, levelled, alliance: allianceView(u.alliance, now, u) });
   }
 
   if(path === '/api/alliance/help'){
@@ -1281,14 +1301,16 @@ async function api(req, res, url){
         if(b.helps >= allyHelpCap(a, m)) continue;
         if((b.helpers||[]).includes(u.name)) continue;   // one help per hold per build
         const total = Math.max(1, b.end - b.start);
-        b.end = Math.max(now, b.end - Math.max(HELP_MIN_MS, total * allyHelpFraction(a)));
+        const cut = Math.min(total * HELP_MAX_SHARE,
+                             Math.max(HELP_MIN_MS, total * allyHelpFraction(a)));
+        b.end = Math.max(now, b.end - cut);
         b.helps++;
         b.helpers = (b.helpers || []).concat(u.name);
         helped++;
       }
     }
     if(helped) markDirty();
-    return send(res, 200, { helped, alliance: allianceView(u.alliance, now) });
+    return send(res, 200, { helped, alliance: allianceView(u.alliance, now, u) });
   }
 
   /* ── raids: hold against hold ── */
@@ -1409,6 +1431,16 @@ async function api(req, res, url){
     resolveRaids(now);
     markDirty();
     return send(res, 200, { warped: ms });
+  }
+  /* Raise the one building the alliance gate reads. Its own endpoint rather than a flag on
+     debug/kit, because the gate has to be testable on a hold that has had NOTHING else done to
+     it — kit sets a Town Hall of 20 and a full muster, which would hide whether the gate works
+     or whether the kit simply happened to satisfy it. */
+  if(ALLOW_DEBUG && path === '/api/debug/embassy'){
+    advance(u, now);
+    u.state.b.embassy = Math.max(1, Number(body.level) || 1);
+    markDirty();
+    return send(res, 200, { embassy: u.state.b.embassy });
   }
   if(ALLOW_DEBUG && path === '/api/debug/kit'){
     advance(u, now);

@@ -77,10 +77,38 @@ try {
      'A ' + A.status + ' / B ' + B.status + ' ' + (A.body?.error || B.body?.error || ''));
   const ta = A.body.token, tb = B.body.token;
 
+  /* ── the Embassy is the door ──
+     Asked directly: "when can players join alliances? In WoS the alliance building comes at a
+     certain level, which unlocks alliances." Before this there was NO gate — a hold could found an
+     alliance in its first second, which was not a decision anyone made, just an endpoint with no
+     check. Asserted first, before the alliance exists, because that is the only moment a fresh hold
+     is available to test it with. */
+  const tooEarly = await post('/api/alliance/create', { token: ta, name:'The Long Watch', tag:'LWCH' });
+  ok('a hold with no Embassy cannot found an alliance', tooEarly.status === 403,
+     'status ' + tooEarly.status + ' ' + (tooEarly.body?.error || ''));
+  ok('and the refusal says what to build', /Embassy/.test(tooEarly.body?.error || ''),
+     tooEarly.body?.error || '(no reason given)');
+
+  // raise it on both, the way a player would have to
+  for(const t of [ta, tb]) await post('/api/debug/embassy', { token: t });
+
   const made = await post('/api/alliance/create', { token: ta, name:'The Long Watch', tag:'LWCH' });
-  ok('an alliance is founded', made.status === 200, made.body?.error || '');
+  ok('an alliance is founded once the Embassy stands', made.status === 200, made.body?.error || '');
   const joined = await post('/api/alliance/join', { token: tb, tag:'LWCH' });
   ok('the second hold joins', joined.status === 200, joined.body?.error || '');
+
+  /* And joining is gated too, not only founding — two endpoints, and only checking one is how a
+     gate gets walked around. */
+  {
+    const D = await post('/api/register', { name:'Dunn', password:'longenoughpassword' });
+    const barred = await post('/api/alliance/join', { token: D.body.token, tag:'LWCH' });
+    ok('nor can one JOIN without an Embassy', barred.status === 403,
+       'status ' + barred.status + ' ' + (barred.body?.error || ''));
+    await post('/api/debug/embassy', { token: D.body.token });
+    const allowed = await post('/api/alliance/join', { token: D.body.token, tag:'LWCH' });
+    ok('and may once it is raised', allowed.status === 200, allowed.body?.error || '');
+    await post('/api/alliance/leave', { token: D.body.token });
+  }
 
   /* ── the Muster Roll ── */
   console.log('\n── the Muster Roll ──');
@@ -328,6 +356,96 @@ try {
       const aWounded = Object.values(aHome.wounded || {}).reduce((x, y) => x + y, 0);
       ok('the attacker\'s wounded are in the attacker\'s own infirmary', aWounded > 0, String(aWounded));
     }
+  }
+
+  /* ── alliance Help, which had no test at all ──
+     Asked for directly: "I need to test alliance help too."
+
+     It had 63 server assertions and not one of them contained the word "help" — for the mechanic
+     this project's own source calls "the point": in Kingshot you buy a speedup, here your alliance
+     IS the speedup. Every rule below is one somebody could break without any other suite noticing.
+
+     The caps are the interesting half. Help is proportional (1.5% of the build), which is what
+     keeps it a gift on a day-long keep and nothing on a two-minute hut — a flat amount would let
+     two friends erase a short build outright. And it is capped per build, one help per hold, so a
+     big alliance is an advantage rather than an exploit. */
+  console.log('\n── alliance help: your friends are the speedup ──');
+  {
+    await post('/api/debug/kit', { token: ta, strong: true });
+    // a genuinely long build, so 1.5% is measurable rather than lost in the 5s minimum
+    /* The WALL, not the Town Hall. The debug kit sets townhall 20 while leaving the farms and
+       lumberyards low, so "the Town Hall must lead the rest of the hold" refuses the upgrade — the
+       action returns 200 with ok:false and no build, which is what the first version of this test
+       reported as "no build: 200". The wall is not pace-gated and is long enough at level 12. */
+    const started = await post('/api/action', { token: ta, action:'upgrade', params:{ key:'wall' } });
+    if(!(started.body && started.body.state && started.body.state.bq))
+      console.log('      (upgrade returned ok=' + JSON.stringify(started.body && started.body.ok) + ')');
+    const before = started.body && started.body.state && started.body.state.bq;
+    ok('a long build is under way', !!before && before.end > before.start,
+       before ? Math.round((before.end - before.start) / 60000) + ' min' : 'no build: ' + (started.body?.error || started.status));
+
+    if(before){
+      const span = before.end - before.start;
+      const helped = await post('/api/alliance/help', { token: tb, target:'Aldis' });
+      ok('an ally can help', helped.status === 200 && helped.body.helped === 1,
+         'helped ' + (helped.body?.helped) + ' ' + (helped.body?.error || ''));
+
+      const after = (await post('/api/state', { token: ta })).body.state.bq;
+      ok('and the build actually got shorter', after && after.end < before.end,
+         after ? Math.round((before.end - after.end) / 1000) + 's off ' + Math.round(span / 60000) + ' min' : 'no build');
+      /* The SIZE of the cut, not just its direction. A help that shaved a flat second would pass
+         a "got shorter" assertion and be worthless on the builds that matter. */
+      const cut = before.end - after.end;
+      ok('by about the proportion it promises, not a flat token',
+         cut >= span * 0.014 && cut <= span * 0.032,
+         Math.round(cut / span * 1000) / 10 + '% of the build');
+
+      // one help per hold per build — the rule that stops one ally spamming a build to zero
+      const again = await post('/api/alliance/help', { token: tb, target:'Aldis' });
+      const third = (await post('/api/state', { token: ta })).body.state.bq;
+      ok('the same ally cannot help the same build twice',
+         again.body.helped === 0 && third.end === after.end,
+         'helped ' + again.body.helped + ', end moved ' + (after.end - third.end) + 'ms');
+
+      // and an outsider cannot help at all
+      const C = await post('/api/register', { name:'Outsider', password:'longenoughpassword' });
+      const noAlly = await post('/api/alliance/help', { token: C.body.token, target:'Aldis' });
+      const fourth = (await post('/api/state', { token: ta })).body.state.bq;
+      ok('someone in no alliance cannot help', noAlly.status === 400 && fourth.end === after.end,
+         noAlly.body?.error || 'status ' + noAlly.status);
+
+      /* Short builds must be immune, which is the whole reason help is proportional at all. Ten
+         helps on a short build must still leave most of it standing — a flat cut, or a minimum
+         that outweighs the fraction, would erase it. */
+      await post('/api/debug/kit', { token: tb, strong: false });
+      const cheap = await post('/api/action', { token: tb, action:'upgrade', params:{ key:'farm' } });
+      const cb = cheap.body && cheap.body.state && cheap.body.state.bq;
+      if(cb){
+        const cSpan = cb.end - cb.start;
+        for(const name of ['Aldis']) await post('/api/alliance/help', { token: ta, target:'Brenna' });
+        const cAfter = (await post('/api/state', { token: tb })).body.state.bq;
+        const cCut = cAfter ? cb.end - cAfter.end : cSpan;
+        ok('a short build cannot be erased by help', cCut <= cSpan * 0.5,
+           Math.round(cCut / 1000) + 's off a ' + Math.round(cSpan / 1000) + 's build');
+      } else ok('a short build cannot be erased by help', false, 'no cheap build to measure: ' + (cheap.body?.error || cheap.status));
+    }
+
+    /* And the report the panel reads: it has to say how much a help is worth and how many are
+       allowed, or a player cannot tell whether asking is worth it. */
+    const info = await post('/api/alliance/info', { token: ta });
+    const view = info.body && info.body.alliance;
+    ok('the alliance panel is told what a help is worth', view && view.helpPct > 0,
+       view ? view.helpPct + '% each, up to ' + view.helpCap : 'no view');
+    /* The cap it reports has to be the READER's own, because each Embassy level buys two more. It
+       reported the bare base to everyone, which understated the building it exists to sell — spotted
+       in the lab's printout saying "up to 20" for a hold holding an Embassy 3. */
+    await post('/api/debug/embassy', { token: ta, level: 4 });
+    const richer = (await post('/api/alliance/info', { token: ta })).body.alliance;
+    ok('and the cap it quotes counts the reader\'s own Embassy',
+       richer && richer.helpCap > (view ? view.helpCap : 0),
+       (view ? view.helpCap : '?') + ' at Embassy 1 → ' + (richer && richer.helpCap) + ' at Embassy 4');
+    ok('and how many builds are waiting for one', view && typeof view.helpAvailable === 'number',
+       view ? String(view.helpAvailable) : '—');
   }
 } catch (e) {
   fail++;

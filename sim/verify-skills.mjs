@@ -803,7 +803,7 @@ console.log('\n── a pre-skills save is inert, not broken ──');
   /* "Everything" has to mean every building the lessons key off, or a perfectly reachable card reads
      as unreachable. hold() leaves the Library at 0, which is what made the `scholars` unlock look
      dead — it fires for any hold that has one. */
-  rich.b.library = 8; rich.b.forge = 6; rich.b.command = 30;
+  rich.b.library = 8; rich.b.forge = 6; rich.b.command = 30; rich.b.embassy = 3;
   const fired = [];
   for(let i = 0; i < LS.LESSONS.length + 4; i++){
     const l = LS.nextLesson(rich, { thBlocked: true });

@@ -165,6 +165,14 @@ export const LESSONS = [
         + 'wood, stone and iron valuable all the way up.',
   },
   {
+    id: 'embassy', hold: true, icon: '🕊️', title: 'You may treat with other holds',
+    when: s => (s.b.embassy || 0) >= 1,
+    body: 'The Embassy opens alliances. Allies shave real time off each other\'s builds — free, '
+        + 'from a person, as often as they like on different builds. Everything Kingshot sells as a '
+        + 'speedup, this game hands to your friends to give away, and each Embassy level lets your '
+        + 'own builds take two more helps.',
+  },
+  {
     id: 'isle', hold: true, icon: '⛵', title: 'A chart of the Salt Isle',
     when: s => (s.b.townhall || 0) >= ISLE_TH_HINT,
     body: 'A second map, and it plays the opposite way to the frontier: one voyage at a time, '
