@@ -6,9 +6,20 @@ import { render, renderAccount, renderChat, wire } from './ui.js';
 import { forget as forgetSound } from './audio.js';
 import * as net from './net.js';
 
-// PWA: register the service worker on real hosting (no-op inside the artifact sandbox)
+/* PWA: register the service worker on real hosting (no-op inside the artifact sandbox).
+   The reload matters as much as the register. A new worker calls skipWaiting and claims the open
+   pages, but claiming does not re-render them — so the tab keeps running the JS it already loaded
+   and the player stays on the old build until they happen to close every tab. Reported from a real
+   browser as "refreshing opens the old version". One reload, guarded so it can only ever happen
+   once per page, is the whole fix. */
 if('serviceWorker' in navigator && !location.hostname.endsWith('claude.ai')){
   navigator.serviceWorker.register('sw.js').catch(()=>{});
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if(reloaded) return;                 // a loop here would be far worse than a stale page
+    reloaded = true;
+    location.reload();
+  });
 }
 
 store.s = load(Date.now());
