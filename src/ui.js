@@ -410,7 +410,7 @@ function renderHold(S){
 function renderMuster(S){
   const bd = armyBreakdown(S);
   const yards = Object.values(TROOPS).filter(d => (S.b[d.at]||0) >= 1).length;
-  let h = '<section class="panel"><h2>Muster <span style="letter-spacing:.05em">power '+bd.total
+  let h = '<section class="panel" id="muster"><h2>Muster <span style="letter-spacing:.05em">power '+bd.total
     + ' · '+yards+' yard'+(yards===1?'':'s')+' drilling in parallel</span></h2>';
   h += '<div class="stat-note">'+Math.round(bd.base)+' troops × '+bd.mult.toFixed(2)+' bonuses + '+Math.round(bd.wall)+' wall = <b>'+bd.total+'</b>'
     + ' &nbsp;·&nbsp; eats '+upkeepPerSec(S).toFixed(1)+' food/s of your +'+prodPerSec(S,'food').toFixed(1)+'/s</div>';
@@ -2163,6 +2163,31 @@ function renderDetail(S){
     title = d.icon+' '+d.name+' — '+(lvl===0?'not built':'level '+lvl+'/'+d.max);
     body += '<p class="d-fx">'+(d.prod ? '+'+d.rate+' '+d.prod+'/s per level' : d.fx)+'</p>';
     if(d.th && S.b.townhall < d.th) body += '<p class="d-warn">Requires Town Hall '+d.th+'</p>';
+    /* ── a yard you tap is a yard you can drill from ──
+       Reported: "you wanna train spearmen — you have to tap the building, else you won't be able to
+       go to the training window." Quite right, and it was not possible: tapping the Barracks opened
+       a stats card, and the only route to drilling was the War tab, which is a menu the player has
+       to already know about. The building IS the affordance — that is the whole point of drawing a
+       hold you can touch.
+
+       It hands off to the muster rather than duplicating its controls. That panel already knows
+       about tiers, costs, supply, the pace gate and four separate queues, and a second training UI
+       would be a second place for all of that to drift. */
+    {
+      const line = Object.entries(TROOPS).find(([, t]) => t.at === k);
+      if(line){
+        const [tk, td] = line;
+        const q = trainQueue(S, tk);
+        const built = (S.b[k] || 0) >= 1;
+        body += '<p class="d-row">' + td.icon + ' Drills <b>' + td.plural + '</b>'
+          + (built ? ' · ' + fmt(S.t[tk] || 0) + ' in the muster' : ' — not built yet') + '.</p>';
+        if(q) body += '<p class="d-delta">' + fmt(q.count) + ' ' + td.plural.toLowerCase()
+          + ' drilling — ' + ftime(Math.max(0, q.end - (S.now || Date.now()))) + ' left.</p>';
+        if(built) body += '<div class="d-acts"><button class="primary" data-act="drillHere" '
+          + 'data-key="' + tk + '">' + (q ? 'See the yard' : '⚔️ Drill ' + td.plural.toLowerCase())
+          + '</button></div>';
+      }
+    }
     /* The whole ladder, so "what does this do at max" is answerable without arithmetic.
        Every figure is MEASURED — buildingCurve clones the state at each level and calls the
        same functions the game calls. This panel used to carry its own copies of the formulas
@@ -3121,6 +3146,15 @@ export function render(){
     branchScrollWanted = false;
   }
 
+  if(musterScrollWanted){
+    /* #muster, added to the panel for this — the first version scrolled to `.muster-panel`, a class
+       that exists nowhere, so it silently did nothing and the tap appeared to work while landing the
+       player at the top of the War tab. */
+    const roll = document.getElementById('muster');
+    if(roll && roll.scrollIntoView) roll.scrollIntoView({ block:'start' });
+    musterScrollWanted = null;
+  }
+
   const slot = document.getElementById('scene-slot');
   /* Centre the walls the first time they are drawn wider than the screen — the gatehouse is at
      the bottom-middle of the grid, so an un-scrolled view starts on the left wall. */
@@ -3228,6 +3262,14 @@ const VIEW_ACTIONS = {
   detail: b => { detail = {type:b.dataset.dtype, key:b.dataset.key}; },
   detailClose: () => { detail = null; skillSlotOpen = null; },
   queues: () => { queuesOpen = true; },
+  /* Tapping a yard's Drill button leaves the sheet and lands on the muster. The scroll is one-shot
+     and flag-guarded for the same reason the research strip's is: re-scrolling every render would
+     fight the player's own thumb four times a second. */
+  drillHere: b => {
+    detail = null;
+    tab = 'war';
+    musterScrollWanted = b.dataset.key || true;
+  },
   queuesClose: () => { queuesOpen = false; },
   // expanding a skill slot's menu is a view state, not a change to the hold
   skillPick: b => {
@@ -3439,6 +3481,7 @@ const acctBox = document.createElement('div');
 document.body.appendChild(acctBox);
 let acctOpen = false, acctMsg = '';
 let queuesOpen = false;
+let musterScrollWanted = null;
 
 /* ── chat ──
    Also outside the tick loop: an input that gets rebuilt four times a second

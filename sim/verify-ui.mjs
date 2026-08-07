@@ -79,7 +79,9 @@ appendFileSync(join(dir, 'src', 'ui.js'),
   // the settings sheet is behind a footer tap, and its open flag is module-local
   '\nexport function _openSettings(){ settingsOpen = true; }' +
   // chatBox is createElement'd and appended to body, so the stub's getElementById never sees it
-  '\nexport { chatBox as _chatBox };\n');
+  '\nexport { chatBox as _chatBox };' +
+  // the detail sheet is opened by a tap on a canvas; `detail` is module-local
+  '\nexport function _openDetail(type, key){ detail = type ? { type, key } : null; }\n');
 /* Same seam for net.js: the session is module-local, and the App Store's account-deletion control
    only exists when signed in — so without a way to fake a session there is nothing to assert, and
    the requirement would be untested until a reviewer found it missing. */
@@ -412,6 +414,37 @@ try {
     ok('and warned that it cannot be undone', /cannot be undone/i.test(signedIn));
     ok('the sheet still names the account being deleted', /Aldis/.test(signedIn));
     NET.logout();
+  }
+
+  /* ── a yard you tap is a yard you can drill from ──
+     Reported: "you wanna train spearmen — you have to tap the building, else you won't be able to go
+     to the training window." Tapping the Barracks opened a stats card and the only route to drilling
+     was a tab the player has to already know about. Asserted per yard, because there are four of
+     them and a mapping that covers three is the kind of gap nobody notices until someone tries to
+     build battlemages. */
+  {
+    ST.store.s = s;
+    const missing = [], noLine = [];
+    for(const [tk, td] of Object.entries(D.TROOPS)){
+      UI._openDetail('building', td.at);
+      UI.render();
+      const sheet = (nodes.fx && nodes.fx.innerHTML) || '';
+      if(!sheet.includes('data-act="drillHere" data-key="' + tk + '"')) missing.push(td.at);
+      if(!sheet.includes(td.plural)) noLine.push(td.at);
+    }
+    ok('every drilling yard offers its own line when tapped', missing.length === 0,
+       missing.length ? 'no drill button on: ' + missing.join(', ')
+                      : Object.keys(D.TROOPS).length + ' yards, all four');
+    ok('and names the troops it drills', noLine.length === 0, noLine.join(', ') || 'named');
+    /* A yard that is not built must not offer to drill from it — the button would be a dead end. */
+    const bare = ST.freshState(now, 9); bare.seenIntro = true; bare.now = now;
+    ST.store.s = bare;
+    UI._openDetail('building', 'siegeyard');
+    UI.render();
+    ok('an unbuilt yard offers no drill button',
+       !/data-act="drillHere"/.test((nodes.fx && nodes.fx.innerHTML) || ''));
+    UI._openDetail(null);
+    ST.store.s = s;
   }
 
   /* ── every timer in the hold shows up in the queue sheet ──
