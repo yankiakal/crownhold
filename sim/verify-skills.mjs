@@ -800,6 +800,10 @@ console.log('\n── a pre-skills save is inert, not broken ──');
   rich.seenIntro = true;
   rich.valor = 500; rich.shields = 2; rich.warbandsWon = 3; rich.wavesWon = 20;
   rich.wallWear = 0.2; rich.marches = [{}]; rich.taught = {};
+  /* "Everything" has to mean every building the lessons key off, or a perfectly reachable card reads
+     as unreachable. hold() leaves the Library at 0, which is what made the `scholars` unlock look
+     dead — it fires for any hold that has one. */
+  rich.b.library = 8; rich.b.forge = 6; rich.b.command = 30;
   const fired = [];
   for(let i = 0; i < LS.LESSONS.length + 4; i++){
     const l = LS.nextLesson(rich, { thBlocked: true });
