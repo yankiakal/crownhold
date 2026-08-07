@@ -27,7 +27,7 @@
 // off in Settings. Order in this array is the tiebreak when two become true at once, so the
 // more fundamental rule is listed first.
 
-import { TROOPS, SUPPLY_RES } from './defs.js';
+import { TROOPS, SUPPLY_RES, SECOND_QUEUE_TH, ISLE_TH_HINT } from './defs.js';
 
 export const LESSONS = [
   {
@@ -122,6 +122,55 @@ export const LESSONS = [
         + 'gives something and takes something on a different axis — faster marches for a '
         + 'lighter haul, cheaper upkeep for slower drilling. There is no strictly best decree, '
         + 'only the one that suits what you are doing this hour.',
+  },
+
+  /* ── unlocks announce themselves ──
+     Reported from play: "I get 2nd building queue, but I don't even get any notification — I need to
+     be able to see this as a big warning, it should interrupt my game."
+
+     Right, and it was the same failure as the Wall having no badge: the thing existed, worked, and
+     said nothing. A capability the player does not know they have is a capability they do not have.
+
+     `hold: true` on every one of these, so they stop the game rather than scroll past in the log —
+     which is what "it should interrupt" means. They are one-shot by construction: the lesson system
+     already records `taught[id]`, so each fires once and never again. */
+  {
+    id: 'crew2', hold: true, icon: '🔨', title: 'A second crew reports',
+    // tied to the constant, not a literal: this gate moved from 10 to 4 today
+    when: s => (s.b.townhall || 0) >= SECOND_QUEUE_TH,
+    body: 'Two builds can now run at once. The build panel has a second slot, and the two are '
+        + 'independent — a long Town Hall upgrade no longer blocks a cheap Farm. This is the '
+        + 'single biggest change to how the hold is played: there should almost always be two '
+        + 'things underway.',
+  },
+  {
+    id: 'march2', hold: true, icon: '🛤️', title: 'A second column can ride',
+    when: s => (s.b.townhall || 0) >= 6,
+    body: 'You can now have two columns on the frontier at once, and the Command Center adds '
+        + 'another every 4 levels. Send them to different nodes — a column carries what its '
+        + 'troops can haul, so two half-columns bring home less than two full ones.',
+  },
+  {
+    id: 'scholars', hold: true, icon: '📚', title: 'The scholars will take a study',
+    when: s => (s.b.library || 0) >= 1,
+    body: 'Research runs on its OWN queue, so it never competes with your builders — there is no '
+        + 'reason to leave it idle. The Great Library caps every study at its own level, and the '
+        + 'tree branches: Growth, Battle, the Road, the Watch, the Court, Seafaring, Electrum.',
+  },
+  {
+    id: 'refine', hold: true, icon: '🔥', title: 'Raw goods become better ones',
+    when: s => (s.b.forge || 0) >= 1,
+    body: 'The Forge turns iron and wood into Steel without pause, and buildings need Steel from '
+        + 'level 15. Nothing you gather ever stops mattering — the refineries are what keep food, '
+        + 'wood, stone and iron valuable all the way up.',
+  },
+  {
+    id: 'isle', hold: true, icon: '⛵', title: 'A chart of the Salt Isle',
+    when: s => (s.b.townhall || 0) >= ISLE_TH_HINT,
+    body: 'A second map, and it plays the opposite way to the frontier: one voyage at a time, '
+        + 'hours long, no recall, fed by Rations rather than troops. It is the only source of '
+        + 'Isle Ore, and therefore the only road to Electrum. Sites are spent when worked and '
+        + 'refill when the season turns.',
   },
 ];
 

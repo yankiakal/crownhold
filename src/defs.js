@@ -984,6 +984,9 @@ export const earlyRamp = lvl => {
    This barely moves the total length, because the game's hours are in the LATE levels — TH10 is 39
    hours of a 2,544-hour climb. What it moves is the first three days. */
 export const SECOND_QUEUE_TH = 4;
+/* Mirrors ISLE_TH in isle.js. Kept here so lessons.js can gate on it without importing the map
+   module — and asserted equal in verify-ui, so the mirror cannot rot. */
+export const ISLE_TH_HINT = 12;
 export const VALOR_QUOTA_BASE = 100, VALOR_QUOTA_PER_TH = 25;
 export const VALOR_OVERFLOW = 0.25;              // earning rate once the quota is spent
 export const REST_PER_MS_AWAY = 0.5;             // an hour away banks half an hour of Rest

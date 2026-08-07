@@ -315,6 +315,40 @@ try {
   ok('and a penalty reads as a plus when the penalty is more of something',
      D.DECREES.blood.fx.includes('+25% casualties'), D.DECREES.blood.fx);
 
+  /* ── an unlock has to announce itself ──
+     Reported from play: "I get 2nd building queue, but I don't even get any notification — I need to
+     be able to see this as a big warning, it should interrupt my game."
+
+     Same failure as the Wall having no badge: the capability existed, worked, and said nothing. A
+     capability the player does not know about is one they do not have. Every unlock card is
+     `hold: true`, which renders a full-screen overlay rather than a corner dock — that is what
+     "interrupt" means here. */
+  {
+    const LSN = await from('lessons.js');
+    const ISLE_MOD = await from('isle.js');
+    const UNLOCKS = ['crew2', 'march2', 'scholars', 'refine', 'isle'];
+    const missing = UNLOCKS.filter(id => !LSN.LESSON_BY_ID[id]);
+    ok('every major unlock has a card', missing.length === 0, missing.join(', ') || UNLOCKS.join(', '));
+    const soft = UNLOCKS.filter(id => !(LSN.LESSON_BY_ID[id] || {}).hold);
+    ok('and every one of them interrupts rather than docking', soft.length === 0,
+       soft.join(', ') || 'all ' + UNLOCKS.length + ' hold the screen');
+
+    /* The second crew is the one that was reported, so it is checked against the real gate rather
+       than a literal — that constant moved from 10 to 4 today and a hardcoded card would now be
+       firing at the wrong moment. */
+    const at = th => { const s = ST.freshState(Date.now(), 1); s.b.townhall = th; s.seenIntro = true;
+                       s.taught = {}; return s; };
+    const crew = LSN.LESSON_BY_ID.crew2;
+    ok('the second-crew card fires exactly when the second crew arrives',
+       !crew.when(at(D.SECOND_QUEUE_TH - 1)) && !!crew.when(at(D.SECOND_QUEUE_TH)),
+       'silent at Town Hall ' + (D.SECOND_QUEUE_TH - 1) + ', fires at ' + D.SECOND_QUEUE_TH);
+
+    /* lessons.js gates the Isle card on a copy of ISLE_TH, because importing isle.js would drag the
+       map module into the teaching layer. A mirrored constant is a constant that can rot. */
+    ok('the Isle card is gated on the real Isle unlock', D.ISLE_TH_HINT === ISLE_MOD.ISLE_TH,
+       'hint ' + D.ISLE_TH_HINT + ' vs ISLE_TH ' + ISLE_MOD.ISLE_TH);
+  }
+
   ok('the wall is deliberately plotless', ISO.PLOTS.wall === null);
   /* ...but plotless must not mean voiceless. Reported from play: "to build wall you can't see an
      arrow on the scene view, so I couldn't figure out what to build and went into list view."
