@@ -200,6 +200,26 @@ try {
     }
   }
 
+  /* ── the resource row has to stay on screen ──
+     Reported with a screenshot: it was gone. Declared position:sticky, but html,body{overflow-x:hidden}
+     made the root a scroll container and that breaks sticky on every descendant. Measured here rather
+     than reasoned about, because "is it still visible after scrolling" is not a thing CSS will tell
+     you and not a thing the stub DOM in verify-ui can answer. */
+  {
+    click('[data-act="tab"][data-key="hold"]');
+    await wait(400);
+    const before = d.querySelector('header')?.getBoundingClientRect();
+    w.scrollTo(0, 600);
+    await wait(500);
+    const after = d.querySelector('header')?.getBoundingClientRect();
+    const pinned = after && after.bottom > 0 && after.top < 200;
+    say('resource row'.padEnd(16) + ' at ' + (before ? Math.round(before.top) : '?')
+      + ' → after scrolling 600 it is at ' + (after ? Math.round(after.top) : 'GONE')
+      + (pinned ? '  STILL ON SCREEN' : '  SCROLLED AWAY'));
+    w.scrollTo(0, 0);
+    await wait(300);
+  }
+
   // ── and the page itself, which was never broken; here so a regression there would show
   {
     const over = d.documentElement.scrollHeight - w.innerHeight;

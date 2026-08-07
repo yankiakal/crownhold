@@ -92,7 +92,7 @@ console.log(report.trim().split('\n').map(l => '  ' + l).join('\n'));
    would make this a log rather than a check — which is the failure mode every harness in this repo
    has had at least once. */
 const badgeFaults = ['MISSING', 'OFF THE WALLS', 'NO TIME SHOWN', 'NO SHEET',
-                     'NO BUILDABLE BUILDING'].filter(t => report.includes(t));
+                     'NO BUILDABLE BUILDING', 'SCROLLED AWAY'].filter(t => report.includes(t));
 
 const lost = (report.match(/LOST/g) || []).length;
 const kept = (report.match(/KEPT/g) || []).length;

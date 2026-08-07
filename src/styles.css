@@ -90,7 +90,12 @@ header{
    never exceed the viewport, and long words may break. The overflow-x guard on the root is
    a backstop for anything added later, not the fix. */
 :root{--pad:clamp(.6rem, 3vw, 1rem)}
-html,body{overflow-x:hidden}
+/* clip, NOT hidden. `overflow-x:hidden` makes the root a scroll container, and a scroll container
+   silently breaks `position:sticky` on every descendant — which is why the resource row scrolled off
+   the top of a real phone while being declared sticky forty lines below. Reported with a screenshot:
+   the bar was simply gone. `clip` does the same guarding of sideways overflow without creating that
+   container, so the row pins as it was always meant to. */
+html,body{overflow-x:clip}
 .wrap{padding-left:var(--pad);padding-right:var(--pad)}
 
 /* The overlay's own rules are edited in place further down rather than overridden here.
