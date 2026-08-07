@@ -13,6 +13,17 @@
 // because a cosmetic system with no free path is a dead system for the ~95% who
 // never buy anything.
 
+/* ── whether anything is for sale at all ──
+   Compiled in (see vite.config.js). Off, the store shows only what can be EARNED, which is a
+   coherent product rather than a crippled one — every gameplay-relevant thing in this game is
+   earnable by design, so nothing is missing when the paid half is hidden. On, the priced items
+   appear and must be bought through the platform's own IAP.
+
+   This is not a soft-launch trick. Apple and Google both require digital goods to go through their
+   purchase flow; shipping priced cosmetics with a button that opens a message instead is a
+   rejection, and would be broken functionality even if it were allowed. */
+export const PURCHASES_ON = typeof __PURCHASES__ === 'boolean' ? __PURCHASES__ : false;
+
 export const COS_KINDS = {
   hold:  { name:'Hold skin',  blurb:'Repaints your whole hold. Everyone who scouts you sees it.' },
   sigil: { name:'Sigil',      blurb:'Flies beside your name, in chat and on every ladder.' },

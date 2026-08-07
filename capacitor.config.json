@@ -1,0 +1,21 @@
+{
+  "appId": "co.akalai.crownhold",
+  "appName": "Crownhold",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "backgroundColor": "#0d0b09",
+  "android": {
+    "backgroundColor": "#0d0b09",
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  },
+  "ios": {
+    "backgroundColor": "#0d0b09",
+    "contentInset": "never",
+    "limitsNavigationsToAppBoundDomains": true
+  },
+  "server": {
+    "androidScheme": "https",
+    "iosScheme": "https"
+  }
+}

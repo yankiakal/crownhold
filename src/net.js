@@ -15,11 +15,28 @@ try{ session = JSON.parse(localStorage.getItem(SESS_KEY) || 'null'); }catch(e){}
 // Served by the server itself? then it is the obvious default. Otherwise fall
 // back to a local server, which is where a solo developer's is going to be.
 export const DEFAULT_SERVER = 'http://localhost:8787';
-if(!server && typeof location !== 'undefined' && /^https?:$/.test(location.protocol)
+
+/* ── a packaged app has no origin worth inferring from ──
+   Under Capacitor the native shell serves the page from https://localhost, so location.origin is
+   the APP, not the server: inferring from it would have every installed copy politely asking itself
+   about alliances and getting a 404. The store build therefore compiles the API host in:
+       API_HOST=https://api.example.com npm run build
+   isNative is deliberately a capability check rather than a user-agent sniff — the shell defines
+   window.Capacitor, and nothing else does. */
+export const isNative = typeof window !== 'undefined'
+  && !!(window.Capacitor && (window.Capacitor.isNativePlatform
+        ? window.Capacitor.isNativePlatform() : window.Capacitor.isNative));
+const BUILT_IN_HOST = typeof __API_HOST__ === 'string' ? __API_HOST__ : '';
+
+if(!server && BUILT_IN_HOST) server = BUILT_IN_HOST;
+if(!server && !isNative && typeof location !== 'undefined' && /^https?:$/.test(location.protocol)
    && !/(github\.io|claude\.ai)$/.test(location.hostname)){
   server = location.origin;
 }
-if(!server) server = DEFAULT_SERVER;
+/* A native build with no host compiled in must NOT fall back to localhost:8787 — on a phone that is
+   the phone, so every request fails with a confusing network error instead of an honest "this build
+   has no server". Left null, isOnline() stays false and the game is simply solo, which is the truth. */
+if(!server && !isNative) server = DEFAULT_SERVER;
 
 export function isOnline(){ return online && !!session; }
 export function accountName(){ return session ? session.name : null; }
@@ -107,6 +124,18 @@ export async function resetHold(){
   const d = await post('/api/reset', { token: session.token });
   return d.state;
 }
+
+/* Delete the account outright, which is a different thing from razing the hold: reset keeps the
+   account and wipes its progress, this removes the account. The App Store requires the second to be
+   reachable in-app for any app that offers the first (Guideline 5.1.1(v)), and it is the right thing
+   to offer regardless — an account someone cannot leave is not really theirs.
+   The password is asked for again server-side, so it is passed through here. */
+export async function deleteAccount(password){
+  await post('/api/account/delete', { token: session.token, password });
+  logout();
+  return true;
+}
+export function accountKnown(){ return !!session; }
 
 let arena = null;
 export function arenaData(){ return arena; }

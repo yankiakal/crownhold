@@ -1866,6 +1866,49 @@ async function api(req, res, url){
     return send(res, 200, { hit, fallen, boss: bossFor(u.alliance, now), ...publicState(u) });
   }
 
+  /* ── deleting an account, which the App Store requires ──
+     Guideline 5.1.1(v): any app that lets you CREATE an account must let you delete it from inside
+     the app. Enforced since 2022 and a straight rejection without it. There was only /api/reset,
+     which wipes a hold's progress and keeps the account — the opposite of what is being asked for.
+
+     The password is required again. A token alone is enough to play; it is not enough to destroy
+     months of someone's work from a phone left unlocked on a table.
+
+     Everything that points AT this hold has to be cleaned up too, or the alliance panel renders a
+     member who no longer exists and a column flies home to nobody. */
+  if(path === '/api/account/delete'){
+    const pw = String(body.password || '');
+    const a2 = Buffer.from(hash(pw, u.salt), 'hex'), b2 = Buffer.from(u.hash, 'hex');
+    if(a2.length !== b2.length || !timingSafeEqual(a2, b2))
+      return send(res, 401, { error:'Wrong password — the hold is untouched.' });
+
+    const key = u.name.toLowerCase();
+    // leave the alliance, and hand it on if this was its leader
+    const al = db.alliances[u.alliance];
+    if(al){
+      al.members = al.members.filter(n => n.toLowerCase() !== key);
+      if(!al.members.length) delete db.alliances[u.alliance];
+      else if(al.leader.toLowerCase() === key) al.leader = al.members[0];
+    }
+    // drop any column in flight, in either direction
+    db.raids = (db.raids || []).filter(r => r.from !== u.name && r.to !== u.name);
+    // send home any garrison this hold was hosting, and stop hosting for others
+    for(const other of Object.values(db.users)){
+      if(other === u) continue;
+      /* `from` on the host's entries, `to` on the sender's — the keys the watch code actually
+         writes. The first pass here filtered on `owner` and `host`, which exist nowhere: it would
+         have run clean, reported success, and left a garrison belonging to a deleted hold standing
+         at someone's wall forever. */
+      if(Array.isArray(other.state.watch))
+        other.state.watch = other.state.watch.filter(g => !g || g.from !== u.name);
+      if(Array.isArray(other.state.watching))
+        other.state.watching = other.state.watching.filter(g => !g || g.to !== u.name);
+    }
+    delete db.users[key];
+    markDirty(); flush();
+    return send(res, 200, { deleted: true });
+  }
+
   if(path === '/api/reset'){
     u.state = freshState(now);
     u.state.seenIntro = true;

@@ -45,7 +45,7 @@ import { REGALIA, WARGEAR, GEAR_MAX, GEAR_PER_LEVEL, gearCost, gearTime,
 import { SKILLS, SKILL_SLOTS, SLOT_AT, slotsOpen, legalSkills } from './skills.js';
 import { NOVICE_PEACE_TH } from './raid.js';
 import { ISLE_W, ISLE_H, ISLE_TH, ISLE_SITES, RATION_COST, cellAt, charted } from './isle.js';
-import { COS_KINDS, CATALOGUE, HOLD_SKINS, SUBSCRIPTIONS, EARN, itemsOf, itemDef, isOwned } from './shop.js';
+import { COS_KINDS, CATALOGUE, HOLD_SKINS, SUBSCRIPTIONS, EARN, itemsOf, itemDef, isOwned, PURCHASES_ON } from './shop.js';
 import {
   STANCE_BEATS, CLASS_ANSWER, stanceMult, composition, answerBonusForClass,
   committedTroops, forcePower,
@@ -813,6 +813,25 @@ function renderSettings(S){
         ? ' style="color:var(--bad);border-color:var(--bad)"' : '')+'>'
     + (Date.now() < resetArmedUntil ? '⚠ Tap again to raze EVERYTHING' : 'Raze &amp; restart')
     + '</button></div>'
+    /* ── deleting the account, not just the progress ──
+       Two different things, and the App Store requires the second to exist in-app for any app that
+       offers account creation (Guideline 5.1.1(v)) — a hard rejection without it. Only shown when
+       signed in, because there is nothing to delete otherwise: a solo hold lives in this device's
+       own storage and "Raze & restart" above already erases it completely.
+       The password is asked for again. A token is enough to play; it is not enough to destroy
+       months of someone's work from a phone left face-up on a table. */
+    + (net.accountKnown()
+        ? '<div class="rule"></div>'
+          + '<p class="hmeta" style="margin-top:.4rem">Signed in as <b>'+esc(net.accountName()||'')+'</b>. '
+          + 'Deleting your account removes the hold, its history and its place in any alliance, '
+          + 'permanently, on the server. This cannot be undone and there is no way to recover it.</p>'
+          + '<div style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:center;margin-top:.4rem">'
+          + '<input id="delpw" type="password" placeholder="your password" autocomplete="current-password" '
+          + 'style="flex:1;min-width:9rem;max-width:14rem">'
+          + '<button data-act="deleteAccount" style="color:var(--bad);border-color:var(--bad)">Delete account</button>'
+          + '</div>'
+          + (delMsg ? '<p class="d-warn" style="margin-top:.4rem">'+esc(delMsg)+'</p>' : '')
+        : '')
     + '<button class="primary" data-act="settings" style="margin-top:.7rem">Back to the walls</button>'
     + '</div></div>';
 }
@@ -906,6 +925,11 @@ function renderStore(S){
   for(const [kind, meta] of Object.entries(COS_KINDS)){
     h += '<h3>'+meta.name+'s</h3><p class="d-row" style="opacity:.75">'+meta.blurb+'</p>';
     for(const [id, def] of itemsOf(kind)){
+      /* Priced items are hidden entirely when purchases are off, rather than shown greyed out. A
+         disabled Buy button is a worse experience than no Buy button, and to a store reviewer it is
+         digital goods offered outside their purchase flow. Earnable cosmetics carry the store on
+         their own — which is only true because everything here is earnable by design. */
+      if(def.price && !PURCHASES_ON && !def.earn) continue;
       const owned = isOwned(S, kind, id, ch, ml);
       const worn = (S.cos && S.cos[kind]) === id;
       const earn = def.earn ? EARN[def.earn] : null;
@@ -922,14 +946,20 @@ function renderStore(S){
     }
   }
 
-  h += '<h3>Subscriptions</h3>';
-  for(const sub of SUBSCRIPTIONS){
-    h += '<div class="chron"><h3>'+sub.name+' — $'+sub.price.toFixed(2)+' / '+sub.per+'</h3>'
-      + '<ul>'+sub.lines.map(l => '<li>'+l+'</li>').join('')+'</ul></div>';
+  if(PURCHASES_ON){
+    h += '<h3>Subscriptions</h3>';
+    for(const sub of SUBSCRIPTIONS){
+      h += '<div class="chron"><h3>'+sub.name+' — $'+sub.price.toFixed(2)+' / '+sub.per+'</h3>'
+        + '<ul>'+sub.lines.map(l => '<li>'+l+'</li>').join('')+'</ul></div>';
+    }
+    h += '<p class="d-warn" style="margin-top:.6rem">Checkout is not connected. Prices and items are final, '
+      + 'but taking money needs the platform&#39;s own purchase flow wired up — so <b>Buy</b> explains what '
+      + 'is missing rather than pretending to charge you.</p>';
+  } else {
+    h += '<p class="hmeta" style="margin-top:.6rem">Everything here is <b>earned</b>. Nothing in this '
+      + 'game is for sale that affects a battle, and nothing at all is for sale in this build.</p>';
   }
-  h += '<p class="d-warn" style="margin-top:.6rem">Checkout is not connected. Prices and items are final, '
-    + 'but taking money needs a payment provider (Stripe, or the app stores) wired to a real account — '
-    + 'so <b>Buy</b> explains what is missing rather than pretending to charge you.</p>'
+  h += ''
     + '<button class="primary" data-act="storeClose" style="margin-top:.6rem">Close</button>'
     + '</div></div>';
   return h;
@@ -1811,6 +1841,9 @@ let mapCentred = false, sceneCentred = false;
 /* set when the branch changes, cleared once the tab has been scrolled into view */
 let branchScrollWanted = false;
 let resetArmedUntil = 0; // two-tap raze confirmation window
+/* Whatever the server said about the last delete attempt. Module-local like the other transient
+   panel state, so it survives the 4Hz re-render and clears when Settings closes. */
+let delMsg = '';
 let arenaStance = 'balanced', arenaFrac = 0.5;
 let listView = false, sceneMounted = false;
 const sceneCanvas = document.createElement('canvas');
@@ -3170,6 +3203,23 @@ const VIEW_ACTIONS = {
     }else{
       resetArmedUntil = now + 5000;
     }
+  },
+  /* Reads the password out of the field rather than holding it in module state — it should exist
+     for exactly as long as the request does. A wrong one comes back as a message beside the button;
+     a right one signs out and drops to a fresh local hold, because there is no account to return to. */
+  deleteAccount: () => {
+    const box = document.getElementById('delpw');
+    const pw = box ? box.value : '';
+    if(!pw){ delMsg = 'Type your password to confirm.'; render(); return; }
+    delMsg = 'Deleting…'; render();
+    net.deleteAccount(pw).then(() => {
+      const now = Date.now();
+      delMsg = '';
+      sound.forget();
+      store.s = freshState(now);
+      save(store.s, now);
+      render();
+    }).catch(e => { delMsg = e.message || 'That did not work.'; render(); });
   },
 };
 

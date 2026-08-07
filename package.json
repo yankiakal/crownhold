@@ -20,9 +20,17 @@
     "screens": "node scripts/screens.js",
     "sounds": "node scripts/emit-sounds.js",
     "scroll": "node scripts/scroll.js",
-    "ally": "node scripts/ally-lab.js"
+    "ally": "node scripts/ally-lab.js",
+    "appicons": "node scripts/emit-appicons.js",
+    "cap:sync": "npm run build && npx cap sync",
+    "app:ios": "npm run build && npx cap sync ios && npx cap open ios",
+    "app:android": "npm run build && npx cap sync android && npx cap open android"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/ios": "^8.5.0",
     "vite": "^6.0.0",
     "vite-plugin-singlefile": "^2.0.0"
   },

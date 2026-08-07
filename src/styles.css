@@ -51,7 +51,10 @@ button.valor-btn{color:var(--gold);border-color:var(--gold-deep);background:#241
 /* header banner */
 header{
   display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap;
-  padding:.8rem 0 .7rem;
+  /* viewport-fit=cover hands us the WHOLE screen, notch included — which is what we want for the
+     background and emphatically not what we want for the resource row. Without the inset the food
+     and wood counters sit under the status bar on every phone with a cutout. */
+  padding:calc(.8rem + env(safe-area-inset-top)) 0 .7rem;
   border-bottom:1px solid var(--edge);
 }
 .brand{display:flex;flex-direction:column}
@@ -785,8 +788,10 @@ footer button{font-size:.68rem;padding:.25rem .6rem}
   }
   .tabbar button span{font-size:1.15rem;line-height:1}
   .tabbar button.on{color:var(--gold);box-shadow:inset 0 2px 0 var(--gold)}
-  /* the bar is fixed, so the page needs room to scroll clear of it */
-  .wrap{padding-bottom:4.5rem}
+  /* the bar is fixed, so the page needs room to scroll clear of it — and the bar is itself taller
+     than 4.5rem by the height of the home strip, so the same inset has to be added here or the last
+     row of every panel hides behind it. */
+  .wrap{padding-bottom:calc(4.5rem + env(safe-area-inset-bottom))}
   footer{padding-bottom:1rem}
 }
 
@@ -863,7 +868,7 @@ details.temper .tname{font-size:.92rem;color:var(--ink)}
   footer{display:none}          /* ninety pixels of permanent row for once-a-session buttons */
   .dock{
     display:flex;flex-direction:column;align-items:center;gap:.4rem;
-    position:fixed;right:.5rem;top:50%;transform:translateY(-50%);z-index:70;
+    position:fixed;right:calc(.5rem + env(safe-area-inset-right));top:50%;transform:translateY(-50%);z-index:70;
   }
   .dock button{
     width:2.9rem;height:2.9rem;padding:0;border-radius:50%;   /* comfortably past 44px */
@@ -903,3 +908,30 @@ details.temper .tname{font-size:.92rem;color:var(--ink)}
   /* the tab bar was already 3rem; make it unambiguous */
   .tabbar button{min-height:3.1rem}
 }
+
+
+/* ── it has to stop feeling like a web page ──
+   Asked for: "I want to be able to play this on phones — the game won't be for browsers." Packaged
+   with Capacitor the code is unchanged, but four browser affordances give the game away instantly
+   and none of them belong in an app: a long press offering to copy the Town Hall's name, a grey
+   flash on every tap, text that turns blue and selectable mid-drag, and the whole page rubber-
+   banding past its own edges when you flick the frontier.
+
+   Applied globally rather than only under a native class, because they are the right behaviour for
+   a touch game in a mobile browser too. Inputs are exempted deliberately — sign-in has to be
+   selectable, and taking that away is how a keyboard becomes unusable. */
+html, body{
+  overscroll-behavior:none;                 /* no rubber-band past the ends of the page */
+}
+body{
+  -webkit-tap-highlight-color:transparent;  /* no grey flash on tap */
+  -webkit-touch-callout:none;               /* no "Copy / Look Up" on long press */
+  user-select:none;
+}
+input, textarea, [contenteditable]{
+  user-select:text;                         /* except where typing happens */
+  -webkit-user-select:text;
+}
+/* Canvas drags are the game's own gesture — the map and the hold scene must not scroll the page
+   underneath them or pan-and-tap fight each other. */
+canvas{ touch-action:none; }

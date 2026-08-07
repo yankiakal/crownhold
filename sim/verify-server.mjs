@@ -417,6 +417,54 @@ try {
     }
   }
 
+  /* ── deleting an account, which the App Store requires ──
+     Guideline 5.1.1(v): an app that lets you create an account must let you delete it in-app.
+     Enforced since 2022, and a straight rejection without it — so this is a shipping blocker, not a
+     nicety. Only /api/reset existed, which wipes progress and KEEPS the account.
+
+     The dangling-reference assertions are the ones that matter. A delete that removes the row and
+     leaves a garrison standing at someone else's wall, or a member in an alliance roster, produces a
+     panel rendering a hold that does not exist — and my first version filtered on field names
+     (`owner`, `host`) that appear nowhere in the watch code, so it ran clean and did nothing. */
+  console.log('\n── an account can be deleted, and takes its references with it ──');
+  {
+    const G = await post('/api/register', { name:'Gone', password:'longenoughpassword' });
+    const tg = G.body.token;
+    await post('/api/debug/embassy', { token: tg });
+    await post('/api/debug/kit', { token: tg, strong: true, spearmen: 300 });
+    await post('/api/alliance/join', { token: tg, tag:'LWCH' });
+
+    // stand a garrison at someone else's wall, so there is a real reference to clean up
+    const posted = await post('/api/watch/send', { token: tg, to:'Aldis', troops:{ spearman: 50 } });
+    const hostBefore = (await post('/api/state', { token: ta })).body.state;
+    const hadWatch = (hostBefore.watch || []).some(g => g && g.from === 'Gone');
+    ok('a garrison from the doomed hold is standing at an ally\'s wall', hadWatch,
+       posted.status === 200 ? (hostBefore.watch || []).length + ' entries' : 'send failed: ' + (posted.body?.error || posted.status));
+
+    ok('deletion is refused with the wrong password',
+       (await post('/api/account/delete', { token: tg, password:'notthepassword' })).status === 401);
+
+    const del = await post('/api/account/delete', { token: tg, password:'longenoughpassword' });
+    ok('and accepted with the right one', del.status === 200 && del.body.deleted === true,
+       del.body?.error || 'status ' + del.status);
+    ok('the token stops working immediately',
+       (await post('/api/state', { token: tg })).status === 401);
+    ok('and the name can be registered again',
+       (await post('/api/register', { name:'Gone', password:'longenoughpassword' })).status === 200);
+
+    const hostAfter = (await post('/api/state', { token: ta })).body.state;
+    ok('the garrison it had posted is gone from the host',
+       !(hostAfter.watch || []).some(g => g && g.from === 'Gone'),
+       (hostAfter.watch || []).length + ' entries left');
+    const roster = (await post('/api/alliance/info', { token: ta })).body.alliance;
+    ok('and it is out of the alliance roster',
+       !!roster && !roster.members.some(m => m.name === 'Gone'),
+       roster ? roster.members.map(m => m.name).join(', ') : 'no alliance');
+    // the freshly re-registered hold must not inherit the old one's alliance
+    ok('a reused name starts with no alliance',
+       (await post('/api/alliance/info', { token: (await post('/api/login', { name:'Gone', password:'longenoughpassword' })).body.token })).body.alliance === null);
+  }
+
   /* ── alliance Help, which had no test at all ──
      Asked for directly: "I need to test alliance help too."
 

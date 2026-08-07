@@ -12,7 +12,12 @@ import * as net from './net.js';
    and the player stays on the old build until they happen to close every tab. Reported from a real
    browser as "refreshing opens the old version". One reload, guarded so it can only ever happen
    once per page, is the whole fix. */
-if('serviceWorker' in navigator && !location.hostname.endsWith('claude.ai')){
+/* Not in the packaged app. A service worker exists to beat a BROWSER's cache, and there is no
+   browser cache to beat when the bundle ships inside the binary — the store is what delivers an
+   update. Worse, registering it there arms the controllerchange reload below inside a shell that
+   already controls its own navigation: the probe harness hung on exactly that loop, and a reload
+   loop in a shipped app is not something a player can escape by closing a tab. */
+if('serviceWorker' in navigator && !net.isNative && !location.hostname.endsWith('claude.ai')){
   navigator.serviceWorker.register('sw.js').catch(()=>{});
   let reloaded = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {

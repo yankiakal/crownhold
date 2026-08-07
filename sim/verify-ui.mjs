@@ -78,6 +78,11 @@ appendFileSync(join(dir, 'src', 'ui.js'),
   '\nexport function _pick(ids, want){ marchParty = ids.slice(); marchWant = want; }' +
   // the settings sheet is behind a footer tap, and its open flag is module-local
   '\nexport function _openSettings(){ settingsOpen = true; }\n');
+/* Same seam for net.js: the session is module-local, and the App Store's account-deletion control
+   only exists when signed in — so without a way to fake a session there is nothing to assert, and
+   the requirement would be untested until a reviewer found it missing. */
+appendFileSync(join(dir, 'src', 'net.js'),
+  '\nexport function _fakeSession(name){ session = { name, token:\'test\' }; online = true; }\n');
 const from = f => import(pathToFileURL(join(dir, 'src', f)).href);
 
 try {
@@ -379,6 +384,32 @@ try {
        notRed.join(' | ') || 'all ' + Object.keys(D.DECREES).length + ' priced in red');
     ok('and no downside is smuggled into the green one', inGreen.length === 0,
        inGreen.join(', ') || 'green carries the gift only');
+  }
+
+  /* ── the App Store's account-deletion requirement ──
+     Guideline 5.1.1(v): an app offering account creation must offer deletion IN-APP. A hard
+     rejection without it, and invisible until a reviewer looks — which makes it exactly the kind of
+     thing a test should hold in place. Asserted on the rendered sheet, not on the existence of the
+     endpoint, because a working endpoint no button reaches satisfies nobody. */
+  {
+    const NET = await from('net.js');
+    UI._openSettings();
+    ST.store.s = s;
+    UI.render();
+    const anon = (nodes.fx && nodes.fx.innerHTML) || '';
+    ok('a solo hold is offered no account deletion', !/data-act="deleteAccount"/.test(anon),
+       'nothing to delete when there is no account');
+
+    NET._fakeSession('Aldis');
+    UI._openSettings();
+    UI.render();
+    const signedIn = (nodes.fx && nodes.fx.innerHTML) || '';
+    ok('a signed-in hold can delete its account from inside the app',
+       /data-act="deleteAccount"/.test(signedIn));
+    ok('and is asked for its password first', /id="delpw"/.test(signedIn));
+    ok('and warned that it cannot be undone', /cannot be undone/i.test(signedIn));
+    ok('the sheet still names the account being deleted', /Aldis/.test(signedIn));
+    NET.logout();
   }
 
   /* ── one quality ladder, and every colour on it earns its keep ──
