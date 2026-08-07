@@ -526,7 +526,13 @@ console.log('\n── a pre-skills save is inert, not broken ──');
     /* Pure columns are no longer expected to be near-equal — cover means a column with no
        line SHOULD be worse, which is the whole point of interdependence. What load buys is
        that no type is ahead on power per unit of capacity BEFORE cover is applied; the
-       worst-case floor test further down is what guards the meta. */
+       worst-case floor test further down is what guards the meta.
+
+       THIS MEASURES THE INHERENT LADDER, with no research applied, and that is deliberate.
+       Per-line mastery raises one line's tierPower by up to 30%, so a hold with a single
+       mastery maxed reads ×1.43 or ×1.56 here — but that compares an invested line against
+       uninvested ones, which is progression rather than imbalance. The comparison that
+       matters is between two players who have each invested, and it has its own test below. */
     const perLoad = Object.keys(D.TROOPS).map(k => ({
       k, per: L.tierPower(s2, k) / (D.LOAD[k] || 1),
     })).filter(x => x.k !== 'spearman');
@@ -1700,6 +1706,69 @@ console.log('\n── a save from before the Electrum rename carries over ──
   }
   ok('no rule outside the migration still names the old keys', stale.length === 0,
      stale.join(', ') || 'clean');
+}
+
+console.log('\n── per-line mastery must not pay for specialising ──');
+{
+  /* "Do all the troop masteries cost the same? Else people could focus on one type." They do NOT
+     cost the same — each is priced at fourteen times its own troop's cost, so mastering
+     Battlemages runs 1.64M against Spearmen's 478K. The question is whether that, or the bonus
+     itself, hands an edge to whoever picks the right line.
+
+     The comparison that answers it is between two players who have each invested — not between an
+     invested line and an untouched one, which is just progression. Each specialist gets the same
+     +30% on their own line, so it cancels in the ratio, and the counter triangle decides exactly
+     as it did before anyone studied anything. Measured rather than argued: the same matchups come
+     out identical with both specialists maxed and with neither researched at all. */
+  const LOADB = 400;
+  const mk = res => {
+    const s = hold();
+    s.b.townhall = 25; s.b.wall = 0; s.b.academy = 30; s.b.library = 30;
+    s.tier = { spearman:5, archer:5, knight:5, ballista:5 };
+    s.research = res; s.now = Date.now();
+    return s;
+  };
+  const monoPower = (k, res) => {
+    const s = mk(res);
+    const n = Math.floor(LOADB / (D.LOAD[k] || 1));
+    s.t = { spearman:0, archer:0, knight:0, ballista:0, [k]: n };
+    const b = L.armyBreakdown(s);
+    return b.base * b.mult;
+  };
+  const shares = k => ({ [k]: 1 });
+  const outcome = (pred, prey, res) => {
+    const a = monoPower(pred, res(pred)), b = monoPower(prey, res(prey));
+    return a * (1 + L.matchupEdge(shares(pred), shares(prey))) / b;
+  };
+  const none = () => ({});
+  const own = k => ({ ['line_' + k]: R.LINE_MAX });
+
+  const drift = [];
+  for(const [pred, prey] of [['spearman','knight'], ['knight','archer'], ['archer','spearman']]){
+    const bare = outcome(pred, prey, none);
+    const both = outcome(pred, prey, own);
+    if(Math.abs(both - bare) > 0.001)
+      drift.push(pred + '>' + prey + ' ' + bare.toFixed(3) + '→' + both.toFixed(3));
+  }
+  ok('two equally-invested specialists meet exactly as they would unresearched',
+     drift.length === 0,
+     drift.join('; ') || 'all three triangle matchups unchanged to within 0.1%');
+
+  /* And the prices, while different, track what the line itself costs — so the mastery is dear in
+     proportion to the army it improves rather than to the good it does. */
+  const bill = k => {
+    const s = mk({}); const key = 'line_' + k; let t = 0;
+    for(let l = 0; l < R.RESEARCH[key].max; l++){
+      s.research = { [key]: l };
+      t += Object.values(R.techCost(s, key)).reduce((a, b) => a + b, 0);
+    }
+    return t;
+  };
+  const ratios = Object.keys(D.TROOPS).map(k =>
+    bill(k) / Object.values(D.TROOPS[k].cost).reduce((a, b) => a + b, 0));
+  ok('every mastery is the same multiple of its own troop\'s price',
+     Math.max(...ratios) / Math.min(...ratios) < 1.01,
+     ratios.map(r => Math.round(r)).join(', ') + '× the troop cost');
 }
 
 console.log('\n── a study you can see is a study you can pay for ──');
