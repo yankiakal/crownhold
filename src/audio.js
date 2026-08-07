@@ -1,4 +1,7 @@
-// Every sound in Crownhold is synthesised at runtime. There are no audio files.
+// Every sound in Crownhold is synthesised at runtime, and ships with no audio files — but there
+// is now a seam for real ones: see loadSfx() near the bottom. A recorded cue replaces its
+// synthesised twin the moment a file appears under sfx/, one at a time, in any order. Synthesis
+// remains the fallback for everything that has none, which today is all thirteen.
 //
 // Same reasoning as the renderer, and the same reason the sprite pipeline shipped with
 // no art in it: an asset pipeline blocks on sourcing, licensing and file size, and a
@@ -70,6 +73,9 @@ export function unlock(){
     master.connect(ctx.destination);
 
     if(prefs.amb) startBed();
+    /* Look for recorded cues once, on the same gesture that built the context. Nothing waits on
+       this: every cue is synthesised until a file has decoded, and most will never have one. */
+    loadSfx('./sfx/');
   } catch { ctx = null; }
 }
 
@@ -88,10 +94,10 @@ export function unlock(){
    renderer gives out well below what a real context handles, and the failure is indistinguishable
    from a silent cue — stuck at "rendering…", no exception, nothing in the console.
 
-   Shipping reverb would mean shipping it unmeasured, in the one layer of this project that exists
-   because it IS measured. So the cues are dry, and the three things that could be verified were
-   done instead: variation, unison and stereo placement. If space is wanted later the honest route
-   is a test on a real device, not this harness. */
+   Detuned unison went the same way and for the same reason: it sounded better and tripled the
+   voices, and past about six the renders stopped finishing. So the cues are dry and single-voiced,
+   and the two things that could be verified were done instead — variation and stereo placement.
+   If space is wanted later the honest route is a test on a real device, not this harness. */
 
 /* ── the synth ── */
 
@@ -141,8 +147,9 @@ function tone(f, dur, o = {}){
   const t0 = ctx.currentTime + (o.at || 0) + Math.random() * 0.006;
   const freq = vary(f, o.jitter == null ? 0.012 : o.jitter);
   /* Unison: two or three oscillators a few cents apart, spread across the stereo field. One bare
-     oscillator is a test tone; three detuned ones are an instrument, and the beating between them
-     is most of what "body" means. Percussion passes voices:1 and stays a single source. */
+     oscillator is a test tone and detuned ones are an instrument — but the offline harness cannot
+     render past about six voices, so the default is 1 and this is here for the day the cues are
+     recorded instead. */
   const n = o.voices == null ? 1 : o.voices;
   const peak = (o.gain == null ? 0.12 : o.gain) / Math.sqrt(n);
   for(let i = 0; i < n; i++){
@@ -246,6 +253,55 @@ const GAP = { tap: 45, coin: 90, drill: 140 };
 const DEFAULT_GAP = 300;
 const last = {};
 
+/* ── recorded audio, when there is any ──
+   Synthesis gets you variation, placement and a game that ships today. It does not get you what
+   Kingshot has, because that is produced audio — foley and orchestral stings recorded by people —
+   and no arrangement of oscillators reaches it. That is a sourcing problem, not a code one, and
+   the same one the sprite pipeline has been waiting on.
+
+   So this is the seam, built exactly like `loadArt`: drop an Opus or mp3 into `sfx/` and name it
+   in `sfx/manifest.json`, and that cue stops being synthesised. MISSING FILES ARE THE NORMAL CASE
+   — a missing manifest, a 404, a file that will not decode, and a host with no `sfx/` directory
+   all resolve to "no sample", which falls through to the synth that is already there. So the
+   thirteen cues can be replaced ONE AT A TIME, in any order, and the game is never broken while
+   you are half way through. `npm run sounds` prints the spec to hand a sound designer. */
+const smp = { base: null, buffers: {}, loaded: 0 };
+
+export function sampleCount(){ return smp.loaded; }
+
+export function loadSfx(base, onReady){
+  if(typeof fetch !== 'function' || !ctx) return;
+  smp.base = base || './sfx/';
+  fetch(smp.base + 'manifest.json', { cache:'no-cache' })
+    .then(r => r.ok ? r.json() : null)
+    .then(m => {
+      if(!m || typeof m !== 'object') return;
+      const names = Object.keys(m).filter(k => CUES[k] && typeof m[k] === 'string');
+      return Promise.all(names.map(k =>
+        fetch(smp.base + m[k])
+          .then(r => r.ok ? r.arrayBuffer() : null)
+          .then(b => b && ctx.decodeAudioData(b))
+          .then(buffer => { if(buffer){ smp.buffers[k] = buffer; smp.loaded++; } })
+          .catch(() => {})));            // one bad file must not cost the other twelve
+    })
+    .then(() => { if(smp.loaded && onReady) onReady(smp.loaded); })
+    .catch(() => {});                    // no sound files is not an error
+}
+
+/* Play a recorded cue, panned and varied like a synthesised one — a sample fired identically
+   every time has exactly the sameness problem the synth just had fixed. */
+function sample(name){
+  const b = smp.buffers[name];
+  if(!b) return false;
+  const src = ctx.createBufferSource();
+  src.buffer = b;
+  src.playbackRate.value = vary(1, 0.03);    // a few cents, so repeats are not photocopies
+  env(src, ctx.currentTime, b.duration + 0.05, 0.9, 0.001,
+      { pan: (Math.random() * 2 - 1) * 0.12 });
+  src.start(ctx.currentTime);
+  return true;
+}
+
 export function cue(name){
   if(!prefs.sfx || !ctx) return false;
   const c = CUES[name];
@@ -253,6 +309,8 @@ export function cue(name){
   const t = ctx.currentTime * 1000;
   if(last[name] != null && t - last[name] < (GAP[name] || DEFAULT_GAP)) return false;
   last[name] = t;
+  // a recorded cue if one has been dropped in for this name, the synth otherwise
+  try { if(sample(name)) return true; } catch {}
   try { c(); return true; } catch { return false; }
 }
 
