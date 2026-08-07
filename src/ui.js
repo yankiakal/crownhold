@@ -3212,16 +3212,38 @@ function paintSceneBadges(S, slot){
     want.push({ key: b.key, at, txt: left > 0 ? ftime(left) : 'done',
                 done: left <= 0, name: BUILDINGS[b.key] ? BUILDINGS[b.key].name : b.key });
   }
-  /* Soldiers standing ready at a yard. This is the badge the whole collect gesture hangs off: the
-     batch is finished, it is waiting, and the walls say so without a tab switch. A drilling batch
-     gets no badge — the yard would wear one permanently and the walls would fill with furniture. */
-  for(const k of readyTroops(S)){
+  /* ── the yards, drilling and done ──
+     Asked for: "we need a timer on the building — when it's training we need a timer." Quite right,
+     and my reason for leaving it out was wrong: I said a drilling yard would wear a badge
+     permanently, but a batch is minutes and the four yards are rarely all busy. What a countdown
+     actually does is answer "is anything happening here" without a tap, which is the entire job of
+     drawing a hold you can look at.
+
+     Ready and drilling are different badges on purpose. A countdown is information; a ✓ is a thing
+     to press. */
+  for(const k of Object.keys(TROOPS)){
+    const q = S.tq && S.tq[k];
+    if(!q) continue;
     const yard = TROOPS[k].at;
     const at = plotScreen(yard);
     if(!at) continue;
-    want.push({ key: 'ready-' + k, act: 'collect', actKey: k, at,
-                txt: fmt((S.tq[k] || {}).count || 0) + ' ready', done: true,
-                name: TROOPS[k].plural + ' ready at the ' + BUILDINGS[yard].name });
+    if(q.done){
+      want.push({ key: 'ready-' + k, plot: yard, act: 'collect', actKey: k, at,
+                  txt: fmt(q.count) + ' ready', done: true,
+                  name: TROOPS[k].plural + ' ready at the ' + BUILDINGS[yard].name });
+    } else {
+      want.push({ key: 'drill-' + k, plot: yard, at,
+                  txt: ftime(Math.max(0, q.end - now)), done: false, drill: true,
+                  name: fmt(q.count) + ' ' + TROOPS[k].plural + ' drilling' });
+    }
+  }
+  /* Two badges can want the same roof — a yard being upgraded WHILE it drills — and stacked at the
+     same offset they would sit exactly on top of each other, which reads as one badge with the wrong
+     number on it. Each after the first steps up a row. */
+  const perPlot = {};
+  for(const w of want){
+    const p = w.plot || w.key;
+    w.tier = perPlot[p] = (perPlot[p] == null ? 0 : perPlot[p] + 1);
   }
   const box = slot.getBoundingClientRect();
   /* No layout, no badges. While the scene is off-screen or unmeasured the slot reports 0×0, and
@@ -3237,10 +3259,12 @@ function paintSceneBadges(S, slot){
     layer.dataset.sig = sig;
     layer.innerHTML = want.map(w => w.act === 'collect'
       ? '<button class="sbadge done ready" data-act="collect" data-key="'+w.actKey+'"'
-        + ' data-badge="'+w.key+'" aria-label="'+esc(w.name)+'" style="left:0;top:0"><b></b></button>'
-      : '<button class="sbadge'+(w.done ? ' done' : '')+'" data-act="detail" data-dtype="building"'
-        + ' data-key="'+w.key+'" data-badge="'+w.key+'"'
-        + ' aria-label="'+esc(w.name)+'" style="left:0;top:0"><b></b></button>').join('');
+        + ' data-badge="'+w.key+'" aria-label="'+esc(w.name)+'"'
+        + ' style="left:0;top:0;--tier:'+w.tier+'"><b></b></button>'
+      : '<button class="sbadge'+(w.done ? ' done' : '')+(w.drill ? ' drill' : '')
+        + '" data-act="detail" data-dtype="building"'
+        + ' data-key="'+(w.plot || w.key)+'" data-badge="'+w.key+'"'
+        + ' aria-label="'+esc(w.name)+'" style="left:0;top:0;--tier:'+w.tier+'"><b></b></button>').join('');
   }
   for(const w of want){
     const el = layer.querySelector('[data-badge="'+w.key+'"]');

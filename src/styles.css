@@ -973,7 +973,10 @@ canvas{ touch-action:none; }
 #scene-slot{position:relative}
 .scenebadges{position:absolute;inset:0;pointer-events:none;z-index:4}
 .sbadge{
-  position:absolute;transform:translate(-50%,-140%);
+  position:absolute;
+  /* --tier stacks badges that share a roof: a yard being upgraded while it drills wants two, and at
+     one offset they would land on top of each other and read as a single wrong number. */
+  transform:translate(-50%, calc(-140% - var(--tier, 0) * 1.95rem));
   pointer-events:auto;
   display:flex;align-items:center;gap:.25rem;
   min-height:1.6rem;padding:.15rem .45rem;
@@ -986,6 +989,10 @@ canvas{ touch-action:none; }
 }
 .sbadge::before{content:'\1F528';font-size:.7rem}   /* 🔨 — the OS's own glyph, drawn at runtime */
 .sbadge.done{border-color:var(--good);color:#dff0cc}
+/* a drilling yard: information, not an invitation — the same shape, quieter, with its own glyph */
+.sbadge.drill{border-color:var(--edge);color:var(--ink)}
+.sbadge.drill::before{content:'\2694\FE0F'}
+.sbadge.drill::after{border-top-color:var(--edge)}
 .sbadge.done::before{content:'\2713';color:var(--good)}
 /* the little stem, so it reads as attached to the building rather than floating near it */
 .sbadge::after{

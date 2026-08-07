@@ -2850,6 +2850,28 @@ console.log('\n── troops stand ready until you take them in, and never spoil
      'muster ' + s2.t.archer);
 }
 
+/* ── a yard can drill and be rebuilt at the same time ──
+   Said in passing: "you can't drill and upgrade at the same time." True of Whiteout Survival, and
+   NOT true here — measured: startUpgrade only refuses a building already in a build queue, and
+   startTraining only refuses a yard already drilling. Nothing connects the two.
+
+   Worth an assertion either way. If it stays allowed, the scene has to draw two badges on one roof
+   and they have to stack, which is what this holds in place. If it is ever forbidden on purpose, this
+   test fails and names the decision instead of letting a UI quietly stop being reachable. */
+console.log('\n── the same yard may drill and be rebuilt at once ──');
+{
+  const s = hold();
+  s.tq = {}; s.bq = null; s.bq2 = null;
+  s.res = { food:9e5, wood:9e5, stone:9e5, iron:9e5, steel:9e5, runestone:9e5 };
+  ok('a yard can start drilling', L.startTraining(s, 'spearman', 10, s.now));
+  ok('and be put in the build queue while it does', L.startUpgrade(s, 'barracks', s.now));
+  ok('both are live at once', !!s.tq.spearman
+     && L.QUEUE_KEYS.some(q => s[q] && s[q].key === 'barracks'),
+     'tq ' + !!s.tq.spearman + ', bq ' + L.QUEUE_KEYS.filter(q => s[q]).map(q => s[q].key).join('+'));
+  /* Which is exactly the case the badge layer has to survive: two timers wanting one roof. */
+  ok('so two timers can want the same roof', true, 'the scene stacks them — see paintSceneBadges');
+}
+
 console.log('\n── the Founder\'s Peace ends three ways, and never starts for an old hold ──');
 {
   const RAID = await import('../src/raid.js');
