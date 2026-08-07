@@ -26,7 +26,7 @@ import { SEASON_MS as DEFAULT_SEASON_MS, SEASON_EPOCH, SEASON_ARCS,
 import { tickWorld, fitColumn, marchPower, marchSpeed, bestLeaders } from '../src/world.js';
 import { freshState, applyOffline, migrate } from '../src/state.js';
 import { applyAction, isGameAction } from '../src/actions.js';
-import { resolveRaid, inBracket, raidShielded, defenceOf, unlootable,
+import { resolveRaid, inBracket, raidShielded, shieldReason, novicePeaceLeft, defenceOf, unlootable,
          RAID_TRAVEL_MS, RAID_COOLDOWN_MS, RAID_GRACE_MS, LOOTABLE } from '../src/raid.js';
 import { TASKS as MUSTER_TASKS, WEIGHTS as MUSTER_WEIGHTS, weightOf, taskNeed, rollTask,
          taskProgress, musterPeriod, musterEndsIn, musterReward, divisionOf,
@@ -1339,9 +1339,13 @@ async function api(req, res, url){
       .sort((a, b) => b.power - a.power)
       .slice(0, 20);
     return send(res, 200, { raid: {
+      /* peaceIn is the player's OWN Founder's Peace. The targets list needed no change at all —
+         it already reports `shielded: raidShielded(...)`, so novices became untargetable the moment
+         the peace landed inside that one function. */
       me: { power: mine, cooldownIn: Math.max(0, (u.state.raidReady || 0) - now),
             graceIn: Math.max(0, (u.state.graceUntil || 0) - now),
-            shieldIn: Math.max(0, (u.state.shieldUntil || 0) - now) },
+            shieldIn: Math.max(0, (u.state.shieldUntil || 0) - now),
+            peaceIn: novicePeaceLeft(u.state, now) },
       targets,
       outgoing: (db.raids || []).filter(r => r.from === u.name).map(r => ({
         to: r.to, resolved: !!r.resolved,
@@ -1370,7 +1374,7 @@ async function api(req, res, url){
       return send(res, 400, { error:'That hold is in another reach.' });
     advance(target, now);
     if(raidShielded(target.state, now))
-      return send(res, 400, { error:'A Writ of Peace covers that hold.' });
+      return send(res, 400, { error: shieldReason(target.state, now) || 'A Writ of Peace covers that hold.' });
     const mine = defenceOf(u.state).total, theirs = defenceOf(target.state).total;
     if(!inBracket(mine, theirs)) return send(res, 400, { error:'That hold is outside your bracket.' });
     if((db.raids || []).some(r => r.from === u.name && !r.resolved))
@@ -1379,6 +1383,10 @@ async function api(req, res, url){
     const party = Array.isArray(body.heroes) ? body.heroes.filter(Boolean).slice(0, 3) : [];
     const fit = fitColumn(u.state, body.troops || {}, party);
     if(!fit.total) return send(res, 400, { error:'Choose troops to send.' });
+    /* Sending a column spends your own Founder's Peace, permanently. AFTER every refusal above, so
+       a raid that was rejected for being out of bracket or already in the field does not cost a
+       novice their protection — losing it to a request the server declined would be indefensible. */
+    u.state.peaceBroken = true;
     for(const [k, n] of Object.entries(fit.troops)) u.state.t[k] -= n;
 
     /* Base and multiplier are fixed at despatch, as the Watch's are, and for the same
@@ -1445,7 +1453,11 @@ async function api(req, res, url){
   if(ALLOW_DEBUG && path === '/api/debug/kit'){
     advance(u, now);
     const st = u.state;
-    st.b.townhall = body.strong ? 20 : 8;
+    /* `townhall` overrides the pair, because some rules key off the Town Hall and not off power —
+       the Founder's Peace ends at Town Hall 10, so a test that wants a STRONG hold which is still a
+       novice cannot accept the strong kit's 20. Without this, kitting the novice for the bracket
+       ended the very protection under test and the assertion passed against nothing. */
+    st.b.townhall = Number(body.townhall) || (body.strong ? 20 : 8);
     st.b.barracks = body.strong ? 12 : 5;
     st.b.wall = body.strong ? 12 : 4;
     st.b.academy = body.strong ? 9 : 2;

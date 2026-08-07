@@ -2799,6 +2799,47 @@ console.log('\n── every vault fills in the same time, and still holds its la
   }
 }
 
+/* ── the Founder's Peace, as a rule rather than as an endpoint ──
+   Asked for as "up to a point WoS has shields when you start the game so nobody can attack you".
+   The server test drives it over the wire; these are the three ways it ends and the one way it must
+   never begin — a save that predates the feature is an existing player, not a new hold, and
+   defaulting their `founded` to the current time would have handed the entire playerbase three days
+   of immunity on release day. That is a one-character mistake with a live consequence. */
+console.log('\n── the Founder\'s Peace ends three ways, and never starts for an old hold ──');
+{
+  const RAID = await import('../src/raid.js');
+  const now = Date.now();
+  const novice = () => { const s = freshState(now, 7); s.now = now; return s; };
+
+  ok('a new hold is under the Peace', RAID.novicePeaceLeft(novice(), now) > 0,
+     Math.round(RAID.novicePeaceLeft(novice(), now) / 3600000) + 'h');
+  ok('and cannot be raided', RAID.raidShielded(novice(), now));
+  ok('the reason given names the Peace', /Founder/.test(RAID.shieldReason(novice(), now) || ''),
+     RAID.shieldReason(novice(), now));
+
+  // 1. the clock
+  ok('it ends when the clock runs out',
+     RAID.novicePeaceLeft(novice(), now + RAID.NOVICE_PEACE_MS + 1000) === 0,
+     Math.round(RAID.NOVICE_PEACE_MS / 3600000) + 'h');
+  // 2. the Town Hall
+  const grown = novice(); grown.b.townhall = RAID.NOVICE_PEACE_TH;
+  ok('and when the Town Hall reaches ' + RAID.NOVICE_PEACE_TH, RAID.novicePeaceLeft(grown, now) === 0);
+  const nearly = novice(); nearly.b.townhall = RAID.NOVICE_PEACE_TH - 1;
+  ok('but not one level below it', RAID.novicePeaceLeft(nearly, now) > 0);
+  // 3. the one that keeps it honest
+  const raider = novice(); raider.peaceBroken = true;
+  ok('and the moment the hold raids anyone', RAID.novicePeaceLeft(raider, now) === 0);
+  ok('which leaves them raidable like anyone else', !RAID.raidShielded(raider, now));
+
+  /* The migration. An old save has no `founded`; it must read as long-founded, not as brand new. */
+  const old = novice();
+  delete old.founded; delete old.peaceBroken;
+  const migrated = ST.migrate(JSON.parse(JSON.stringify(old)), now);
+  ok('a save from before the Peace does NOT gain one', RAID.novicePeaceLeft(migrated, now) === 0,
+     'founded ' + migrated.founded);
+  ok('and a fresh hold still does', RAID.novicePeaceLeft(ST.migrate(JSON.parse(JSON.stringify(novice())), now), now) > 0);
+}
+
 console.log('\n── a decree shows what it costs, and lasts long enough to matter ──');
 {
   let bad = [];

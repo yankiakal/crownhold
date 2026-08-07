@@ -43,6 +43,7 @@ import { CHRONICLE, SEASON_LORE } from './lore.js';
 import { REGALIA, WARGEAR, GEAR_MAX, GEAR_PER_LEVEL, gearCost, gearTime,
          regaliaTier, wargearTier, wargearTotal, gearLevels, costLabel } from './gear.js';
 import { SKILLS, SKILL_SLOTS, SLOT_AT, slotsOpen, legalSkills } from './skills.js';
+import { NOVICE_PEACE_TH } from './raid.js';
 import { ISLE_W, ISLE_H, ISLE_TH, ISLE_SITES, RATION_COST, cellAt, charted } from './isle.js';
 import { COS_KINDS, CATALOGUE, HOLD_SKINS, SUBSCRIPTIONS, EARN, itemsOf, itemDef, isOwned } from './shop.js';
 import {
@@ -1439,6 +1440,16 @@ function renderRaid(S){
     + 'gets a Writ and '+ftime(r.graceMs)+' of grace, automatically. Targets are bracketed by power, '
     + 'so nobody can farm a smaller hold.</div>';
 
+  /* ── the Founder's Peace, said out loud ──
+     Asked for as "up to a point WoS has shields when you start so nobody can attack you". A shield
+     nobody can see is one a player does not know they have — and worse here than usual, because
+     sending a single column spends it for good. So it is stated, with its clock, AND the cost of
+     giving it up is stated next to the thing that would spend it. */
+  if(r.me.peaceIn > 0)
+    h += '<div class="stat-note" style="color:var(--good)">🕊️ <b>The Founder&#39;s Peace</b> covers you '
+      + 'for '+ftime(r.me.peaceIn)+'. No hold may raid yours while it holds. It ends when the clock '
+      + 'runs out, when your Town Hall reaches '+NOVICE_PEACE_TH+', or <b>the moment you send a column '
+      + 'at anyone</b> — you cannot shelter behind it and shoot out from under it.</div>';
   if(r.me.graceIn > 0)
     h += '<div class="stat-note" style="color:var(--good)">You are under grace for '
       + ftime(r.me.graceIn)+' — no one may strike you.</div>';

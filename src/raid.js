@@ -62,8 +62,49 @@ export const LOOTABLE = ['food', 'wood', 'stone', 'iron'];
 /* Same bracket as the arena. Stated once, used by both. */
 export function inBracket(mine, theirs){ return theirs <= mine * 2.2 && theirs >= mine * 0.3; }
 
+/* ── the Founder's Peace ──
+   Asked directly: "up to a point WoS has shields when you start the game so nobody can attack you
+   — we need that too."
+
+   There was none. `inBracket` keeps a strong hold from reaching down (a defender must be at least
+   0.3× the attacker's power) but that is a RELATIVE rule, and it does nothing about two new holds
+   farming each other, or about the fact that the very first thing a new player might meet is a
+   column arriving. Raiding another player is also the ONE place in this game where troops die for
+   good rather than being wounded — every other fight only wounds — so an unprotected opening is the
+   harshest possible introduction to the one irreversible mechanic.
+
+   Three ways it ends, and the third is the one that keeps it honest:
+
+     · 72 real hours from founding. Measured against the sim's own pace — a continuously played hold
+       reaches Town Hall 5 in 66 minutes and Town Hall 8 in 3.3 hours — so three days is several
+       unhurried sessions for someone playing an hour at a time, and nothing at all for a rusher.
+     · Town Hall 10. Whoever climbs that far has plainly learnt the game and is no longer a novice
+       whatever the clock says.
+     · SENDING A RAID. You cannot shelter under a peace and shoot out from behind it. This is the
+       rule that stops protection being an exploit rather than a courtesy, and it is why the timer
+       alone would not be enough.
+
+   It lands inside raidShielded because that is the one function every attack path already asks,
+   so no call site has to learn that novices exist. */
+export const NOVICE_PEACE_MS = 72 * 3600 * 1000;
+export const NOVICE_PEACE_TH = 10;
+export function novicePeaceLeft(s, now){
+  if(!s || s.peaceBroken) return 0;
+  if(((s.b && s.b.townhall) || 0) >= NOVICE_PEACE_TH) return 0;
+  /* A save with no `founded` is an OLD save, not a new hold — migrate leaves it at 0 on purpose.
+     Defaulting to `now` here would have handed every existing player three days of immunity the
+     moment this shipped, which is the opposite of what a novice shield is for. */
+  return Math.max(0, (s.founded || 0) + NOVICE_PEACE_MS - now);
+}
 export function raidShielded(s, now){
-  return (s.shieldUntil || 0) > now || (s.graceUntil || 0) > now;
+  return (s.shieldUntil || 0) > now || (s.graceUntil || 0) > now || novicePeaceLeft(s, now) > 0;
+}
+/* Why a hold cannot be raided, for the panel that has to say so. */
+export function shieldReason(s, now){
+  if((s.shieldUntil || 0) > now) return 'A Writ of Peace covers that hold.';
+  if((s.graceUntil || 0) > now) return 'That hold is under grace after a defeat.';
+  if(novicePeaceLeft(s, now) > 0) return 'That hold is under the Founder\'s Peace.';
+  return null;
 }
 export function protectedShare(s){ return Math.min(0.6, 0.04 * (s.b.warehouse || 0)); }
 

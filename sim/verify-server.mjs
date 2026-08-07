@@ -358,6 +358,65 @@ try {
     }
   }
 
+  /* ── the Founder's Peace ──
+     Asked for as "up to a point WoS has shields when you start the game so nobody can attack you".
+     There was none: `inBracket` stops a strong hold reaching DOWN, but nothing stopped two new holds
+     farming each other, and raiding is the one place in this game where troops die for good.
+
+     The third rule is the one worth testing hardest. A peace you keep while attacking is not a
+     courtesy, it is an exploit — and it must break on a raid the server ACCEPTED, never on one it
+     refused, or a novice loses their protection to a rejected request. */
+  console.log('\n── the Founder\'s Peace: a new hold cannot be farmed ──');
+  {
+    const N = await post('/api/register', { name:'Novice', password:'longenoughpassword' });
+    const tn = N.body.token;
+    const fresh = (await post('/api/state', { token: tn })).body.state;
+    ok('a new hold records when it was founded', (fresh.founded || 0) > 0, String(fresh.founded));
+    ok('and has not broken its peace', fresh.peaceBroken === false, String(fresh.peaceBroken));
+
+    /* Strong enough to land INSIDE Aldis's bracket, but on a Town Hall of 8 — because the peace ends
+       at Town Hall 10 and the strong kit sets 20. The first version of this kitted the novice strong,
+       which ended the protection under test, and then reported "shielded false" as a failure of the
+       feature rather than of the fixture. Kitted weak instead, they fell OUT of bracket and the
+       assertion passed while reading nothing. Both wrong in opposite directions. */
+    await post('/api/debug/kit', { token: tn, strong: true, spearmen: 400, townhall: 8 });
+    const list = await post('/api/raid', { token: ta });
+    const seen = (list.body.raid.targets || []).find(t => t.name === 'Novice');
+    ok('a novice in the target list is flagged shielded', !!seen && seen.shielded === true,
+       seen ? 'shielded ' + seen.shielded : 'NOT IN THE LIST — the flag was not tested');
+    const struck = await post('/api/raid/send', { token: ta, to:'Novice', troops:{ spearman: 40 } });
+    ok('and cannot be raided', struck.status === 400, 'status ' + struck.status + ' ' + (struck.body?.error || ''));
+    ok('with the reason named as the Peace, not a Writ',
+       /Founder/.test(struck.body?.error || ''), struck.body?.error || '(none)');
+
+    /* A refused raid must NOT cost the sender their own peace. Novice raids a hold it cannot reach
+       — out of bracket — and must come away still protected. */
+    const before = (await post('/api/state', { token: tn })).body.state;
+    await post('/api/raid/send', { token: tn, to:'Nobody At All', troops:{ spearman: 10 } });
+    const afterRefused = (await post('/api/state', { token: tn })).body.state;
+    ok('a raid the server REFUSED does not spend the peace',
+       afterRefused.peaceBroken === false, 'peaceBroken ' + afterRefused.peaceBroken);
+    void before;
+
+    /* But an accepted one does, permanently. Brenna is a real, reachable, unshielded target. */
+    await post('/api/debug/kit', { token: tb, strong: true, spearmen: 380 });
+    const sent = await post('/api/raid/send', { token: tn, to:'Brenna', troops:{ spearman: 100 } });
+    const afterSend = (await post('/api/state', { token: tn })).body.state;
+    if(sent.status === 200){
+      ok('sending a column spends the peace for good', afterSend.peaceBroken === true,
+         'peaceBroken ' + afterSend.peaceBroken);
+      /* Read the flag rather than sending again: Aldis is on a raid cooldown by now, and a refusal
+         that says "your marshals are still regrouping" would pass a "no longer shielded" assertion
+         without ever consulting the shield. It did. */
+      const reList = await post('/api/raid', { token: ta });
+      const reSeen = (reList.body.raid.targets || []).find(t => t.name === 'Novice');
+      ok('and the hold is then raidable like anyone else', !!reSeen && reSeen.shielded === false,
+         reSeen ? 'shielded ' + reSeen.shielded : 'not in the list');
+    } else {
+      ok('sending a column spends the peace for good', false, 'could not send: ' + (sent.body?.error || sent.status));
+    }
+  }
+
   /* ── alliance Help, which had no test at all ──
      Asked for directly: "I need to test alliance help too."
 

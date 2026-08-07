@@ -55,6 +55,11 @@ export function freshState(now, seed){
     short:{wood:0, iron:0}, wallWear:0,
     log:[], banner:null,
     seenIntro:false, taught:{}, lesson:null,
+    /* When this hold was founded, and whether it has ever raided another player. Both exist for the
+       Founder's Peace: a new hold cannot be attacked for its first 72 hours, and loses that the
+       moment it sends a column at someone. Kept in STATE rather than on the server's account record
+       so raid.js stays pure and the client can show the countdown without asking. */
+    founded: now, peaceBroken: false,
     now, lastSeen:now,
   };
 }
@@ -130,6 +135,12 @@ export function migrate(s, now){
     if(s.wavesLost==null) s.wavesLost = 0;
     if(s.famineAcc==null) s.famineAcc = 0;
     if(s.exped===undefined) s.exped = null;   // v1.88: expeditions travel now
+    /* v1.96: the Founder's Peace. `founded` defaults to 0, NOT to now — an existing save is an
+       existing player, and defaulting to now would have granted every one of them three days of
+       immunity on the day this shipped. 0 reads as "founded long ago", so their peace is already
+       spent, which is the truth. */
+    if(s.founded == null) s.founded = 0;
+    if(s.peaceBroken == null) s.peaceBroken = false;
     if(s.t.ballista==null) s.t.ballista = 0;
     /* v1.69: Truegold became Electrum, and Isle Ore's key stopped deriving from it.
        Truegold is Kingshot's own resource name and we were shipping it verbatim, so the metal was
