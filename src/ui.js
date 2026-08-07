@@ -71,6 +71,52 @@ const VERSION = typeof __VERSION__ === 'string' ? __VERSION__ : 'dev';
 const app = document.getElementById('app');
 const fx  = document.getElementById('fx');
 
+/* ── writing the page without throwing away where the player is ──
+   Reported from play: "I can't scroll down on anything, for example the Codex, when I'm trying to
+   gather the popup windows."
+
+   Nothing to do with CSS — the overlay and the card inside it have declared overflow-y:auto all
+   along. The tick loop rewrites `app.innerHTML` and `fx.innerHTML` every 250ms, which DESTROYS
+   every node in them and builds new ones, and a new element's scrollTop is 0. So the player drags
+   a tall sheet, and a quarter of a second later they are holding a different element that is
+   sitting at the top. Measured with `npm run scroll`: the Codex overflowed by 7,751px, was put at
+   200, and read back 0 with the node replaced. The page itself kept its position, because the
+   window's scroll is not inside either container — which is exactly why this went unnoticed.
+
+   Two fixes, because they cover different cases:
+
+     1. DO NOT WRITE WHAT DID NOT CHANGE. The Codex is static once open, so it now survives
+        untouched for as long as it is up — no rebuild, no interrupted drag, nothing to restore.
+        This is also just less work four times a second.
+     2. RESTORE WHAT WAS SCROLLED when a write is genuinely needed. A sheet with a live countdown
+        in it does change every second, and the research tree's horizontal strip already carried a
+        bespoke workaround for exactly this — one general repair retires that whole category.
+
+   Keyed by class name rather than by index: the panels are re-rendered in a stable order, but a
+   sheet that opens or closes shifts every index after it, and restoring a scroll position onto the
+   wrong element is worse than not restoring it. */
+const lastHtml = new WeakMap();
+function writeKeepingScroll(node, html){
+  if(!node) return;
+  if(lastHtml.get(node) === html) return;          // identical — leave the DOM completely alone
+  const keep = [];
+  for(const el of node.querySelectorAll('*')){
+    // className is an SVGAnimatedString on SVG elements, not a string
+    const cls = typeof el.className === 'string' ? el.className.trim() : '';
+    if(cls && (el.scrollTop > 0 || el.scrollLeft > 0)) keep.push([cls, el.scrollTop, el.scrollLeft]);
+  }
+  node.innerHTML = html;
+  lastHtml.set(node, html);
+  for(const [cls, top, left] of keep){
+    const sel = '.' + cls.split(/\s+/).filter(Boolean).map(c => CSS.escape(c)).join('.');
+    let el = null;
+    try { el = node.querySelector(sel); } catch { el = null; }
+    if(!el) continue;
+    if(top) el.scrollTop = top;
+    if(left) el.scrollLeft = left;
+  }
+}
+
 /* ── sections ── */
 
 function costHtml(S, cost){
@@ -2840,7 +2886,7 @@ export function render(){
      Panes are `display:contents` above 820px, which dissolves them so the desktop grid comes
      out exactly as it did before — renderHold in the left cell, the rail on the right. Below
      820px they become real boxes and all but one is hidden. */
-  app.innerHTML = renderHeader(S) + renderThreat(S)
+  writeKeepingScroll(app, renderHeader(S) + renderThreat(S)
     + inTab('world', renderWorld(S) + renderIsle(S))
     + '<main>' + inTab('hold', renderHold(S))
     + '<div class="rail">'
@@ -2853,9 +2899,9 @@ export function render(){
                       + renderLeaderboard(S) + renderMastery(S) + renderAchievements(S)
                       + renderChronicle(S))
     + '</div>'
-    + '</main>' + renderFooter() + renderDock(S) + renderTabBar();
-  fx.innerHTML = renderFx(S) + renderLesson(S) + renderLore(S) + renderStore(S) + renderSettings(S)
-    + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : '');
+    + '</main>' + renderFooter() + renderDock(S) + renderTabBar());
+  writeKeepingScroll(fx, renderFx(S) + renderLesson(S) + renderLore(S) + renderStore(S) + renderSettings(S)
+    + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : ''));
   setSkinTint((HOLD_SKINS[(S.cos && S.cos.hold) || 'default'] || {}).tint);
   drawMap(S);
   /* The header's real height, published to CSS. A sheet has to start below the resource row —

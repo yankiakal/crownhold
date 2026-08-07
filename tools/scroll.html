@@ -1,0 +1,150 @@
+<!-- Does a sheet stay where you scrolled it? `npm run scroll`
+     Reported from play: "I can't scroll down on anything, for example the Codex, when I'm trying to
+     gather the popup windows."
+
+     The suspect is not CSS. The overlay layer and the card inside it both declare overflow-y:auto
+     and always have. What the tick loop does is rewrite `fx.innerHTML` — the entire overlay layer,
+     Codex and detail sheets included — every 250ms, which destroys and rebuilds those nodes four
+     times a second, and a fresh element's scrollTop is 0. So a player drags a tall sheet and a
+     quarter of a second later is holding a different element, sitting at the top.
+
+     No unit test can see it: verify-ui renders against a stub DOM with no layout, no scrollHeight
+     and no scrolling at all. It needs a real browser, a real overflowing sheet, and a real wait
+     across at least one tick. The report is POSTed back to the harness server, on real time —
+     `--virtual-time-budget` with `--dump-dom` hung on this page twice and passed once. -->
+<!doctype html>
+<html><head><meta charset="utf-8"><title>scroll probe</title>
+<style>
+  body{margin:0;background:#0d0b09;color:#d9a441;font:12px ui-monospace,monospace}
+  pre{padding:10px;line-height:1.5;white-space:pre-wrap}
+  iframe{border:1px solid #3a2f25;width:393px;height:852px;display:block}
+  .rack{display:flex;gap:8px;padding:8px}
+</style>
+</head><body>
+<div class="rack"><iframe id="f"></iframe></div>
+<pre id="out">running…</pre>
+<script type="module">
+import { freshState, SAVE_KEY } from '../src/state.js';
+
+function played(){
+  const now = Date.now();
+  const s = freshState(now, 11);
+  Object.assign(s.b, { townhall:14, farm:15, lumberyard:14, quarry:12, ironmine:11,
+    barracks:12, range:10, stable:9, siegeyard:8, wall:12, watchtower:6, tavern:8,
+    granary:9, academy:12, hospital:8, warehouse:7, library:10, command:10, embassy:6 });
+  s.tier = { spearman:4, archer:4, knight:3, ballista:3 };
+  s.t = { spearman:260, archer:150, knight:70, ballista:35 };
+  for(const id of ['marshal','gatekeeper','forager','steward','medic'])
+    s.heroes[id] = { lvl:14, xp:120, stars:2, deeds:3, gear:{}, skills:[null,null,null] };
+  s.court = ['steward','gatekeeper'];
+  s.valor = 260; s.wave = 34; s.wavesWon = 33;
+  s.seenIntro = true; s.offersDone = 12;
+  s.choice = null; s.choiceQueue = [];
+  s.taught = { upkeep:1, pace:1, cover:1, load:1 };
+  s.now = now; s.lastSeen = now;
+  return s;
+}
+
+const lines = [];
+const out = document.getElementById('out');
+const say = (t) => { lines.push(t); out.textContent = lines.join('\n'); };
+const wait = (ms) => new Promise(r => setTimeout(r, ms));
+const done = () => fetch('/report', { method:'POST', body: lines.join('\n') }).catch(() => {});
+
+/* Anything that throws still has to report, or the harness waits out its whole deadline and says
+   "nothing measured" when what actually happened was a TypeError on line four. */
+window.addEventListener('error', (e) => { say('THREW: ' + e.message); done(); });
+
+try {
+  const save = played();
+  localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+  const f = document.getElementById('f');
+  f.src = '../index.html';
+  await new Promise(r => f.addEventListener('load', r, { once:true }));
+  await wait(1500);
+
+  const w = f.contentWindow, d = f.contentDocument;
+  const click = (sel) => { const b = d.querySelector(sel); if(b){ b.click(); return true; } return false; };
+
+  /* Scroll a surface, wait past two ticks of the 250ms loop, and see whether it stayed put.
+     `node was replaced` is the diagnosis, not the assertion — it says WHY when it fails. */
+  async function probe(name, open, find){
+    if(!(await open())){ say(name.padEnd(16) + ' COULD NOT OPEN — nothing measured'); return; }
+    await wait(500);
+    const el = find();
+    if(!el){ say(name.padEnd(16) + ' NO SCROLLER FOUND'); return; }
+    const over = el.scrollHeight - el.clientHeight;
+    if(over < 40){
+      say(name.padEnd(16) + ' does not overflow (' + el.scrollHeight + ' in ' + el.clientHeight
+        + ') — nothing to scroll');
+      return;
+    }
+    el.scrollTop = Math.min(200, over);
+    const put = el.scrollTop;
+    await wait(800);
+    const after = find();
+    const now = after ? after.scrollTop : -1;
+    say(name.padEnd(16) + ' overflow ' + over + 'px · put ' + Math.round(put)
+      + ' → 800ms later ' + Math.round(now)
+      + (Math.abs(now - put) < 4 ? '  KEPT' : '  LOST')
+      + (after === el ? '' : '  (node was replaced)'));
+  }
+
+  // ── the Codex, opened from the footer. data-act="codex" toggles it, so the same click closes it.
+  await probe('codex', async () => click('[data-act="codex"]'), () => d.querySelector('.card.codex'));
+  click('[data-act="codex"]');
+  await wait(400);
+  say('codex closed'.padEnd(16) + (d.querySelector('.card.codex') ? ' NO — still open, the next probe would remeasure it' : ' yes'));
+
+  /* ── a frontier tile sheet: the "when I'm trying to gather" half of the report.
+     The map is a canvas, so there is no element to click — the coordinates have to be computed
+     from a REAL tile. The first version of this dispatched a click at 20% across and hit empty
+     ground, opened nothing, and then found the still-open Codex under `.overlay .card` and
+     reported its scroll as the gather sheet's. Two rows, one measurement. */
+  await probe('gather sheet', async () => {
+    click('[data-act="tab"][data-key="world"]');
+    await wait(400);
+    const cv = d.getElementById('worldmap');
+    if(!cv) return false;
+    const MAP_W = 15, MAP_H = 9;
+    /* The real type keys are woods / farmstead / quarry / ironvein. The first version of this
+       looked for 'wood' and 'stone', matched nothing, and fell through to tiles[0]. */
+    const tile = save.world.tiles.find(t => ['woods','farmstead','quarry','ironvein'].includes(t.type));
+    if(!tile){ say('  (no gather tile in the seeded world)'); return false; }
+    const r = cv.getBoundingClientRect();
+    const cx = r.left + (tile.x + 0.5) / MAP_W * r.width;
+    const cy = r.top  + (tile.y + 0.5) / MAP_H * r.height;
+    /* pointerdown, not click. The canvas handler is bound to pointerdown — its own comment says
+       "so the 4 Hz re-render can never swallow a click", which is this same bug seen from the
+       other side. A dispatched 'click' reaches nothing and opens nothing. */
+    cv.dispatchEvent(new w.MouseEvent('pointerdown', { bubbles:true, clientX: cx, clientY: cy }));
+    await wait(400);
+    if(!d.querySelector('.overlay'))
+      say('  (clicked ' + tile.type + ' at ' + tile.x + ',' + tile.y + ' → ' + Math.round(cx) + ',' + Math.round(cy)
+        + ' in a ' + Math.round(r.width) + '×' + Math.round(r.height) + ' canvas at ' + Math.round(r.left) + ',' + Math.round(r.top) + ' — no sheet)');
+    return !!d.querySelector('.overlay');
+  }, () => {
+    const card = d.querySelector('.overlay .card');
+    if(!card) return null;
+    // whichever layer actually overflows is the one the player drags
+    return (card.scrollHeight - card.clientHeight) > 40 ? card : d.querySelector('.overlay');
+  });
+
+  // ── and the page itself, which was never broken; here so a regression there would show
+  {
+    const over = d.documentElement.scrollHeight - w.innerHeight;
+    if(over > 40){
+      w.scrollTo(0, 300);
+      const put = w.scrollY;
+      await wait(800);
+      say('the page'.padEnd(16) + ' overflow ' + over + 'px · put ' + Math.round(put)
+        + ' → 800ms later ' + Math.round(w.scrollY)
+        + (Math.abs(w.scrollY - put) < 4 ? '  KEPT' : '  LOST'));
+    } else say('the page'.padEnd(16) + ' does not overflow');
+  }
+} catch (e) {
+  say('THREW: ' + (e && e.message ? e.message : String(e)));
+}
+done();
+</script>
+</body></html>

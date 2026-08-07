@@ -8,7 +8,7 @@
     "build": "vite build && node scripts/release.js",
     "sim": "node sim/sim.js",
     "verify": "node sim/verify-skills.mjs",
-    "check": "npm run build && npm run verify && npm run verify:ui && npm run verify:server && npm run verify:audio && npm run sim && echo '== check complete: build + verify + verify:ui + verify:server + verify:audio + sim =='",
+    "check": "npm run build && npm run verify && npm run verify:ui && npm run verify:server && npm run verify:audio && npm run sim && npm run scroll && echo '== check complete: build + verify + verify:ui + verify:server + verify:audio + sim + scroll =='",
     "server": "node server/server.js",
     "deploy": "sh scripts/deploy.sh",
     "verify:ui": "node sim/verify-ui.mjs",
@@ -18,7 +18,8 @@
     "verify:audio": "node scripts/audio-probe.js",
     "phone": "node scripts/phone.js",
     "screens": "node scripts/screens.js",
-    "sounds": "node scripts/emit-sounds.js"
+    "sounds": "node scripts/emit-sounds.js",
+    "scroll": "node scripts/scroll.js"
   },
   "devDependencies": {
     "vite": "^6.0.0",
