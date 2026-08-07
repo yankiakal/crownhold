@@ -44,6 +44,11 @@ const DIST = join(ROOT, 'dist');
 const DATA_DIR = process.env.DATA_DIR || join(HERE, 'data');
 const DATA_FILE = join(DATA_DIR, 'accounts.json');
 const PORT = Number(process.env.PORT) || 8787;
+/* Which interface to bind. Left unset it binds everything, which is what you want when the server
+   IS the public face. Behind a reverse proxy terminating TLS, set HOST=127.0.0.1 so the plain-HTTP
+   port is not reachable from outside at all — otherwise the proxy's certificate is decoration and
+   anyone can talk to :8787 directly, unencrypted, with a real token in the body. */
+const HOST = process.env.HOST || undefined;
 /* Test-only endpoints. Never on by default; the verification suite sets it. */
 const ALLOW_DEBUG = process.env.ALLOW_DEBUG === '1';
 const MAX_BODY = 64 * 1024;
@@ -1895,8 +1900,14 @@ createServer(async (req, res) => {
   }
 
   serveStatic(req, res, url.pathname);
-}).listen(PORT, () => {
-  console.log('Crownhold server on http://localhost:' + PORT);
+}).listen(PORT, HOST, () => {
+  console.log('Crownhold server on http://' + (HOST || 'localhost') + ':' + PORT
+    + (HOST ? ' (bound to ' + HOST + ' only — put a TLS proxy in front)' : ''));
   console.log(Object.keys(db.users).length + ' holds on record'
     + (existsSync(DIST) ? '' : ' · run `npm run build` to serve the game too'));
+  /* Say it loudly. These endpoints let any signed-in account rewrite its own hold — Town Hall 20,
+     900k of every resource, a warp through time. Fine for the verification suite, catastrophic in
+     public, and an env var set once in a shell and forgotten is exactly how it would happen. */
+  if(ALLOW_DEBUG) console.log('\n  ⚠ ALLOW_DEBUG=1 — the /api/debug/* endpoints are OPEN.'
+    + '\n    Any player can kit their own hold. NEVER set this on a public server.\n');
 });
