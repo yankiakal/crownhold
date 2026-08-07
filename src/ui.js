@@ -3189,7 +3189,8 @@ export function render(){
     musterScrollWanted = null;
   }
 
-  const slot = document.getElementById('scene-slot');
+  const phoneCam = typeof matchMedia === 'function' && matchMedia('(max-width:820px)').matches;
+  const slot = phoneCam ? sceneDock : document.getElementById('scene-slot');
   /* Centre the walls the first time they are drawn wider than the screen — the gatehouse is at
      the bottom-middle of the grid, so an un-scrolled view starts on the left wall. */
   if(slot && !sceneCentred && slot.scrollWidth > slot.clientWidth){
@@ -3580,6 +3581,17 @@ let musterScrollWanted = null;
 const chatBox = document.createElement('div');
 chatBox.id = 'chatdock';
 document.body.appendChild(chatBox);
+
+/* ── the camera lives OUTSIDE the rewritten tree ──
+   Reported: "still can't scroll — the camera is just stuck." Diagnosed to the render loop, not the
+   CSS: app.innerHTML is rewritten four times a second because the resource counters tick, and that
+   DESTROYS the scene slot mid-gesture — a native touch-pan dies the instant its scroll container
+   leaves the DOM, and the slot's scroll position resets with it. So on a phone the camera is this
+   dock: created once, a sibling of the app like the chat dock, never touched by render. Desktop
+   keeps the in-panel slot. */
+const sceneDock = document.createElement('div');
+sceneDock.id = 'scene-dock';
+document.body.appendChild(sceneDock);
 
 // native prompt() is blocked in sandboxed frames, same as confirm() was
 function prompt2(question){

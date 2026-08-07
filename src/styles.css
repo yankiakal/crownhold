@@ -805,19 +805,20 @@ footer button{font-size:.68rem;padding:.25rem .6rem}
      fits the grid inside it (see resize() in iso.js), and everything that stood around the scene
      lives in the Build sheet. The header, threat bar, tab bar and chat bubble float on top —
      which they already did structurally; the scene simply fills what is behind them. */
-  .tabpane.base .panel.scenewrap{border:none;background:none;padding:0;margin:0}
-  .tabpane.base .panel.scenewrap>h2{display:none}
+  /* the in-panel scenewrap is desktop furniture; on the phone the camera is #scene-dock */
+  .tabpane.base .panel.scenewrap{display:none}
   .tabpane.base .panel.scenewrap .stat-note{
     position:fixed;left:50%;bottom:calc(4.9rem + env(safe-area-inset-bottom));transform:translateX(-50%);
     z-index:5;width:max-content;max-width:88vw;
     background:rgba(20,15,9,.85);border:1px solid var(--edge);border-radius:999px;
     padding:.3rem .8rem;font-size:.68rem;
   }
-  #scene-slot{
+  #scene-dock{
     position:fixed;inset:0;z-index:1;
     overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
     background:var(--ground);
   }
+  #scene-dock{position:relative;position:fixed}   /* badge layer needs a positioned ancestor; fixed IS one */
   /* Dragging the walls pans the camera. The global canvas{touch-action:none} exists so a canvas
      drag never scrolls the PAGE — here the drag is supposed to scroll the slot, which is the
      camera, so the walls opt back in to panning. Taps still land: pointerdown fires either way. */
@@ -1006,9 +1007,7 @@ canvas{ touch-action:none; }
    specificity and inverted the bug instead of fixing it. Cascade order plus one extra class is the
    boring correct answer. */
 #scene-slot{position:relative}
-@media(max-width:820px){
-  .tabpane.base #scene-slot{position:fixed}
-}
+@media(min-width:821px){ #scene-dock{display:none} }
 .scenebadges{position:absolute;inset:0;pointer-events:none;z-index:4}
 .sbadge{
   position:absolute;

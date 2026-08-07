@@ -116,7 +116,11 @@ setTimeout(() => {
       if(t === 'hold'){
         /* How big the walls actually are. They were 255px tall at 393px wide — a third of the
            screen, an illustration rather than the subject the tab is named after. */
-        const cv = d.getElementById('holdscene'), slot = d.getElementById('scene-slot');
+        const cv = d.getElementById('holdscene'),
+              /* the camera moved out of the render tree in v2.10 — measure whichever slot actually
+                 holds the canvas, or the harness grades an empty placeholder and cries CLIPPED */
+              slot = (cv && cv.parentElement && cv.parentElement.id ? cv.parentElement : null)
+                  || d.getElementById('scene-dock') || d.getElementById('scene-slot');
         if(cv && slot){
           const r = cv.getBoundingClientRect();
           rows.push('  the walls ' + Math.round(r.width) + '×' + Math.round(r.height)
