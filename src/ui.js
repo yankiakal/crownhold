@@ -12,7 +12,7 @@ import {
 /* LOAD and SCREEN already arrive through the main defs import above — this second one
    carries only what is not already in scope. */
 import { TIERS, SUPPLY_RES, SUPPLY, HOLDS, NEEDS, BEATS, MATCHUP,
-         DECREES, DECREE_MS, WAVE_LOSS_FLOOR, WAVE_LOSS_SPAN, WAVE_PLUNDER_FLOOR, WAVE_PLUNDER_SPAN } from './defs.js';
+         DECREES, DECREE_MS, decreeUp, decreeDown, QUALITY, QUALITY_TAG, qualityBand, WAVE_LOSS_FLOOR, WAVE_LOSS_SPAN, WAVE_PLUNDER_FLOOR, WAVE_PLUNDER_SPAN } from './defs.js';
 import {
   TILE_TYPES, MAP_W, MAP_H, CX, CY, TRAVEL_MS_PER_TILE, GATHER_MS,
   tileDist, marchSlots, tileBusy, marchPower, campPower, gatherYield, startMarch,
@@ -21,6 +21,7 @@ import {
   isleReady, rationCost, voyageTime, voyageBlockedBy, refPower, columnLoad,
   tileReq, tileLocked, TILE_LVL_MAX,
   LONG_HAUL_WORK, LONG_HAUL_YIELD,
+  marchPos, marchTarget,
 } from './world.js';
 import {
   fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor, capFor, isUnlocked,
@@ -79,7 +80,6 @@ function costHtml(S, cost){
 }
 
 function renderHeader(S){
-  const cap = storageCap(S);
   let h = '<header><div class="brand"><h1>CROWNHOLD</h1><span>hold the frontier</span></div><div class="res-row">';
   for(const [r,m] of Object.entries(RES_META)){
     if(!isUnlocked(S, r)) continue;                   // refined goods appear once you can make them
@@ -399,7 +399,8 @@ function renderMuster(S){
       const tier = tierOf(S,k);
       const canPromote = !locked && tier < maxTier(S);
       h += '<div class="trow">'
-        + '<span>'+d.icon+'</span><span class="tname">'+d.name+' <b class="tier-tag">'+TIERS[tier-1]+'</b></span>'
+        + '<span>'+d.icon+'</span><span class="tname">'+d.name
+          + ' <b class="tier-tag '+tierClass(tier)+'">'+TIERS[tier-1]+'</b></span>'
         + '<span class="tmeta">pwr '+tierPower(S,k).toFixed(0)
           + (S.t[k] ? ' · ' + ['food'].concat(SUPPLY_RES)
               .filter(r => troopDraw(S,k)[r] > 0.005)
@@ -595,6 +596,15 @@ function renderSkills(S, id){
   return h;
 }
 
+/* The quality ladder, as CSS classes. Both helpers go through qualityBand so a colour can never
+   be chosen by hand at a call site — that is how the hero rarities ended up gold while everything
+   else in the game used gold to mean Valor. */
+const qClass = (q) => 'q-' + q;
+/* Troop tiers are I–X with I as the tier every hold starts on, so the ladder passed in is II–X.
+   That way Tier X — Drillfield 30, the last thing in the game — is the only Artifact-coloured tier
+   rather than sharing a band with IX. */
+const tierClass = (tier) => qClass(qualityBand(tier - 1, TIERS.length - 1));
+
 /* One forgeable piece — used for both the Regalia and a hero's kit. */
 function gearRow(S, who, slot, label, icon, fxText){
   const tier = who === 'lord' ? regaliaTier(S, slot) : wargearTier(S, who, slot);
@@ -602,7 +612,8 @@ function gearRow(S, who, slot, label, icon, fxText){
   const blocked = gearBlockedBy(S, who, slot);
   const cost = maxed ? null : gearCost(tier);
   return '<div class="gearrow"><span class="tname">'+icon+' '+label+'</span>'
-    + '<span class="gtier">'+(tier ? 'tier '+tier+'/'+GEAR_MAX : 'unforged')+'</span>'
+    + '<span class="gtier '+qClass(qualityBand(tier, GEAR_MAX))+'">'
+      + (tier ? QUALITY_TAG[qualityBand(tier, GEAR_MAX)]+' · tier '+tier+'/'+GEAR_MAX : 'unforged')+'</span>'
     + '<span class="hmeta">'+(fxText || '')+'</span><span class="spacer"></span>'
     + (maxed
         ? '<span class="hmeta" style="color:var(--gold)">the finest work the Reach can do</span>'
@@ -776,9 +787,8 @@ function renderDecrees(S){
     h += '<div class="trow" style="align-items:flex-start;gap:.5rem">'
       + '<span class="tname" style="min-width:8.4rem">' + d.icon + ' ' + d.name
       + '<span class="hmeta" style="display:block">' + d.why + '</span></span>'
-      + '<span class="spacer"><span class="hmeta" style="color:var(--good)">' + d.fx.split(';')[0] + '</span>'
-      + '<span class="hmeta" style="display:block;color:var(--bad)">'
-      + (d.fx.split(';')[1] || '').trim() + '</span></span>'
+      + '<span class="spacer"><span class="hmeta" style="color:var(--good)">' + decreeUp(d) + '</span>'
+      + '<span class="hmeta" style="display:block;color:var(--bad)">' + decreeDown(d) + '</span></span>'
       + '<button data-act="decree" data-key="' + k + '"' + ((on || !afford) ? ' disabled' : '')
       + '>' + (on ? 'standing' : d.cost + ' \u2726') + '</button></div>';
   }
@@ -2361,7 +2371,9 @@ function renderCodex(S){
     + '<h3>Economy</h3>'
     + '<div class="tscroll"><table>'+prodRows+'</table></div>'
     + '<ul>'
-    + '<li>Storage cap: 800 × Town&nbsp;Hall<sup>1.7</sup>, +3% per Granary level — currently <b>'+fmt(storageCap(S))+'</b>. Production beyond it is wasted.</li>'
+    + '<li><b>Every resource has its own vault</b>, sized by how fast it arrives: 800 × Town&nbsp;Hall<sup>1.7</sup>, +3% per Granary level, then scaled by that resource’s production rate — '
+      + ['food','wood','stone','iron'].map(r => RES_META[r].icon+' '+fmt(capFor(S,r))).join(' · ')
+      + '. So all four fill in about the same time and none of them sits full wasting what it makes while a slower one is still climbing. Production beyond a vault is lost.</li>'
     + '<li>Offline: the hold produces (and the muster eats) for up to 2 hours while you are away. No raids strike while you are gone.</li>'
     + '<li>Build costs scale with level², and build <i>times</i> stretch with level too — a level-3 hut is minutes, a late keep is most of a day. The queue is the wall, and it keeps working while you are away.</li>'
     + '<li><b>A second crew</b> joins at Town Hall '+SECOND_QUEUE_TH+', so two upgrades can run at once (never two on the same building). Training runs on its own queue and is deliberately fast — raids arrive every 75s and the muster has to answer.</li>'
@@ -2513,6 +2525,13 @@ function renderCodex(S){
     + 'a tier-6 blade is a tier-6 blade for everyone, so there is nothing to reroll and nothing to sell rerolls of. '
     + 'One smithing queue serves it all, which is the real cost: a full Regalia is about ten hours of exclusive forge time, '
     + 'and kitting an entire roster is hundreds.</li>'
+    /* A legend, generated from the ladder itself so it can never list a grade the game does not
+       have — or miss one it does. Asked for as "colors from wow": borrowed because players already
+       read these hues without being told, which is the whole value of borrowing them. */
+    + '<li><b>Quality reads by colour</b>, the same everywhere in the hold — heroes, gear tiers and troop tiers all band onto one ladder: '
+    + QUALITY.map(q => '<b class="'+qClass(q)+'">'+QUALITY_TAG[q]+'</b>').join(' · ')
+    + '. Heroes stop at Epic because there are three hero rarities and drafting is not a gamble; the top two grades belong to '
+    + 'the ten-step ladders, so a Tier&nbsp;X line and a tier-10 blade look like the last things in the game, because they are.</li>'
     + '<li><b>Skills are choices, not levels.</b> '+Object.keys(SKILLS).length+' exist; which ones a hero may take '
     + 'depends on their troop class, so every captain has a different legal set of around twenty. Three slots open with '
     + 'investment (one from the start, one at level 10, one at 3★) — but the skills themselves never level, and you can '
@@ -2707,6 +2726,51 @@ function drawMap(S){
   });
   ctx.font = Math.round(IF*1.15)+'px serif';
   ctx.fillText('🏰', CX*C+C/2, CY*C+C/2);
+
+  /* ── the columns, where they actually are ──
+     Asked for directly: "can I also see some kind of marching animation in the frontier when the
+     march is going and returning — I want to see them on the map, the position."
+
+     Drawn last so a column is never hidden behind a tile glyph. Position comes from marchPos, which
+     derives it from the three timestamps the march already carries — so this is a pure readout of
+     the rules, not an animation with its own state, and render() runs every 250ms which is plenty
+     for something crossing seven cells in a minute and a half.
+
+     Three things are drawn per column, and each answers a different question: the route says where
+     it is going, the marker says how far along it is, and the colour says which way it is pointed —
+     gold out, green home, because a returning column is carrying something. */
+  for(const m of S.marches || []){
+    const p = marchPos(S, m, S.now || Date.now());
+    if(!p) continue;
+    const to = marchTarget(S, m);
+    const hx = CX*C + C/2, hy = CY*C + C/2;
+    const tx = to.x*C + C/2, ty = to.y*C + C/2;
+    const homeward = p.leg === 'home';
+    const ink = homeward ? '#7fa65a' : '#d9a441';
+
+    // the road it is on, faint enough not to compete with the tiles
+    ctx.save();
+    ctx.setLineDash([4, 5]);
+    ctx.strokeStyle = homeward ? 'rgba(127,166,90,.38)' : 'rgba(217,164,65,.34)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(tx, ty); ctx.stroke();
+    ctx.restore();
+
+    // and the column itself: a disc so it reads against any cell, then the glyph
+    const px = p.x*C + C/2, py = p.y*C + C/2;
+    if(p.leg !== 'work'){
+      ctx.save();
+      ctx.beginPath(); ctx.arc(px, py, 11, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(20,16,12,.82)'; ctx.fill();
+      ctx.strokeStyle = ink; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = ink;
+      ctx.font = 'bold 11px sans-serif';
+      /* An arrowhead, not a soldier: at 11px a troop emoji is a smudge, and the one thing the
+         marker has to say at a glance is which direction it is pointed. */
+      ctx.fillText(homeward ? '◀' : '▶', px, py + 0.5);
+      ctx.restore();
+    }
+  }
 }
 
 /* ── tabs, for a thumb ──

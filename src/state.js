@@ -95,7 +95,11 @@ export function applyOffline(s, awayMs){
     const cycles = Math.floor(awayMs / (expedCdMs(s) + CARAVAN_GRACE));
     const y = caravanYields(s);
     if(cycles > 0 && y){
-      for(const [r,v] of Object.entries(y)) s.res[r] = Math.min(s.res[r] + v*cycles, storageCap(s));
+      /* capFor, not storageCap: a standing caravan brings back raw goods, and clamping them
+         against the UNDIVIDED ceiling let it overfill a vault that the rest of the game keeps
+         to a fraction of it. Wrong before per-resource caps existed too — just invisible while
+         every raw multiplier happened to be 1. */
+      for(const [r,v] of Object.entries(y)) s.res[r] = Math.min(s.res[r] + v*cycles, capFor(s, r));
       pushLog(s, '⛺ Your standing caravan ran '+EXPEDITIONS[s.caravan].name+' '+cycles+'× while you were away: '
         + Object.entries(y).map(([r,v])=>'+'+fmt(v*cycles)+' '+r).join(', ')+'.', 'gold');
     }

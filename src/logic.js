@@ -15,10 +15,12 @@ import {
   PET_POOL, PET_MAX_LVL, petXpNeed, petBondNeed,
   WAVE_TYPES, STANCES, COUNTER_BONUS, COUNTER_PENALTY, COUNTER_CASUALTY, SCREEN,
   WAVE_LOSS_FLOOR, WAVE_LOSS_SPAN, WAVE_PLUNDER_FLOOR, WAVE_PLUNDER_SPAN,
+  WOUND_DIE0, WOUND_DECAY, HOSP_RELIEF, MASTERY_RELIEF, RELIEF_KNEE, RELIEF_HALFLIFE,
+  HEAL_SPEED_PER, HEAL_SPEED_FLOOR,
   EXPEDITIONS, EXPEDITION_CD,
   COST_EXP, TIME_EXP, TIERS, TIER_POWER, TIER_UPKEEP, TIER_COST, ACADEMY_PER_TIER, ACADEMY_TOP, ACADEMY_POWER,
   PROMOTE_MS_PER_TROOP, PROMOTE_MS_MIN,
-  REFINE, STEEL_FROM, RUNE_FROM,
+  REFINE, STEEL_FROM, RUNE_FROM, rawCapMult,
   buildTimeCap, earlyRamp, TIME_SCALE, SECOND_QUEUE_TH,
   VALOR_QUOTA_BASE, VALOR_QUOTA_PER_TH, VALOR_OVERFLOW,
   REST_CAP_MS, REST_PROD_BONUS, REST_QUOTA_BONUS,
@@ -387,10 +389,12 @@ export function storageCapFor(s, thLvl){
     * (perk(s,4)?1.15:1) * (perk(s,13)?1.10:1));
 }
 export function storageCap(s){ return storageCapFor(s, s.b.townhall); }
-/* refined goods are scarce by design: their vaults hold a fraction of the raw ones */
+/* Refined goods are scarce by design and carry their own fraction. The four raw ones derive
+   theirs from their production rate, so every vault takes the same time to fill — see the note
+   on CAP_RATE_DIVISOR in defs.js for why a shared ceiling was taxing food and wood. */
 export function capFor(s, res){
-  const m = RES_META[res];
-  return Math.round(storageCap(s) * (m && m.capMult ? m.capMult : 1));
+  const m = RES_META[res] || {};
+  return Math.round(storageCap(s) * (m.capMult != null ? m.capMult : rawCapMult(res)));
 }
 export function isUnlocked(s, res){
   const m = RES_META[res];
@@ -581,7 +585,22 @@ export function finishPromoteNow(s, now){
    marching on another player. That is where stakes belong, and it is consensual.
    The one hard limit is beds: wounded past your Infirmary's capacity die of
    their wounds, which is what makes the building matter and healing urgent. */
-export function woundShare(s){ return Math.min(0.75, 0.30 + 0.045 * (s.b.hospital || 0)); }
+/* Geometric in who DIES rather than linear in who lives, so the curve can span all 25 levels
+   without a ceiling. Identical at 0 and 10 to the linear version it replaces; see the note in
+   defs.js for why those two points are the ones pinned. */
+export function woundShare(s){
+  return 1 - WOUND_DIE0 * Math.pow(WOUND_DECAY, s.b.hospital || 0);
+}
+/* Every casualty reduction in the game, added up once and softened once. Both wave branches
+   called this expression out separately before, which is how they drifted apart in v1.39. */
+export function casualtyRelief(s){
+  const cut = heroBonus(s, 'casualties') + HOSP_RELIEF * (s.b.hospital || 0)
+            + techBonus(s, 'medicine') + (perk(s, 15) ? MASTERY_RELIEF : 0);
+  const lin = 1 - cut;
+  if(lin >= RELIEF_KNEE) return lin;          // unchanged for every loadout below the knee
+  // and past it, each RELIEF_HALFLIFE of overshoot halves what is left of the bloodshed
+  return RELIEF_KNEE * Math.pow(0.5, (RELIEF_KNEE - lin) / RELIEF_HALFLIFE);
+}
 export function woundedCap(s){
   const l = s.b.hospital || 0;
   return Math.round((30 + 40 * l * (1 + 0.08 * l)) * (1 + petBonus(s,'mend') + skillCourt(s,'mend')));
@@ -736,7 +755,7 @@ export function healCost(s){
 export function healTime(s){
   const n = woundedTotal(s);
   if(!n) return 0;
-  const speed = Math.max(0.3, 1 - 0.03 * (s.b.hospital || 0));
+  const speed = Math.max(HEAL_SPEED_FLOOR, 1 - HEAL_SPEED_PER * (s.b.hospital || 0));
   return Math.round(Math.max(20, n * 1.4) * 1000 * speed);
 }
 export function startHealing(s, now){
@@ -904,7 +923,11 @@ const READOUT = {
   watchtower: (s) => 'blunts ' + Math.round(bluntFor(s, s.b.watchtower) * 100) + '%',
   academy:    (s) => 'Tier ' + TIERS[maxTier(s) - 1] + ', troops +'
                      + Math.round(ACADEMY_POWER * (s.b.academy || 0) * 100) + '%',
-  hospital:   (s) => Math.round(woundShare(s) * 100) + '% of the fallen come back',
+  /* All three effects, because showing only the first one is what made the building look dead:
+     the share who come back was the only figure on the sheet, and it was the figure that
+     stopped moving at level 10. Beds and the casualty multiplier were both still climbing. */
+  hospital:   (s) => Math.round(woundShare(s) * 100) + '% come back · ' + fmt(woundedCap(s))
+                     + ' beds · casualties ×' + casualtyRelief(s).toFixed(2),
   granary:    (s) => '+' + prodPerSec(s, 'food').toFixed(1) + ' food/s, storage ' + fmt(storageCap(s)),
   barracks:   (s) => 'drills at ×' + trainMultFor(s, s.b.barracks).toFixed(2),
   range:      (s) => 'drills at ×' + trainMultFor(s, s.b.range).toFixed(2),
@@ -1801,9 +1824,7 @@ export function resolveWave(s, now, rand=Math.random){
   if(mine >= enemy){
     // casualties scale with how close it was; a right counter-read spills less blood
     const ratio = enemy/Math.max(mine,1);
-    let lossFrac = 0.30 * ratio*ratio
-      * Math.max(0.15, 1 - heroBonus(s,'casualties') - 0.04*(s.b.hospital||0)
-        - techBonus(s,'medicine') - (perk(s,15)?0.10:0));
+    let lossFrac = 0.30 * ratio*ratio * casualtyRelief(s);
     if(cm > 1) lossFrac *= COUNTER_CASUALTY;
     if(mods.noCasual) lossFrac = 0;
     let lost = 0, hurtTotal = 0;
@@ -1850,8 +1871,7 @@ export function resolveWave(s, now, rand=Math.random){
        undefended hold costs what the flat rate used to charge everyone. `over` is how far past
        your strength the band came — 0 at parity, 1 once they are twice your power. */
     const over = Math.min(1, Math.max(0, enemy/Math.max(mine,1) - 1));
-    const relief = Math.max(0.15, 1 - heroBonus(s,'casualties') - 0.04*(s.b.hospital||0)
-      - techBonus(s,'medicine') - (perk(s,15)?0.10:0));
+    const relief = casualtyRelief(s);
     const bleed = (WAVE_LOSS_FLOOR + WAVE_LOSS_SPAN * over) * relief;
     for(const [k, l] of Object.entries(casualtySplit(s.t, bleed, rand)))
       takeCasualties(s, k, l, true);

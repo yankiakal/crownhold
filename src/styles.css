@@ -583,10 +583,32 @@ section.panel{
 .choice-card .cicon{font-size:1.7rem}
 .choice-card .cname{font-size:.95rem;color:var(--ink)}
 .choice-card .cfx{font-family:var(--sans);font-size:.72rem;color:var(--ink-dim)}
+/* ── the quality ladder ──
+   WoW's hues, moved onto this game's warm dark ground. Uncommon and Rare are the two that needed
+   real work: #1eff00 and #0070dd were drawn for a near-black blue UI and read as a highlighter and
+   as near-invisible respectively against #211b16 leather. Epic, Legendary and Artifact are close to
+   untouched. Defined once here; .rar-* and .q-* both draw from these so a hero's Epic and a
+   breastplate's Epic can never end up different colours. */
+:root{
+  --q-common:#9c8d77;
+  --q-uncommon:#5fc95f;
+  --q-rare:#4a9fd8;
+  --q-epic:#b45bf0;
+  --q-legendary:#ff8c1a;
+  --q-artifact:#e8443a;
+}
 .rar{font-family:var(--sans);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase}
-.rar-common{color:var(--ink-dim)}
-.rar-rare{color:var(--info)}
-.rar-epic{color:var(--gold)}
+.rar-common{color:var(--q-common)}
+.rar-rare{color:var(--q-rare)}
+.rar-epic{color:var(--q-epic)}
+.q-common{color:var(--q-common)}
+.q-uncommon{color:var(--q-uncommon)}
+.q-rare{color:var(--q-rare)}
+.q-epic{color:var(--q-epic)}
+.q-legendary{color:var(--q-legendary)}
+.q-artifact{color:var(--q-artifact)}
+/* the tier tag already existed as plain text; it just never said anything with colour */
+.tier-tag{font-family:var(--sans);letter-spacing:.06em}
 
 footer{
   margin-top:1.2rem;display:flex;gap:1rem;align-items:center;

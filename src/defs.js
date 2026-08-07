@@ -38,7 +38,7 @@ export const BUILDINGS = {
      did not follow, so the panel promised a quarter of what the building actually gave. */
   academy:   {name:'The Drillfield',icon:'🎓', fx:'+2.5% troop power per level. A troop tier every 3rd level from 6, up to Tier X at 30.',
               cost:{stone:150,iron:60}, time:25, max:30, th:4},
-  hospital:  {name:'Infirmary',   icon:'⛑️', fx:'−4% casualties, and more of the fallen come back wounded instead of dead.',
+  hospital:  {name:'Infirmary',   icon:'⛑️', fx:'−4% casualties per level, more beds, faster healing, and more of the fallen come back wounded instead of dead.',
               cost:{wood:120,food:80},  time:18, max:25, th:4},
   command:   {name:'Command Center',icon:'🎖️', fx:'+1 march every 4 levels; marches travel 2% faster per level.',
               cost:{stone:220,wood:160},time:24, max:30, th:4},
@@ -256,7 +256,21 @@ export function wallMendCost(lvl){ return 26 * lvl * lvl; }
    Every field below lands on a modifier key the game ALREADY reads through heroBonus, so a
    decree needs no plumbing at the point of use: the same lesson the Muster Roll learned by
    reading counters that already existed. */
-export const DECREE_MS = 10 * 60 * 1000;
+/* ── an hour, because that is what the game already promised ──
+   Reported from play: "every time I refresh the page the previous decree seems to be gone, so I
+   have to select again?" Round-tripped it through save() and load() and the decree survives
+   perfectly at 0, 1, 5 and 9 minutes — it was not being dropped, it was EXPIRING, at ten real
+   minutes. Refreshing is simply when you look.
+
+   Ten minutes was indefensible once measured against its own price. A decree costs 35–50 Valor
+   against a daily quota of 100 + 25 × Town Hall, so keeping one standing all day cost 144 × 40 =
+   5,760 Valor at Town Hall 10, where the quota is 350. Sixteen times a full day's earnings to
+   maintain, which is not a trade, it is a tease. At an hour it is 24 × 40 = 960, so a day's Valor
+   buys roughly nine hours of one standing order — a thing you put on for a session and feel.
+
+   The First Light card already said a decree suits "what you are doing this hour". The copy was
+   right and the constant was wrong; this is the constant catching up. */
+export const DECREE_MS = 60 * 60 * 1000;
 /* ── the effect lines are written by the code ──
    They used to be prose: "Production rises a fifth", "Drilling is a third faster". Two problems.
    A written-out fraction needs English to parse, and this is a game for anyone anywhere — a number
@@ -285,7 +299,16 @@ export function fxText(effects){
     return (up ? '+' : '−') + Math.round(Math.abs(v) * 100) + '% ' + m.txt;
   }).join(', ');
 }
-export function decreeFx(def){ return fxText(def.up) + ' · ' + fxText(def.down); }
+/* The two halves are exported SEPARATELY, and that is the point. The decree panel wants them in
+   different colours — the gift green, the price red — and it used to get them by splitting `fx` on
+   a ';'. When fx started being generated in v1.90 the separator became ' · ', the split stopped
+   matching, `[1]` came back undefined, and the red span rendered empty: every downside was printed
+   in the green line, styled as a benefit, for two versions. Reported from play as "decree negative
+   things should be in red", which they had been until I joined the string differently.
+   A caller that needs one half now asks for that half. There is no separator to agree on. */
+export function decreeUp(def){ return fxText(def.up); }
+export function decreeDown(def){ return fxText(def.down); }
+export function decreeFx(def){ return decreeUp(def) + ' · ' + decreeDown(def); }
 
 export const DECREES = {
   march:  {name:'Forced March',  icon:'🥁', cost:40,
@@ -385,6 +408,37 @@ export const RARITY = {
   rare:  {w:28, tag:'Rare'},
   epic:  {w:10, tag:'Epic'},
 };
+
+/* ── one quality ladder, borrowed on purpose ──
+   Asked for directly: "can we have colors from wow — uncommon green, blue rare, epic purple,
+   orange legendary, artifact red."
+
+   Worth borrowing because two decades of players already read those hues without a legend, and
+   because this game has three separate quality ladders that were each coloured by whatever was to
+   hand: heroes had grey/blue/GOLD, gear tiers printed "tier 7/10" in plain text, and troop tiers
+   were plain text too. Same idea, three presentations, none of them shared.
+
+   So the ladder is defined once and every ladder in the game bands onto it. Heroes only ever reach
+   Epic — there are three hero rarities and drafting is not a gacha, so there is nothing rarer to
+   invent — and the top two colours earn their keep on the ten-step ladders instead: gear tiers and
+   troop tiers, where Tier X sits behind Drillfield 30 and deserves to look like it.
+
+   The hexes are WoW's hues moved onto this game's ground rather than copied raw. #1eff00 was drawn
+   for a near-black blue UI; on #211b16 warm leather it reads as a highlighter. Legendary orange and
+   the red are close to untouched, because they already sit well here. */
+export const QUALITY = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'artifact'];
+export const QUALITY_TAG = {
+  common:'Common', uncommon:'Uncommon', rare:'Rare',
+  epic:'Epic', legendary:'Legendary', artifact:'Artifact',
+};
+/* Band a step on any ladder onto the five coloured grades; 0 or below is Common. `top` is the
+   highest step that ladder reaches, so gear (1–10) and troop tiers (II–X, passed as 1–9) both
+   land Artifact on their own last step without either one hardcoding a width. */
+export function qualityBand(n, top){
+  if(!(n > 0) || !(top > 0)) return QUALITY[0];
+  const grades = QUALITY.length - 1;                       // 5 coloured grades above Common
+  return QUALITY[Math.min(grades, Math.ceil(n / (top / grades)))];
+}
 
 /* ── the season clock ──
    Shared by the browser and the server so both agree on which heroes have
@@ -759,6 +813,46 @@ export const COUNTER_BONUS = 1.2, COUNTER_PENALTY = 0.92, COUNTER_CASUALTY = 0.6
 export const WAVE_LOSS_FLOOR = 0.04, WAVE_LOSS_SPAN = 0.16;   // troops, 4% → 20%
 export const WAVE_PLUNDER_FLOOR = 0.05, WAVE_PLUNDER_SPAN = 0.10;  // stores, 5% → 15%
 
+/* ── the Infirmary, and four systems queueing for one ceiling ──
+   Reported from play: "the Infirmary doesn't give any bonus after level 10." Measured, and true
+   three times over — the building has 25 levels and every one of its three effects gave up early:
+
+     woundShare   min(0.75, 0.30 + 0.045·lvl)  → hit the ceiling at level 10 exactly
+     healTime     max(0.30, 1 − 0.03·lvl)      → hit its floor at 23
+     casualties   the shared floor below
+
+   The last is the deep one, and it is not the Infirmary's alone. FOUR systems reduce wave
+   casualties — the Infirmary, Medicine research, Mastery 15 and any medic hero — and they were
+   SUMMED and then clamped: max(0.15, 1 − sum). Measured across real loadouts, that sum reaches
+   1.30 at the top of the game, so the clamp is holding back 1.15 of reduction that has been paid
+   for. Past roughly Infirmary 14 with Medicine maxed, every further point from ANY of the four
+   buys exactly nothing. The Infirmary is simply the source a player notices first, because it is
+   the one with a level number on it.
+
+   The shape of the repair: below the knee, NOTHING changes — every loadout that worked before
+   gets the identical figure, so this is not a rebalance. Above it, each further RELIEF_KNEE of
+   reduction halves what remains rather than being discarded, which is asymptotic: relief never
+   reaches zero, and no source is ever worth nothing. A hard floor cannot have both properties,
+   and that is the whole bug.
+
+   WOUND_DECAY is derived, not chosen. The old curve killed 25% of the fallen at level 10; pinning
+   the geometric curve to that point means levels 0 and 10 are unchanged and every level in
+   between is at most 5.7pp kinder. Writing the pin as arithmetic rather than as 0.9022 keeps the
+   reason legible — the next person to touch the top of the curve does not have to reverse it. */
+export const WOUND_DIE0 = 0.70;                 // share of the fallen who die at Infirmary 0
+export const WOUND_DIE10 = 0.25;                // ...and at level 10, the old linear curve's value
+export const WOUND_DECAY = Math.pow(WOUND_DIE10 / WOUND_DIE0, 1 / 10);
+export const HOSP_RELIEF = 0.04;                // casualty reduction per Infirmary level
+export const MASTERY_RELIEF = 0.10;             // Mastery 15
+export const RELIEF_KNEE = 0.15;                // where the old hard floor sat, now the soft knee
+/* How much overshoot halves what remains. Tuned by measuring the extremes, not by taste: at 0.15
+   the fully-kitted top of the game reached 0.001 relief, which is not "diminishing returns", it is
+   free — waves would cost a maxed hold nothing at all and the beds would stop mattering. At 0.5 the
+   same account gets roughly a 5× reduction on today's clamped figure instead of an 80× one, which
+   pays for the investment without deleting the content. */
+export const RELIEF_HALFLIFE = 0.5;
+export const HEAL_SPEED_PER = 0.03, HEAL_SPEED_FLOOR = 0.25;   // floor now lands exactly at max
+
 /* ── Expeditions: three routes, one choice, real trade-offs ── */
 export const EXPEDITION_CD = 45000;
 export const EXPEDITIONS = {
@@ -899,6 +993,9 @@ export const ACHIEVEMENTS = [
    keeps early resources valuable forever — a Town Hall 25 upgrade is really an
    enormous pile of iron and wood, laundered through a Forge. */
 export const RES_META = {
+  /* The four raw ones carry NO capMult. Theirs is derived from how fast they arrive — see
+     rawCapMult below — because a number typed here would drift from the Farm's rate the first
+     time anyone retuned production, and this is exactly the kind of pair that drifts. */
   food:     {lbl:'Food',     icon:'🌾'},
   wood:     {lbl:'Wood',     icon:'🪵'},
   stone:    {lbl:'Stone',    icon:'⛰️'},
@@ -913,6 +1010,36 @@ export const RES_META = {
      neither immediately crashed them looking up a farm that does not exist. */
   isleore:  {lbl:'Isle Ore', icon:'🪨', carried:true, capMult:0.05},
   electrum: {lbl:'Electrum', icon:'🏵️', refined:true, capMult:0.02, from:'crucible'},
+};
+/* ── a vault per resource, sized by how fast the resource arrives ──
+   Asked for directly: "since food, wood, stone and iron productions are at different rates even at
+   max level and the rarity is different, max storage should be based on that too."
+
+   Right, and the uniform cap had a measurable cost. Production per level is food 2.0, wood 1.6,
+   stone 1.0, iron 0.7, so with one shared ceiling the time to fill from empty at a paced Town Hall
+   30 was food 1.4h, wood 2.6h, stone 4.2h, iron 6.0h — a spread of ×4.29. Offline production is
+   capped at two hours, which lands INSIDE that spread: come back after a night away and food and
+   wood have been sitting full and throwing away everything they made, while stone and iron are
+   still climbing. The shared ceiling was not neutral, it was quietly taxing the two resources you
+   have most of.
+
+   So the multiplier is the production rate itself, which makes cap/rate identical for all four:
+   every vault fills in the same time and none of them overflows early. It also reads the way the
+   player already thinks about the game — you hold a lot of food and never much iron.
+
+   THE DIVISOR IS WHERE THE FAMILY SITS, AND IT IS NOT FREE. Shrinking a vault below its largest
+   single bill makes a building unbuildable, and stone is the binding constraint: the Crucible's
+   20th level costs 324,900 stone, the largest single cost of any resource in the game, against a
+   Town Hall 30 cap. At 1.035 stone keeps that bill with 35% to spare — the same headroom the
+   uniform cap gave it — and the other three land at ×2.96 or better. Anyone who raises a stone
+   cost past that headroom gets a failure from verify-skills.mjs naming the building, which is the
+   only reason it is safe to derive caps from a rate at all. */
+export const CAP_RATE_DIVISOR = 1.035;
+export const rawRate = (res) =>
+  Object.values(BUILDINGS).filter(d => d.prod === res).reduce((a, d) => a + d.rate, 0);
+export const rawCapMult = (res) => {
+  const rate = rawRate(res);
+  return rate > 0 ? rate / CAP_RATE_DIVISOR : 1;
 };
 // levels at which every building starts demanding the next currency
 export const STEEL_FROM = 15, RUNE_FROM = 24;

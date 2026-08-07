@@ -17,7 +17,7 @@
 // THERE. The copy is byte-identical apart from those lines, so what runs is the
 // real code — and the shipped bundle carries nothing that exists for a test.
 
-import { mkdtempSync, cpSync, appendFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, cpSync, appendFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -134,6 +134,47 @@ try {
   ok('the frontier shows your hold at its centre', !!home,
      home ? 'at ' + home.x + ',' + home.y : 'nothing drawn at ' + (W.CX*C + C/2) + ',' + (W.CY*C + C/2 - 4));
   ok('and labels it', drawn.some(d => d.txt === 'HOLD'));
+
+  /* ── and it shows the columns on the road ──
+     Asked for directly: "can I also see some kind of marching animation in the frontier when the
+     march is going and returning — I want to see them on the map, the position."
+
+     The geometry is asserted in verify-skills.mjs; what this checks is that the renderer actually
+     puts a marker on the canvas, at the interpolated position rather than on the destination cell.
+     Drawing it on the target would look almost right and be exactly the old behaviour. */
+  {
+    const idx = s.world.tiles.findIndex(t => W.TILE_TYPES[t.type].kind === 'gather' && !W.tileLocked(s, t));
+    const started = idx >= 0 && W.startMarch(s, idx, { spearman:40 }, s.now, false, []);
+    ok('a column is on the road to measure', !!started);
+    if(started){
+      const m = s.marches[s.marches.length - 1];
+      const tile = s.world.tiles[idx];
+      // a quarter of the way out: far enough from both ends that neither can be mistaken for it
+      s.now = m.arriveAt - m.out * 0.75;
+      drawn.length = 0;
+      UI.render();
+      const mark = drawn.find(d => d.txt === '▶' || d.txt === '◀');
+      ok('the frontier draws a marker for a column in transit', !!mark,
+         mark ? 'at ' + Math.round(mark.x) + ',' + Math.round(mark.y) : 'no marker drawn');
+      if(mark){
+        const onTarget = Math.hypot(mark.x - (tile.x*C + C/2), mark.y - (tile.y*C + C/2)) < 4;
+        const onHome = Math.hypot(mark.x - (W.CX*C + C/2), mark.y - (W.CY*C + C/2)) < 4;
+        ok('and places it between the hold and the node, not on either', !onTarget && !onHome,
+           'marker ' + Math.round(mark.x) + ',' + Math.round(mark.y)
+           + ' · hold ' + (W.CX*C + C/2) + ',' + (W.CY*C + C/2)
+           + ' · node ' + (tile.x*C + C/2) + ',' + (tile.y*C + C/2));
+        ok('and points it outbound', mark.txt === '▶', mark.txt);
+      }
+      // and turned around, it points the other way
+      s.now = (m.homeAt - m.out) + m.out * 0.5;
+      drawn.length = 0;
+      UI.render();
+      const back = drawn.find(d => d.txt === '▶' || d.txt === '◀');
+      ok('a returning column points home', back && back.txt === '◀', back ? back.txt : 'no marker');
+      s.marches.length = 0;
+      s.now = now;
+    }
+  }
 
   /* ── the phone layout ──
      Measured with `npm run phone` at real phone widths, the single column ran 11.8 screens
@@ -314,6 +355,95 @@ try {
      D.DECREES.ration.fx.includes('−33% upkeep'), D.DECREES.ration.fx);
   ok('and a penalty reads as a plus when the penalty is more of something',
      D.DECREES.blood.fx.includes('+25% casualties'), D.DECREES.blood.fx);
+
+  /* ── and the price has to be RENDERED as a price ──
+     Reported from play: "decree negative things should be in red." They were not. The panel had
+     always meant to split the effect into a green half and a red half, and it did it by splitting
+     `fx` on a ';' — so when v1.90 started generating that string with ' · ' between the halves, the
+     split stopped matching, index [1] came back undefined, and the red span rendered EMPTY. Every
+     downside was printed inside the green span, styled as a benefit, for two versions.
+
+     The test above could not catch it: `fx` contained both halves and read perfectly. The bug was
+     entirely in how the panel took it apart. So this asserts against the RENDERED HTML — the
+     downside text has to appear immediately inside the element coloured `--bad`, for all five. */
+  {
+    UI.render();
+    const html = (nodes.app && nodes.app.innerHTML) || '';
+    const notRed = [], inGreen = [];
+    for(const [k, d] of Object.entries(D.DECREES)){
+      const down = D.decreeDown(d), up = D.decreeUp(d);
+      if(!html.includes('color:var(--bad)">' + down)) notRed.push(k + ': ' + down);
+      if(html.includes('color:var(--good)">' + up + ' · ')) inGreen.push(k);
+    }
+    ok('every decree renders its downside inside the red span', notRed.length === 0,
+       notRed.join(' | ') || 'all ' + Object.keys(D.DECREES).length + ' priced in red');
+    ok('and no downside is smuggled into the green one', inGreen.length === 0,
+       inGreen.join(', ') || 'green carries the gift only');
+  }
+
+  /* ── one quality ladder, and every colour on it earns its keep ──
+     Asked for directly: "can we have colors from wow — uncommon green, blue rare, epic purple,
+     orange legendary, artifact red."
+
+     The trap in a palette is a colour that is defined and never reached: five grades declared, three
+     ever rendered, and the two at the top exist only in the stylesheet. So this walks both ten-step
+     ladders and asserts every grade is actually produced by one of them, and that each grade has a
+     colour of its own — a duplicated hex would make two grades indistinguishable, which is the same
+     bug as not having the colour at all. */
+  {
+    const GEAR = await from('gear.js');
+    const bands = new Set();
+    for(let t = 0; t <= GEAR.GEAR_MAX; t++) bands.add(D.qualityBand(t, GEAR.GEAR_MAX));
+    for(let t = 1; t <= D.TIERS.length; t++) bands.add(D.qualityBand(t - 1, D.TIERS.length - 1));
+    const unreached = D.QUALITY.filter(q => !bands.has(q));
+    ok('every grade on the ladder is reached by a real tier', unreached.length === 0,
+       unreached.join(', ') || D.QUALITY.length + ' grades, all reachable');
+
+    ok('the ladder is monotone across gear tiers',
+       Array.from({length: GEAR.GEAR_MAX}, (_, i) => D.QUALITY.indexOf(D.qualityBand(i + 1, GEAR.GEAR_MAX)))
+         .every((v, i, a) => i === 0 || v >= a[i-1]),
+       Array.from({length: GEAR.GEAR_MAX}, (_, i) => D.qualityBand(i + 1, GEAR.GEAR_MAX)).join(' '));
+    ok('tier 0 and an unforged slot are Common', D.qualityBand(0, GEAR.GEAR_MAX) === 'common' && D.qualityBand(-3, GEAR.GEAR_MAX) === 'common');
+    ok('and the last step of a ladder is Artifact',
+       D.qualityBand(GEAR.GEAR_MAX, GEAR.GEAR_MAX) === 'artifact' && D.qualityBand(D.TIERS.length - 1, D.TIERS.length - 1) === 'artifact',
+       'gear ' + GEAR.GEAR_MAX + ' → ' + D.qualityBand(GEAR.GEAR_MAX, GEAR.GEAR_MAX) + ', Tier ' + D.TIERS[D.TIERS.length-1] + ' → '
+         + D.qualityBand(D.TIERS.length - 1, D.TIERS.length - 1));
+
+    /* Every grade needs a colour, and a DISTINCT one. Read out of the stylesheet the app actually
+       ships, not a copy in the test — a palette asserted against itself proves nothing. */
+    const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const hexOf = {}, missing = [];
+    for(const q of D.QUALITY){
+      const m = css.match(new RegExp('--q-' + q + ':\\s*(#[0-9a-fA-F]{3,8})'));
+      if(!m) missing.push(q); else hexOf[q] = m[1].toLowerCase();
+    }
+    ok('every grade has a colour defined in the stylesheet', missing.length === 0, missing.join(', ') || Object.values(hexOf).join(' '));
+    ok('and no two grades share one', new Set(Object.values(hexOf)).size === Object.values(hexOf).length,
+       Object.entries(hexOf).map(([q, h]) => q + ' ' + h).join(' · '));
+    // and a class per grade, or the hex is unreachable from markup
+    const noClass = D.QUALITY.filter(q => !css.includes('.q-' + q + '{'));
+    ok('and a class per grade so markup can reach it', noClass.length === 0, noClass.join(', ') || 'all wired');
+
+    /* Rendered, not merely defined. The tier is set HERE rather than trusted from the shared
+       fixture: earlier blocks in this file mutate it, and the first version of this assertion
+       passed while every rendered tag said q-common — which is the default, so it proved only that
+       the attribute existed. What has to be true is that a real grade reaches the page. */
+    /* And render OUR hold. The Town Hall road block above swaps store.s to its own fixture and
+       never swaps it back, so every render after it draws that hold instead — which is why the
+       first version of this assertion saw Tier I everywhere. Anything added below this point in
+       the file has the same trap waiting for it. */
+    ST.store.s = s;
+    s.tier = { spearman:1, archer:4, knight:8, ballista:D.TIERS.length };
+    UI.render();
+    const html = (nodes.app && nodes.app.innerHTML) || '';
+    const tags = html.match(/class="tier-tag q-([a-z]+)"/g) || [];
+    const grades = new Set(tags.map(t => t.match(/q-([a-z]+)/)[1]));
+    ok('the muster colours its troop tiers', tags.length >= 4, tags.length + ' tags');
+    ok('and a tier above the first renders a grade above Common',
+       grades.size > 1 && [...grades].some(g => g !== 'common'), [...grades].join(', '));
+    ok('and the top tier renders as Artifact', grades.has('artifact'),
+       'Tier ' + D.TIERS[D.TIERS.length-1] + ' → ' + [...grades].join(', '));
+  }
 
   /* ── an unlock has to announce itself ──
      Reported from play: "I get 2nd building queue, but I don't even get any notification — I need to

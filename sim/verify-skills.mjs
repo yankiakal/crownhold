@@ -2540,5 +2540,295 @@ console.log('\n── no study moves nothing (the bug Electrum itself was) ─�
      unread.join(', ') || 'all ' + expected.length + ' read');
 }
 
+/* ── no building level may be worth nothing ──
+   Reported from play: "the Infirmary doesn't give any bonus after level 10." It had 25 levels and
+   all three of its effects gave up early — the share who come back at exactly 10, healing at 23,
+   and casualties into a floor shared with three other systems that between them oversubscribed it
+   by 1.15 at the top of the game.
+
+   These assert the PROPERTY rather than the numbers: every level of the building must move every
+   figure it claims to, in the right direction, at the worst case for the test — which is a hold
+   that has already maxed Medicine, taken Mastery 15 and seated a medic, because that is the
+   loadout under which the old formula was flattest. A curve tuned to look right at one level is
+   how the original was written. */
+console.log('\n── no Infirmary level is worth nothing (four systems shared one ceiling) ──');
+{
+  const kitted = (l) => {
+    const s = hold();
+    s.b.hospital = l;
+    s.research = { medicine: R.RESEARCH.medicine.max };
+    s.mastery = 14700 * 3;                     // past the Mastery-15 casualty perk
+    s.heroes.medic = { lvl:20, xp:0, stars:3, deeds:0, gear:{}, skills:[null,null,null] };
+    s.court = ['medic'];
+    return s;
+  };
+  const MAX = D.BUILDINGS.hospital.max;
+  let shareBad = [], reliefBad = [], bedsBad = [], healBad = [];
+  for(let l = 1; l <= MAX; l++){
+    const a = kitted(l - 1), b = kitted(l);
+    if(!(L.woundShare(b)   >  L.woundShare(a)))   shareBad.push(l);
+    if(!(L.casualtyRelief(b) < L.casualtyRelief(a))) reliefBad.push(l);
+    if(!(L.woundedCap(b)   >  L.woundedCap(a)))   bedsBad.push(l);
+    const wound = (s) => { s.wounded = { spearman: 50 }; return L.healTime(s); };
+    if(!(wound(kitted(l)) <= wound(kitted(l-1)))) healBad.push(l);
+  }
+  ok('every level raises the share who come back', shareBad.length === 0,
+     shareBad.length ? 'flat at ' + shareBad.join(', ') : '30% → ' + Math.round(L.woundShare(kitted(MAX))*100) + '% over ' + MAX + ' levels');
+  ok('every level cuts casualties, even with Medicine and a medic already maxed', reliefBad.length === 0,
+     reliefBad.length ? 'flat at ' + reliefBad.join(', ') : 'relief ' + L.casualtyRelief(kitted(0)).toFixed(3)
+       + ' → ' + L.casualtyRelief(kitted(MAX)).toFixed(3));
+  ok('every level adds beds', bedsBad.length === 0, bedsBad.join(', ') || L.woundedCap(kitted(MAX)) + ' at max');
+  ok('and no level heals slower than the one below it', healBad.length === 0, healBad.join(', ') || 'monotone');
+
+  /* The user-visible symptom, asserted directly. Beds are deliberately EXCLUDED from the key: they
+     were the one effect that never saturated, so including them makes every row unique and the
+     assertion passes on the broken formula too. Measured — it did. What has to be distinct is the
+     pair that froze. */
+  const rows = new Set();
+  for(let l = 0; l <= MAX; l++){
+    const s = kitted(l);
+    rows.add(Math.round(L.woundShare(s)*100) + '% ×' + L.casualtyRelief(s).toFixed(3));
+  }
+  ok('the level sheet prints a different line for every level', rows.size === MAX + 1,
+     rows.size + ' distinct rows for ' + (MAX+1) + ' levels');
+
+  /* And the repair must not be a rebalance: below the knee the new curve has to return exactly
+     what the old one did, or every existing player's hold quietly changed. */
+  const oldRelief = (s) => Math.max(0.15, 1 - L.heroBonus(s,'casualties') - 0.04*(s.b.hospital||0)
+    - R.techBonus(s,'medicine') - (L.perk(s,15) ? 0.10 : 0));
+  let drift = [];
+  for(let l = 0; l <= MAX; l++){
+    const s = hold(); s.b.hospital = l; s.research = {}; s.court = []; s.mastery = 0;
+    const o = oldRelief(s), n = L.casualtyRelief(s);
+    if(o > 0.15 + 1e-9 && Math.abs(o - n) > 1e-9) drift.push(l + ': ' + o.toFixed(3) + '≠' + n.toFixed(3));
+    if(n > o + 1e-9) drift.push(l + ': WORSE ' + n.toFixed(3) + '>' + o.toFixed(3));
+  }
+  ok('and nothing below the old floor changed at all', drift.length === 0, drift.join(', ') || 'identical wherever the old curve was live');
+}
+
+/* ── a decree's price has to be legible, and it has to outlive a refresh ──
+   Two play reports, one root each. The first: "decree negative things should be in red" — they
+   were not, because the panel split `fx` on a ';' that stopped existing when the string started
+   being generated, so the downside rendered inside the green span. The second: "every time I
+   refresh the previous decree is gone" — which was not persistence at all, but a ten-minute life.
+
+   The colour test asserts the two halves are non-empty and DISJOINT, which is the property the
+   split silently lost. A test that only checked "fx mentions both effects" would have passed
+   throughout the bug. */
+/* ── a vault per resource, and the bill that has to fit in it ──
+   Asked for directly: "since food, wood, stone and iron productions are at different rates even at
+   max level and the rarity is different, max storage should be based on that too."
+
+   Measured before the change: one shared ceiling meant filling from empty took 1.4h of food and
+   6.0h of iron at a paced Town Hall 30 — ×4.29 apart, with the two-hour offline window landing
+   inside the spread, so an overnight absence had food sitting full and wasting while iron climbed.
+
+   Caps are derived from production rates now, and THAT is only safe because of the second block
+   here. A cap smaller than a single purchase makes a building permanently unbuildable, and the
+   binding case is not obvious — it is the Crucible's 20th level at 324,900 stone, the largest
+   single cost in the game, in the vault with the second-slowest production. Anyone retuning a rate
+   or a cost gets told which building they broke. */
+/* ── a column has a position, not just a timer ──
+   Asked for directly: "can I also see some kind of marching animation in the frontier when the march
+   is going and returning — I want to see them on the map, the position."
+
+   The whole journey is derived from three timestamps the march already carries, so what has to be
+   asserted is the geometry: leaves the gate, reaches the node exactly when the panel says it
+   arrives, sits still while it works, then retraces the SAME line home and lands back on the hold.
+   The failure this guards against is a marker that drifts — off by a leg, or interpolating from the
+   wrong endpoint, so a returning column appears to set out again. */
+console.log('\n── a column can be seen crossing the map ──');
+{
+  const s = hold();
+  s.b.command = 30;
+  s.t = { spearman:400, archer:200, knight:120, ballista:60 };
+  const idx = s.world.tiles.findIndex(t => W.TILE_TYPES[t.type].kind === 'gather' && !W.tileLocked(s, t));
+  ok('there is a node to march on', idx >= 0);
+  const t0 = s.now;
+  ok('a column rides out', W.startMarch(s, idx, { spearman:60 }, t0, false, []));
+  const m = s.marches[s.marches.length - 1];
+  const tile = s.world.tiles[idx];
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const HOME = { x:W.CX, y:W.CY };
+
+  const atDep  = W.marchPos(s, m, m.arriveAt - m.out);
+  const midOut = W.marchPos(s, m, m.arriveAt - m.out / 2);
+  const atNode = W.marchPos(s, m, m.arriveAt);
+  const working = W.marchPos(s, m, m.arriveAt + (m.homeAt - m.out - m.arriveAt) / 2);
+  const turn   = W.marchPos(s, m, m.homeAt - m.out);
+  const midBack= W.marchPos(s, m, m.homeAt - m.out / 2);
+  const atHome = W.marchPos(s, m, m.homeAt);
+
+  ok('it starts at the hold', dist(atDep, HOME) < 0.02 && atDep.leg === 'out',
+     atDep.x.toFixed(2) + ',' + atDep.y.toFixed(2) + ' ' + atDep.leg);
+  ok('and is genuinely between the two halfway out',
+     dist(midOut, HOME) > 0.4 && dist(midOut, tile) > 0.4 && midOut.leg === 'out',
+     midOut.x.toFixed(2) + ',' + midOut.y.toFixed(2));
+  ok('it reaches the node exactly when it arrives', dist(atNode, tile) < 0.02,
+     atNode.x.toFixed(2) + ',' + atNode.y.toFixed(2) + ' vs ' + tile.x + ',' + tile.y);
+  ok('and stands still while it works', dist(working, tile) < 0.02 && working.leg === 'work', working.leg);
+  ok('it is still at the node when it turns for home', dist(turn, tile) < 0.02, turn.leg);
+  ok('halfway back it is between them again, pointed home',
+     dist(midBack, HOME) > 0.4 && dist(midBack, tile) > 0.4 && midBack.leg === 'home',
+     midBack.x.toFixed(2) + ',' + midBack.y.toFixed(2) + ' ' + midBack.leg);
+  ok('and it ends on the hold', dist(atHome, HOME) < 0.02,
+     atHome.x.toFixed(2) + ',' + atHome.y.toFixed(2));
+  /* The road home is the road out, walked backwards. Compared at the QUARTER point, not the
+     midpoint: a marker interpolating from the wrong endpoint lands correctly at both ends AND at
+     the middle, because home↔node is symmetric there. Measured — the midpoint version of this
+     assertion passed against a deliberately reversed return leg. A quarter of the way out must
+     match three quarters of the way back, and nothing else. */
+  const quarterOut = W.marchPos(s, m, m.arriveAt - m.out * 0.75);
+  const threeBack  = W.marchPos(s, m, (m.homeAt - m.out) + m.out * 0.75);
+  ok('the way home retraces the way out', dist(quarterOut, threeBack) < 0.02,
+     '25% out ' + quarterOut.x.toFixed(2) + ',' + quarterOut.y.toFixed(2)
+     + ' vs 75% back ' + threeBack.x.toFixed(2) + ',' + threeBack.y.toFixed(2));
+  // monotone progress: a marker must never slide backwards along its leg
+  let backwards = 0, prev = 0;
+  for(let i = 0; i <= 40; i++){
+    const now = (m.arriveAt - m.out) + (m.out) * (i / 40);
+    const d = dist(W.marchPos(s, m, now), HOME);
+    if(d < prev - 1e-9) backwards++;
+    prev = d;
+  }
+  ok('it never walks backwards on the way out', backwards === 0, backwards + ' reversals');
+
+  /* And a hunt, which targets a beast rather than a tile — a separate code path that would
+     otherwise have no witness. */
+  {
+    const h = hold();
+    h.b.command = 30; h.t = { spearman:400, knight:120 };
+    /* Spawned by the real spawner, not hand-written into the array. A synthetic {x,y} passed this
+       kind of test once before and then returned NaN the moment the code under test read a field
+       the fixture had never heard of. */
+    W.spawnBeasts(h, h.now, () => 0.4);
+    const bi = (h.world.beasts || []).findIndex(b => b);
+    if(bi >= 0 && W.startHunt(h, bi, { spearman:60 }, h.now, [])){
+      const hm = h.marches[h.marches.length - 1];
+      const b = h.world.beasts[bi];
+      ok('a hunt is drawn at the herd, not at tile zero',
+         Math.hypot(W.marchPos(h, hm, hm.arriveAt).x - b.x, W.marchPos(h, hm, hm.arriveAt).y - b.y) < 0.02,
+         'beast at ' + b.x + ',' + b.y);
+    } else ok('a hunt is drawn at the herd, not at tile zero', false, 'could not start a hunt to measure');
+  }
+}
+
+console.log('\n── every vault fills in the same time, and still holds its largest bill ──');
+{
+  const RAW = ['food', 'wood', 'stone', 'iron'];
+  const paced = (th) => {
+    const s = freshState(Date.now(), 42);
+    s.b.townhall = th;
+    for(const k of Object.keys(D.BUILDINGS)) if(k !== 'townhall') s.b[k] = Math.min(D.BUILDINGS[k].max, th);
+    s.now = Date.now();
+    return s;
+  };
+  ok('the four raw vaults are no longer the same size',
+     new Set(RAW.map(r => L.capFor(paced(30), r))).size === 4,
+     RAW.map(r => r + ' ' + L.fmt(L.capFor(paced(30), r))).join(', '));
+  ok('and they are ordered by how fast the resource arrives',
+     RAW.every((r, i) => i === 0 || L.capFor(paced(30), RAW[i-1]) > L.capFor(paced(30), r)),
+     RAW.map(r => D.rawRate(r)).join(' > '));
+
+  let worstSpread = 0, worstTh = 0;
+  for(let th = 4; th <= 30; th++){
+    const s = paced(th);
+    const hrs = RAW.map(r => L.capFor(s, r) / L.prodPerSec(s, r));
+    const spread = Math.max(...hrs) / Math.min(...hrs);
+    if(spread > worstSpread){ worstSpread = spread; worstTh = th; }
+  }
+  /* Not 1.00, and deliberately: the Granary lifts food PRODUCTION as well as storage, so food
+     still fills fastest. 1.6 is the measured residual with room, against ×4.29 before. */
+  ok('no vault fills more than 1.6× faster than another, at any Town Hall', worstSpread <= 1.6,
+     '×' + worstSpread.toFixed(2) + ' at Town Hall ' + worstTh);
+
+  /* Every single purchase in the game, against the vault that has to hold it. */
+  const top = paced(30);
+  const tight = [];
+  const HEADROOM = 1.30;
+  for(const r of RAW){
+    let worst = 0, who = '';
+    for(const [k, def] of Object.entries(D.BUILDINGS))
+      for(let l = 1; l <= def.max; l++){
+        const p = { ...top, b: { ...top.b, [k]: l - 1 } };
+        const v = L.buildCost(p, k)[r] || 0;
+        if(v > worst){ worst = v; who = def.name + ' ' + l; }
+      }
+    for(const k of Object.keys(R.RESEARCH))
+      for(let l = 0; l < R.RESEARCH[k].max; l++){
+        const p = { ...top, research: { ...(top.research || {}), [k]: l } };
+        const v = R.techCost(p, k)[r] || 0;
+        if(v > worst){ worst = v; who = R.RESEARCH[k].name + ' ' + (l + 1); }
+      }
+    const cap = L.capFor(top, r);
+    if(cap < worst * HEADROOM)
+      tight.push(r + ': ' + who + ' costs ' + L.fmt(worst) + ' but the vault holds ' + L.fmt(cap));
+  }
+  ok('every vault holds its largest single purchase with 30% to spare', tight.length === 0,
+     tight.join(' | ') || 'all four clear, tightest is stone');
+
+  /* And the caravan clamp, which used the UNDIVIDED ceiling. That is wrong in BOTH directions once
+     the multipliers differ, and which way depends on the resource: storageCap at Town Hall 20 is
+     208,430, while food's own vault holds 402,763 and iron's only 307,179. So the old clamp
+     truncated a food caravan at half the vault the player had paid for, and let an iron one
+     overfill. Seeded near the cap on purpose — measured, a caravan delivers 25,920 over two hours
+     against a 402,763 vault, so a test starting from empty never reaches the clamp at all and
+     passes whichever version is installed. It did. */
+  /* The fixture has NO producers and NO refineries, so the caravan is the only thing that moves a
+     number. A paced hold cannot measure this: its four refineries at level 20 eat more raw goods
+     over two hours than the caravan brings, so food ends BELOW where it started and the clamp never
+     shows. Measured that too, chasing this assertion. */
+  for(const [route, pair] of [['kingsroad', ['food','wood']], ['wildwood', ['stone','iron']]]){
+    const s = paced(20);
+    for(const k of ['farm','lumberyard','quarry','ironmine','forge','runeworks','kitchen','crucible']) s.b[k] = 0;
+    s.t = {};                                             // and nothing eating, so food only rises
+    const y = L.caravanYields({ ...s, caravan: route }) || {};
+    const hit = pair.filter(r => y[r]);
+    if(!hit.length){ ok('the ' + route + ' caravan yields ' + pair.join('/'), false, 'yields ' + JSON.stringify(y)); continue; }
+    for(const r of RAW) s.res[r] = Math.max(0, L.capFor(s, r) - 5000);
+    s.caravan = route;
+    ST.applyOffline(s, 7200000);
+    const over = RAW.filter(r => s.res[r] > L.capFor(s, r) + 1);
+    ok(route + ': a standing caravan cannot overfill a vault', over.length === 0,
+       over.map(r => r + ' ' + Math.round(s.res[r]) + ' > ' + L.capFor(s, r)).join(', ') || 'all within their own caps');
+    // and it must be allowed to fill the whole vault, including past the undivided ceiling
+    const shortChanged = hit.filter(r => L.capFor(s, r) > L.storageCap(s) && s.res[r] < L.capFor(s, r) - 1);
+    ok(route + ': nor be cut off below the vault the player paid for', shortChanged.length === 0,
+       shortChanged.map(r => r + ' stopped at ' + Math.round(s.res[r]) + ' of ' + L.capFor(s, r)).join(', ')
+       || hit.map(r => r + ' ' + Math.round(s.res[r]) + '/' + L.capFor(s, r)).join(', '));
+  }
+}
+
+console.log('\n── a decree shows what it costs, and lasts long enough to matter ──');
+{
+  let bad = [];
+  for(const [k, d] of Object.entries(D.DECREES)){
+    const up = D.decreeUp(d), down = D.decreeDown(d);
+    if(!up) bad.push(k + ': no upside text');
+    if(!down) bad.push(k + ': no downside text');
+    if(up && down && up.includes(down)) bad.push(k + ': downside is inside the upside string');
+  }
+  ok('every decree has both halves, and they are separate strings', bad.length === 0,
+     bad.join('; ') || Object.keys(D.DECREES).length + ' decrees, up and down each rendered on their own');
+
+  /* Bloody Work is the one whose downside RAISES a number rather than lowering it, so it is the
+     one a sign bug hides in: +25% casualties has to read as a cost, not a gift. */
+  ok('a downside that raises a number still reads as a cost', D.decreeDown(D.DECREES.blood).includes('+25%'),
+     D.decreeDown(D.DECREES.blood));
+
+  const s = hold(); s.valor = 500; s.now = Date.now();
+  ok('a decree can be announced', L.announceDecree(s, 'march', s.now));
+  // exactly the round trip the browser does on a refresh
+  const back = ST.migrate(JSON.parse(JSON.stringify(s)), s.now + 30 * 60000);
+  back.now = s.now + 30 * 60000;
+  ok('and it is still standing half an hour later, across a save/load', !!L.decreeOf(back),
+     L.decreeOf(back) ? Math.round(L.decreeLeft(back) / 60000) + ' min left' : 'GONE');
+  const stale = ST.migrate(JSON.parse(JSON.stringify(s)), s.now + D.DECREE_MS + 60000);
+  stale.now = s.now + D.DECREE_MS + 60000;
+  ok('and it does expire once its hour is up', !L.decreeOf(stale));
+  ok('a decree lasts long enough that a day of Valor buys most of a day of it',
+     D.DECREE_MS >= 30 * 60000, Math.round(D.DECREE_MS / 60000) + ' min');
+}
+
 console.log('\n' + (fail ? '✗ ' + fail + ' FAILED, ' + pass + ' passed' : '✓ all ' + pass + ' passed') + '\n');
 process.exit(fail ? 1 : 0);

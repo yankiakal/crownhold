@@ -246,6 +246,43 @@ export function beastPower(s, b){
 }
 
 export function tileDist(t){ return Math.max(Math.abs(t.x-CX), Math.abs(t.y-CY)); }
+
+/* ── where a column actually is ──
+   Asked for directly: "can I also see some kind of marching animation in the frontier when the march
+   is going and returning — I want to see them on the map, the position."
+
+   Until now the map showed a gold border round the DESTINATION and nothing else, so three columns on
+   the road looked identical to three ticked boxes: no sense of distance, no sense of which one comes
+   home first, and no reason for the map to be a map rather than a list. The panel had the times all
+   along; the geography was the missing half.
+
+   POSITION IS DERIVED, never stored. A march already carries departure (arriveAt − out), arrival,
+   and the moment it turns for home (homeAt − out), so the whole journey is a function of `now` and
+   three numbers the rules already keep. Nothing to advance per frame, nothing that can drift from
+   the timers in the panel, and a column is in exactly the right place after a reload or an overnight
+   absence rather than snapping from the gate. It is the same reason there is no game loop.
+
+   Returns fractional tile coordinates so the renderer can place a marker between cells. */
+export function marchTarget(s, m){
+  if(m.beast != null && m.beast >= 0){
+    const b = (s.world.beasts || [])[m.beast];
+    return b ? { x:b.x, y:b.y } : null;
+  }
+  const t = s.world.tiles[m.tile];
+  return t ? { x:t.x, y:t.y } : null;
+}
+export function marchPos(s, m, now){
+  const to = marchTarget(s, m);
+  if(!to) return null;
+  const dep = m.arriveAt - m.out;          // when it left the gate
+  const turn = m.homeAt - m.out;           // when it turns for home
+  const at = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  const home = { x:CX, y:CY };
+  const frac = (from, span) => span > 0 ? Math.max(0, Math.min(1, (now - from) / span)) : 1;
+  if(now < m.arriveAt) return { ...at(home, to, frac(dep, m.out)), leg:'out',  t:frac(dep, m.out) };
+  if(now < turn)       return { ...to, leg:'work', t:frac(m.arriveAt, turn - m.arriveAt) };
+  return { ...at(to, home, frac(turn, m.out)), leg:'home', t:frac(turn, m.out) };
+}
 /* Columns used to carry a single `hero`; they now carry a party of three.
    Old saves and in-flight marches are read through here. */
 export function marchParty(m){ return m.heroes || (m.hero ? [m.hero] : []); }
