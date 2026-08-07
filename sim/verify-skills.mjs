@@ -1744,6 +1744,51 @@ console.log('\n── Seafaring: six studies, measured by actually sailing ─�
      String(W.voyageBlockedBy(two, 3, 6)));
 }
 
+console.log('\n── gathering has to beat standing still ──');
+{
+  /* Reported from play: "gathering gives too little", then "gatherings should feel rewarded since
+     it's something active and not passive", then the observation that settles the number —
+     "rss buildings give rss even when you're offline".
+
+     That last one is the whole argument. Production is the floor a hold gets for FREE: applyOffline
+     grants it in full whether anyone is watching or not. Gathering is paid for in attention, and in
+     troops standing away from the wall while they do it. So it has to clear the floor by a margin,
+     and it did the opposite — measured at Town Hall 3, a run paid ×0.58 of what the Farm made on
+     its own, ×0.66 the Quarry, ×0.76 the Lumberyard. An active mechanic was worth less per minute
+     than closing the app. */
+  const ROUND_TRIP = 2.2;                 // minutes: three tiles each way, plus a minute working
+  const ratios = [];
+  for(const [th, bl, tl] of [[3,2,2],[6,5,3],[10,9,5],[15,14,6],[20,19,7],[25,24,8],[30,30,8]]){
+    const s = freshState(Date.now(), 1);
+    s.b.townhall = th;
+    for(const k of ['farm','lumberyard','quarry','ironmine','granary']) s.b[k] = bl;
+    for(const [tt, def] of Object.entries(W.TILE_TYPES)){
+      if(def.kind !== 'gather') continue;
+      const perMin = L.prodPerSec(s, def.res) * 60;
+      if(perMin <= 0) continue;
+      ratios.push({ th, res: def.res, r: W.gatherYield(s, {lvl:tl, type:tt}) / ROUND_TRIP / perMin });
+    }
+  }
+  const worst = ratios.reduce((a, b) => a.r < b.r ? a : b);
+  ok('a gather run always beats the same minutes of free production',
+     worst.r >= 1.8,
+     'worst case ×' + worst.r.toFixed(2) + ' (' + worst.res + ' at Town Hall ' + worst.th + ')');
+  /* And by the SAME margin for every resource, or one of them is quietly the wrong thing to fetch —
+     which is what weighting food lowest did while the Farm produced the most. */
+  const byTh = {};
+  for(const x of ratios) (byTh[x.th] ||= []).push(x.r);
+  const spread = Math.max(...Object.values(byTh).map(rs => Math.max(...rs) / Math.min(...rs)));
+  ok('and every resource is worth fetching equally', spread < 1.05,
+     'widest spread between resources at one Town Hall level: ×' + spread.toFixed(3));
+
+  /* A node whose production building does not exist yet must still be worth the trip — the Iron
+     Vein before an Iron Mine is the case, and anchoring to production alone would make it zero. */
+  const bare = freshState(Date.now(), 1); bare.b.townhall = 3;
+  ok('a node is worth taking even with no matching building at all',
+     W.gatherYield(bare, {lvl:2, type:'ironvein'}) > 40,
+     W.gatherYield(bare, {lvl:2, type:'ironvein'}) + ' iron from a level-2 vein with no Iron Mine');
+}
+
 console.log('\n── the Road, the Watch and the Court all move real numbers ──');
 {
   /* Three branches over the last systems with no research on them: marching, the wall between

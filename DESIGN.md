@@ -1563,6 +1563,44 @@ players field. Four new tests close it — escorted-efficiency parity, no line b
 constraints, the optimal column must field three of four lines, and no line may escape the screen
 entirely — and all four were confirmed to go red against the old numbers before being kept.
 
+### Gathering paid less than doing nothing (v1.86)
+
+Reported across several messages, and the last one is the argument that settles it: *"gathering gives
+too little"*, *"gatherings should feel rewarded since it's something active and not passive"*, and
+**"rss buildings give rss even when you're offline."**
+
+That last point is the whole case. Production is the floor a hold gets for **free** — `applyOffline`
+grants it in full whether anyone is watching. Gathering is paid for in attention, and in troops
+standing away from the wall while they do it. So it has to clear the floor by a margin. It did the
+opposite:
+
+| resource | gather/min | production/min | ratio |
+|---|---|---|---|
+| food | 145 | 240 | **×0.58** |
+| wood | 145 | 192 | **×0.76** |
+| stone | 80 | 120 | **×0.66** |
+| iron | 44 | 42 | ×0.52 |
+
+An active mechanic was worth less per minute than closing the app. And it drifted: the ratio climbed
+from ×0.58 at Town Hall 3 to ×1.73 at 25 — wrong at both ends, and wrong differently.
+
+Yield is now anchored to the resource's **own production rate**: a run is worth a fixed number of
+minutes of it, so the ratio is uniform by construction rather than something that wanders with
+progression. ×2.00 early, rising to ×3.77 at the deepest tiles — and the rise tracks tile depth,
+which costs more travel to reach, so the two pay for each other. The per-resource weights follow the
+production rates for the same reason: weighting food lowest while the Farm produced the most is
+exactly what made food the worst thing to go and fetch. A floor keeps a node worth taking when its
+matching building does not exist yet — an Iron Vein before any Iron Mine.
+
+**And the stone squeeze was a separate bug.** Town Hall 3 wants 600 stone, and a new hold produced
+**no stone at all**: the Farm and Lumberyard start at level 1, the Quarry started at 0. Food and wood
+flowed from the first second, stone from whenever you got round to it. That asymmetry, not the price,
+is why the early game read as gating on stone. The Quarry opens at 1 now, like the other two.
+
+Watch item: the simulator's bot now converts the extra income into army faster than into Town Hall
+levels — one 240-minute run ended with upkeep 50.3/s against food production 44.5/s. No famines
+fired and the floors held, but an army outgrowing its farms is the shape to keep an eye on.
+
 ### The first two minutes (v1.83)
 
 Reported from play: *"first thing you do in the game, build quarry and you wait 2 mins, nothing

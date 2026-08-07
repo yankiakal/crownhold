@@ -14,7 +14,7 @@ import {
   coverOf, coverMult, matchupEdge, powerShares,
   effLvl, addDeeds, petBonus, gainBond, gainPetXp,
   skillTotal, skillClass, skillCond,
-  gainRes, gainValor, gainShield, gainMastery, gainHeroXp, pushLog, showBanner, fmt, ftime,
+  gainRes, gainValor, gainShield, gainMastery, gainHeroXp, prodPerSec, pushLog, showBanner, fmt, ftime,
 } from './logic.js';
 /* Seafaring research reaches into the voyage: the crossing, the victuals, the ore, the losses,
    the ring charted on landing, and the rest of the haul. */
@@ -42,6 +42,8 @@ export const RESPAWN_MS = 240000;
    This is the thing to set going before you close the game — the troops are
    away the whole time and cannot defend the wall, so it is a real wager. */
 export const LONG_HAUL_WORK = GATHER_MS * 6 * TIME_SCALE, LONG_HAUL_YIELD = 9;
+/* How many minutes of a resource's own production one gather run is worth, before tile depth. */
+export const GATHER_MINUTES = 5;
 
 export const TILE_TYPES = {
   woods:    {icon:'🌲', name:'Deep Woods',  kind:'gather', res:'wood'},
@@ -315,9 +317,33 @@ export function campPower(s, tile){
    A level-8 node pays about 6× a level-1 one, against roughly 3× the round trip. */
 export function gatherYield(s, tile){
   const th = s.b.townhall;
-  const base = (26 + 15*Math.pow(tile.lvl, 1.36)) * th;
-  const scale = {wood:1, food:1, stone:0.55, iron:0.3}[TILE_TYPES[tile.type].res];
-  return Math.round(base * scale * (1 + techBonus(s, 'foraging')));
+  /* ── gathering has to beat standing still, and by a lot ──
+     Measured against passive production at Town Hall 3: a gather run paid ×0.58 of what the Farm
+     made on its own, ×0.66 the Quarry, ×0.76 the Lumberyard. An ACTIVE mechanic — send a column,
+     wait, bring it home, with those troops off the wall the whole time — was worth less per minute
+     than doing nothing.
+
+     And production is worth more than "nothing" suggests, because it RUNS WHILE YOU ARE OFFLINE.
+     applyOffline grants it in full. So production is the floor you get for free, and gathering is
+     paid for in attention on top of that — it has to clear the floor by a margin or the frontier is
+     a worse use of a minute than closing the app.
+
+     So the yield is now anchored to the resource's OWN production rate: a run is worth a fixed
+     number of minutes of it, which makes the ratio uniform by construction rather than something
+     that drifts with progression. It used to climb from ×0.58 at Town Hall 3 to ×1.73 at 25 — wrong
+     at both ends and wrong differently. The per-resource weights follow the production rates
+     (food 2.0, wood 1.6, stone 1.0, iron 0.7) for the same reason: weighting food lowest while the
+     Farm produced the most is what made food the worst thing to go and fetch. */
+  const res = TILE_TYPES[tile.type].res;
+  const perMin = prodPerSec(s, res) * 60;
+  // deeper tiles are worth more, and they cost more travel to reach — the two pay for each other
+  const depth = 0.62 + 0.13 * tile.lvl;
+  const base = perMin * GATHER_MINUTES * depth;
+  /* A floor for a hold whose production building is still at zero, so a node is never worthless —
+     the Iron Vein before an Iron Mine exists is the case that matters. */
+  const floor = (34 + 10 * Math.pow(tile.lvl, 1.36)) * th
+              * {wood:1, food:1.25, stone:0.62, iron:0.44}[res];
+  return Math.round(Math.max(base, floor) * (1 + techBonus(s, 'foraging')));
 }
 
 /* Trim a requested column to what is actually available and commandable:

@@ -28,7 +28,11 @@ export function freshState(now, seed){
     valorDay:0, valorToday:0, rest:0,
     research:{}, rq:null, allyBonus:null, ev:null, daily:null,
     valor:0,
-    b:{townhall:1,farm:1,lumberyard:1,quarry:0,ironmine:0,barracks:0,wall:0,watchtower:0,
+    /* The Quarry opens at 1, like the Farm and the Lumberyard. It used to start at ZERO, so a new
+       hold produced food and wood from the first second and no stone at all — and stone is what
+       Town Hall 3 asks 600 of. That asymmetry, not the price, is why the early game felt like it
+       was gating on stone: reported as having to spam expeditions for it. */
+    b:{townhall:1,farm:1,lumberyard:1,quarry:1,ironmine:0,barracks:0,wall:0,watchtower:0,
        tavern:0,granary:0,academy:0,hospital:0,warehouse:0,library:0,forge:0,runeworks:0,
        range:0,stable:0,siegeyard:0,embassy:0,command:0,kitchen:0,crucible:0},
     t:{spearman:8,archer:0,knight:0,ballista:0},
