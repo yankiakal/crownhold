@@ -60,12 +60,38 @@ export function unlock(){
   if(!AC) return;                             // no WebAudio here: stay silent, never throw
   try {
     ctx = new AC();
+    /* ── the bus ──
+       A DynamicsCompressor was tried here as a safety net for overlapping cues and removed again:
+       measured, it cost every cue about 10ms of lookahead latency and squashed the quiet ones
+       hard — `build` fell from 0.118 peak to 0.029. A limiter that makes the game quieter and
+       less responsive is not a safety net, and with ×8 headroom there was nothing to save. */
     master = ctx.createGain();
     master.gain.value = 0.9;
     master.connect(ctx.destination);
+
     if(prefs.amb) startBed();
   } catch { ctx = null; }
 }
+
+/* ── the room, and why it is not a reverb node ──
+   Two versions of this were built and neither survived contact with the harness. A ConvolverNode
+   with a generated 1.1-second impulse never finished rendering offline. Four delay lines feeding
+   back never finished either, and bisecting showed it was the CYCLE rather than the amount of
+   feedback — loop gain zero still hung, cutting the one closing connection fixed it. Eight
+   non-recirculating taps hung as well. Chrome's OfflineAudioContext and DelayNode do not get
+   along here, and the failure looks exactly like a silent cue, which is the worst shape it could
+   have taken.
+
+   A fourth attempt scheduled the reflections as extra voices with no delay nodes at all. That
+   rendered for simple cues and hung for the arpeggios, and it is neither the per-reflection
+   filters nor the panners: `done` renders at 6 scheduled voices and hangs at 18. Chrome's offline
+   renderer gives out well below what a real context handles, and the failure is indistinguishable
+   from a silent cue — stuck at "rendering…", no exception, nothing in the console.
+
+   Shipping reverb would mean shipping it unmeasured, in the one layer of this project that exists
+   because it IS measured. So the cues are dry, and the three things that could be verified were
+   done instead: variation, unison and stereo placement. If space is wanted later the honest route
+   is a test on a real device, not this harness. */
 
 /* ── the synth ── */
 
@@ -83,48 +109,94 @@ function noiseBuf(){
 /* An envelope that always ends at zero. The exponential tail has to aim at a small
    positive number rather than 0 — WebAudio refuses a ramp to zero and, again, refuses
    it silently. */
-function env(node, t0, dur, peak, attack = 0.006){
+/* Every voice now lands somewhere in the stereo field rather than connecting straight to the
+   master. Nothing in this file had ever touched a StereoPanner, so every sound in the game arrived
+   from a single point in the middle of the listener's head. */
+function env(node, t0, dur, peak, attack = 0.006, o = {}){
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, t0);
   g.gain.linearRampToValueAtTime(peak, t0 + Math.min(attack, dur * 0.5));
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
   node.connect(g);
-  g.connect(master);
+  let out = g;
+  if(ctx.createStereoPanner){
+    const p = ctx.createStereoPanner();
+    p.pan.value = Math.max(-1, Math.min(1, o.pan == null ? 0 : o.pan));
+    g.connect(p);
+    out = p;
+  }
+  out.connect(master);
   return g;
 }
 
+/* ── variation ──
+   The old cues were deterministic: `tap` was 520 Hz for 45 ms, bit-identical on every press, and
+   it fires on every button in the game. Identical repetition is the fastest way to make a sound
+   feel cheap, and it is the thing a human notices within a minute of play that no peak/RMS
+   measurement will ever report. Every voice is now nudged a few cents and a few milliseconds. */
+const vary = (v, pct) => v * (1 + (Math.random() * 2 - 1) * pct);
+
 function tone(f, dur, o = {}){
   if(!ctx) return;
-  const t0 = ctx.currentTime + (o.at || 0);
-  const osc = ctx.createOscillator();
-  osc.type = o.type || 'sine';
-  osc.frequency.setValueAtTime(f, t0);
-  if(o.to) osc.frequency.exponentialRampToValueAtTime(o.to, t0 + dur);
-  env(osc, t0, dur, o.gain == null ? 0.12 : o.gain);
-  osc.start(t0);
-  osc.stop(t0 + dur + 0.03);
+  const t0 = ctx.currentTime + (o.at || 0) + Math.random() * 0.006;
+  const freq = vary(f, o.jitter == null ? 0.012 : o.jitter);
+  /* Unison: two or three oscillators a few cents apart, spread across the stereo field. One bare
+     oscillator is a test tone; three detuned ones are an instrument, and the beating between them
+     is most of what "body" means. Percussion passes voices:1 and stays a single source. */
+  const n = o.voices == null ? 1 : o.voices;
+  const peak = (o.gain == null ? 0.12 : o.gain) / Math.sqrt(n);
+  for(let i = 0; i < n; i++){
+    const spread = n === 1 ? 0 : (i / (n - 1) - 0.5) * 2;      // -1 … +1
+    const pan = (o.pan || 0) + spread * (o.width == null ? 0.35 : o.width);
+    const voice = (at, g, pn, cut) => {
+      const osc = ctx.createOscillator();
+      osc.type = o.type || 'sine';
+      osc.frequency.setValueAtTime(freq * (1 + spread * 0.004), at);
+      if(o.to) osc.frequency.exponentialRampToValueAtTime(vary(o.to, 0.01), at + dur);
+      let src = osc;
+      if(cut){                                  // reflections come back darker, as they do in a room
+        const f = ctx.createBiquadFilter();
+        f.type = 'lowpass'; f.frequency.value = cut;
+        osc.connect(f); src = f;
+      }
+      env(src, at, dur, g, o.attack, { pan: pn });
+      osc.start(at);
+      osc.stop(at + dur + 0.03);
+    };
+    voice(t0, peak, pan, 0);
+  }
 }
 
 function noise(dur, o = {}){
   if(!ctx) return;
-  const t0 = ctx.currentTime + (o.at || 0);
+  const t0 = ctx.currentTime + (o.at || 0) + Math.random() * 0.005;
   const src = ctx.createBufferSource();
   src.buffer = noiseBuf();
   src.loop = true;
   const f = ctx.createBiquadFilter();
   f.type = o.type || 'lowpass';
-  f.frequency.setValueAtTime(o.cut || 1200, t0);
+  f.frequency.setValueAtTime(vary(o.cut || 1200, 0.06), t0);
   f.Q.value = o.q == null ? 1 : o.q;
-  if(o.sweepTo) f.frequency.exponentialRampToValueAtTime(o.sweepTo, t0 + dur);
+  if(o.sweepTo) f.frequency.exponentialRampToValueAtTime(vary(o.sweepTo, 0.06), t0 + dur);
   src.connect(f);
-  env(f, t0, dur, o.gain == null ? 0.12 : o.gain);
-  src.start(t0);
+  const g0 = vary(o.gain == null ? 0.12 : o.gain, 0.08);
+  const pan0 = o.pan == null ? 0 : o.pan;
+  env(f, t0, dur, g0, o.attack, { pan: pan0 });
+  /* Start from a random point in the 1.5s buffer. Every percussive cue in the game is this one
+     buffer through a filter, so always entering at sample zero meant every strike was the same
+     strike — the noise was random once, at startup, and deterministic forever after. */
+  src.start(t0, Math.random() * 1.2);
   src.stop(t0 + dur + 0.03);
 }
 
-// a run of notes, which is most of what a cue is
 function run(freqs, dur, o = {}){
-  freqs.forEach((f, i) => tone(f, dur, { ...o, at: (o.at || 0) + i * (o.step || 0.07) }));
+  /* Notes walk across the field as they rise. Stacked at dead centre an arpeggio is a stack of
+     beeps; spread across a third of the width it reads as a phrase being played. */
+  freqs.forEach((f, i) => {
+    const at = (o.at || 0) + i * (o.step || 0.07);
+    const pan = freqs.length < 2 ? 0 : ((i / (freqs.length - 1)) - 0.5) * 0.7;
+    tone(f, dur, { ...o, at, pan: (o.pan || 0) + pan });
+  });
 }
 
 /* ── the cues ──
@@ -132,31 +204,37 @@ function run(freqs, dur, o = {}){
    Kept quiet on purpose: this plays under a thumb on a phone, and the loudest thing
    in the mix should be the one that means you are being attacked. */
 export const CUES = {
-  tap:     () => tone(520, 0.045, { gain: 0.05 }),
-  deny:    () => { tone(190, 0.10, { type:'square', gain:0.06 });
-                   tone(138, 0.15, { type:'square', gain:0.05, at:0.07 }); },
+  /* voices:1 keeps a source mono and single; pan places it; wet is how much room it feeds.
+     Percussion sits dry and centred, horns and arpeggios are wide and wet — that contrast is
+     most of what makes a set of cues sound like one place rather than a list of beeps. */
+  tap:     () => tone(520, 0.045, { gain: 0.05, voices:1, wet:0.25, jitter:0.03 }),
+  deny:    () => { tone(190, 0.10, { type:'square', gain:0.06, voices:1, wet:0.3 });
+                   tone(138, 0.15, { type:'square', gain:0.05, at:0.07, voices:1, wet:0.3 }); },
   // a mallet on timber: the strike, then the body of the beam
-  build:   () => { noise(0.08, { gain:0.15, cut:1100, sweepTo:220 });
-                   tone(104, 0.20, { type:'triangle', gain:0.13 }); },
-  done:    () => run([523, 659, 784], 0.32, { type:'triangle', gain:0.10, step:0.075 }),
-  drill:   () => { noise(0.055, { gain:0.13, cut:2800, q:2 });
-                   tone(392, 0.13, { type:'square', gain:0.06, at:0.03 }); },
+  build:   () => { noise(0.08, { gain:0.15, cut:1100, sweepTo:220, wet:0.35, pan:-0.15 });
+                   tone(104, 0.20, { type:'triangle', gain:0.13, width:0.2, wet:0.5 }); },
+  done:    () => run([523, 659, 784], 0.32, { type:'triangle', gain:0.10, step:0.075, wet:0.9 }),
+  drill:   () => { noise(0.055, { gain:0.13, cut:2800, q:2, wet:0.3, pan:0.2 });
+                   tone(392, 0.13, { type:'square', gain:0.06, at:0.03, wet:0.4 }); },
   // reforging: an arpeggio with a bright tail over it
-  promote: () => { run([523, 659, 784, 1047], 0.44, { type:'triangle', gain:0.09, step:0.06 });
-                   noise(0.55, { type:'highpass', gain:0.045, cut:4800, q:0.7, at:0.10 }); },
-  // three drum strokes and a horn behind them
-  march:   () => { [0, 0.17, 0.34].forEach(t => noise(0.11, { gain:0.18, cut:190, at:t }));
-                   tone(196, 0.50, { type:'sawtooth', gain:0.065, at:0.10 }); },
-  win:     () => run([392, 523, 659, 784], 0.46, { type:'sawtooth', gain:0.07, step:0.085 }),
-  loss:    () => { tone(220, 0.75, { type:'sawtooth', gain:0.085, to:104 });
-                   noise(0.85, { gain:0.095, cut:420, sweepTo:90 }); },
-  // two-note horn, twice — the one cue allowed to cut through
-  alarm:   () => [0, 0.30].forEach(t => { tone(587, 0.21, { type:'square', gain:0.085, at:t });
-                                          tone(440, 0.24, { type:'square', gain:0.075, at:t + 0.11 }); }),
-  coin:    () => { tone(988, 0.065, { gain:0.06 }); tone(1319, 0.10, { gain:0.05, at:0.05 }); },
-  beast:   () => { tone(88, 0.55, { type:'sawtooth', gain:0.12, to:60 });
-                   noise(0.50, { gain:0.085, cut:320, q:3 }); },
-  hero:    () => run([659, 880, 1047, 1319], 0.52, { gain:0.085, step:0.055 }),
+  promote: () => { run([523, 659, 784, 1047], 0.44, { type:'triangle', gain:0.09, step:0.06, wet:1 });
+                   noise(0.55, { type:'highpass', gain:0.045, cut:4800, q:0.7, at:0.10, wet:1 }); },
+  /* three drum strokes and a horn behind them. The strokes alternate across the field, which is
+     what makes a repeated hit read as a marching column rather than one drum played three times. */
+  march:   () => { [[0,-0.4],[0.17,0.35],[0.34,-0.2]].forEach(([t,pan]) =>
+                     noise(0.11, { gain:0.18, cut:190, at:t, pan, wet:0.5 }));
+                   tone(196, 0.50, { type:'sawtooth', gain:0.065, at:0.10, width:0.5, wet:1 }); },
+  win:     () => run([392, 523, 659, 784], 0.46, { type:'sawtooth', gain:0.07, step:0.085, wet:1 }),
+  loss:    () => { tone(220, 0.75, { type:'sawtooth', gain:0.085, to:104, width:0.45, wet:1 });
+                   noise(0.85, { gain:0.095, cut:420, sweepTo:90, wet:0.8 }); },
+  // two-note horn, twice — the one cue allowed to cut through, so it stays wide and wet
+  alarm:   () => [0, 0.30].forEach(t => { tone(587, 0.21, { type:'square', gain:0.085, at:t, width:0.55, wet:1 });
+                                          tone(440, 0.24, { type:'square', gain:0.075, at:t + 0.11, width:0.55, wet:1 }); }),
+  coin:    () => { tone(988, 0.065, { gain:0.06, voices:1, wet:0.5, pan:0.25 });
+                   tone(1319, 0.10, { gain:0.05, at:0.05, voices:1, wet:0.5, pan:-0.2 }); },
+  beast:   () => { tone(88, 0.55, { type:'sawtooth', gain:0.12, to:60, width:0.5, wet:0.8 });
+                   noise(0.50, { gain:0.085, cut:320, q:3, wet:0.7 }); },
+  hero:    () => run([659, 880, 1047, 1319], 0.52, { gain:0.085, step:0.055, wet:1 }),
 };
 
 /* How soon the same cue may play again. This is what lets the action handler and the

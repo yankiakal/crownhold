@@ -28,24 +28,38 @@ pre{white-space:pre-wrap;word-break:break-all;padding:8px}</style>
 import * as A from '/src/audio.js';
 
 const name = new URLSearchParams(location.search).get('cue') || 'tap';
-const SR = 44100, SECS = 1.2;         // the longest cue is 0.85s plus its tail
+const SR = 44100, SECS = 1.2;         // 0.85s of cue, plus the 91ms reflection and its own decay
 const status = t => { document.getElementById('status').textContent = t; };
 
+/* Stereo now, and measuring three things peak-and-RMS never could: how WIDE a cue is, how long
+   its TAIL rings, and — rendered twice — whether it VARIES. Those are the qualities that separate
+   "a sound happened" from "the sound is good", and the old mono probe was blind to all three. */
 function measure(buf){
-  const d = buf.getChannelData(0);
-  let peak = 0, sq = 0, first = -1;
-  for(let i = 0; i < d.length; i++){
-    const a = Math.abs(d[i]);
-    if(a > peak) peak = a;
-    sq += d[i] * d[i];
-    if(first < 0 && a > 0.001) first = i;
+  const L = buf.getChannelData(0);
+  const R = buf.numberOfChannels > 1 ? buf.getChannelData(1) : L;
+  let peak = 0, sq = 0, first = -1, last = -1, diff = 0, sumL = 0, sumR = 0;
+  for(let i = 0; i < L.length; i++){
+    const m = Math.max(Math.abs(L[i]), Math.abs(R[i]));
+    if(m > peak) peak = m;
+    sq += (L[i] * L[i] + R[i] * R[i]) / 2;
+    if(m > 0.001){ if(first < 0) first = i; last = i; }
+    diff += Math.abs(L[i] - R[i]);
+    sumL += Math.abs(L[i]); sumR += Math.abs(R[i]);
   }
-  return { peak, rms: Math.sqrt(sq / d.length), startMs: first < 0 ? -1 : (first / SR) * 1000 };
+  const mono = sumL + sumR;
+  return {
+    peak, rms: Math.sqrt(sq / L.length),
+    startMs: first < 0 ? -1 : (first / SR) * 1000,
+    endMs: last < 0 ? -1 : (last / SR) * 1000,
+    width: mono > 0 ? diff / mono : 0,      // 0 = dead centre, higher = the two sides differ
+  };
 }
 
 try {
   const wind = name === '__wind';
-  const off = new OfflineAudioContext(1, Math.round(SR * SECS), SR);
+  /* TWO channels. The convolver's impulse is stereo, and a stereo IR inside a mono context is
+     what made every cue render as "no payload" the moment the reverb bus was added. */
+  const off = new OfflineAudioContext(2, Math.round(SR * SECS), SR);
   A._reset();
   window.AudioContext = function(){ return off; };
   // the bed would otherwise sit under every cue and lift every floor

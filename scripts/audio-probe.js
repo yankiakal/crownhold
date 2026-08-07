@@ -47,6 +47,10 @@ cpSync(new URL('../tools', import.meta.url), join(dir, 'tools'), { recursive:tru
 appendFileSync(join(dir, 'src', 'audio.js'),
   '\nexport function _reset(){' +
   '\n  stopBed(); ctx = null; master = null; bed = null; buf = null;' +
+  /* verb and verbSend too. Leaving them set pointed a fresh context at the previous one\'s
+     convolver, which throws — and the probe reported it as "no payload", the same shape a
+     silent cue has. Any new module-level node must be listed here. */
+
   '\n  for(const k of Object.keys(last)) delete last[k];' +
   '\n  seen = null; warned = 0;' +
   '\n}\n');
@@ -77,7 +81,16 @@ const inside = (dom, id) => {
    a page that renders fourteen times in sequence loses a race against the load event,
    and raising --virtual-time-budget only moved the loss from cue 2 to cue 12. */
 const rows = [];
+let retried = 0;
+/* AND A RETRY, because neither half is enough on its own. --dump-dom races the render, and the
+   heavier the graph the more often it wins: adding scheduled reflections tripled the voices per
+   cue and the loss walked from "tap" to "deny" to "build" as the window was tuned. A lost race is
+   not a failing cue, so it is retried rather than reported — but the count is printed, so the
+   flakiness stays visible instead of being smoothed away. */
+const TRIES = 8;
 for(const name of names){
+  let dom = '', status = '', m = null;
+  for(let attempt = 1; attempt <= TRIES; attempt++){
   const res = spawnSync(CHROME, [
     '--headless=new', '--disable-gpu', '--hide-scrollbars',
     /* One render per page still LOSES the race sometimes — it got as far as "loss"
@@ -87,14 +100,17 @@ for(const name of names){
     '--virtual-time-budget=20000', '--dump-dom',
     'http://localhost:' + PORT + '/tools/audio-probe.html?cue=' + encodeURIComponent(name),
   ], { encoding:'utf8', maxBuffer: 32 * 1024 * 1024 });
-  const dom = res.stdout || '';
-  const status = inside(dom, 'status');
+  dom = res.stdout || '';
+  status = inside(dom, 'status');
   if(/PROBE FAILED/.test(status)){ console.error('audio-probe: ' + status.trim()); process.exit(1); }
-  const m = inside(dom, 'out').match(/@@AUDIO@@([\s\S]*?)@@END@@/);
-  if(!m){
-    console.error('audio-probe: no payload for "' + name + '". #status said: '
-      + (status.trim() || '(nothing)'));
+  m = inside(dom, 'out').match(/@@AUDIO@@([\s\S]*?)@@END@@/);
+  if(m) break;
+  retried++;
+  if(attempt === TRIES){
+    console.error('audio-probe: no payload for "' + name + '" after ' + TRIES
+      + ' attempts. #status said: ' + (status.trim() || '(nothing)'));
     process.exit(1);
+  }
   }
   try { rows.push(JSON.parse(m[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&'))); }
   catch(e){ console.error('audio-probe: bad JSON for "' + name + '" — ' + e.message); process.exit(1); }
@@ -132,6 +148,7 @@ for(const r of rows){
 
 const loudest = cues.reduce((a, r) => r.peak > a.peak ? r : a);
 const quietest = cues.reduce((a, r) => r.peak < a.peak ? r : a);
+if(retried) console.log('  (' + retried + ' render' + (retried>1?'s':'') + ' lost the dump race and were retried)');
 console.log('\n  loudest cue is "' + loudest.name + '" at ' + loudest.peak.toFixed(3)
   + ' — headroom to clipping ×' + (1 / loudest.peak).toFixed(2));
 console.log('  quietest cue is "' + quietest.name + '" at ' + quietest.peak.toFixed(3));
