@@ -185,6 +185,8 @@ function renderHeader(S){
 }
 
 function renderThreat(S){
+  /* the strip is one tap from the full story — data-act on the section, handled by runAction's
+     closest() lookup, opens War where every folded detail already renders */
   const now = Date.now();
   const shielded = S.shieldUntil > now;
   const left = S.nextWave - now;
@@ -201,7 +203,7 @@ function renderThreat(S){
       +(wt.weakTo?' · weak to '+STANCES[wt.weakTo].name+' &amp; '+TROOPS[wt.counter].plural:'')
       +(!S.b.watchtower && raven ? ' <span style="opacity:.7">(your raven brought word)</span>' : '')
     : 'an unknown band — a Watchtower would name it';
-  let h = '<div class="threat"><div class="row">';
+  let h = '<div class="threat" data-act="tab" data-key="war" role="button"><div class="row">';
   if(shielded){
     h += '<span class="title" style="color:var(--gold)">🛡 The Writ of Peace holds</span>'
       + '<span class="meta">raids resume in <b>'+ftime(S.shieldUntil-now)+'</b></span>';
@@ -3766,7 +3768,7 @@ export function wire(){
       if(bi >= 0){ detail = {type:'beast', key:bi}; render(); }
       return;
     }
-    const btn = e.target.closest('button[data-act]');
+    const btn = e.target.closest('button[data-act],[role="button"][data-act]');
     if(btn){ runAction(btn); return; }
     /* Tapping the dark outside a sheet closes it. Three sheets have carried a
        `data-act-bg` attribute since they were written and nothing ever read it, so the
@@ -3782,7 +3784,7 @@ export function wire(){
   // keyboard activation arrives as click with detail 0
   document.addEventListener('click', e => {
     if(e.detail !== 0) return;
-    const btn = e.target.closest('button[data-act]');
+    const btn = e.target.closest('button[data-act],[role="button"][data-act]');
     if(btn) runAction(btn);
   });
   /* Audio has to be built inside a real gesture or the browser hands back a context

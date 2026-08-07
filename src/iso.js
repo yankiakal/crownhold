@@ -936,7 +936,11 @@ function resize(){
      subject" — an illustration again, just centred this time. Whiteout Survival's city is bigger
      than the screen and you move the camera. So the grid fills the viewport in BOTH axes and the
      slot pans; the map is the screen, edge to edge. */
-  const next = fixed ? Math.min(1.6, Math.max(boxW / w, boxH / hgt))
+  /* UNCAPPED in camera mode, within reason. The 1.6 ceiling belonged to the 46vh strip; under it
+     the camera could never cover a phone vertically — the grid is a wide 2:1 diamond, so covering
+     852px of height needs ~2.3×, and the cap left a 250px dead band under the walls that read as
+     "this thing is broken". Big tiles panned under a thumb is exactly what the reference game does. */
+  const next = fixed ? Math.min(2.6, Math.max(boxW / w, boxH / hgt))
              : narrow ? Math.min(1.6, wantH / hgt)
              : Math.min(1, boxW / w);
   const sizeKey = boxW + 'x' + boxH;
