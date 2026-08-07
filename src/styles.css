@@ -109,11 +109,14 @@ html,body{overflow-x:hidden}
   .brand .tag{display:none}
   /* the chip takes the corner and the wordmark steps back to a quiet mark beside it */
   .holdchip{
-    display:inline-flex;align-items:baseline;gap:.3rem;
-    font-family:var(--sans);font-size:.62rem;letter-spacing:.08em;
+    display:inline-flex;align-items:center;gap:.3rem;
+    font-family:var(--sans);font-size:.66rem;letter-spacing:.08em;
     text-transform:none;color:var(--ink-dim);
     background:var(--panel-2);border:1px solid var(--edge);border-radius:999px;
-    padding:.2rem .5rem;max-width:9rem;
+    /* 44px, because it is the way into your account now that the dock is gone and every tappable
+       thing has to clear a thumb. The padding does it rather than a fixed height, so the chip still
+       hugs its text. */
+    padding:.55rem .7rem;min-height:2.75rem;max-width:10rem;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   }
   .holdchip b{color:var(--gold);font-weight:600;font-variant-numeric:tabular-nums}
@@ -887,7 +890,6 @@ details.temper[open] summary::before{content:'▾ '}
 details.temper .tname{font-size:.92rem;color:var(--ink)}
 
 /* ── the dock: utility icons over the world, phone only ── */
-.dock{display:none}
 @media(max-width:820px){
   footer{display:none}          /* ninety pixels of permanent row for once-a-session buttons */
   .dock{
@@ -995,3 +997,15 @@ canvas{ touch-action:none; }
   .sbadge.done{animation:sbpulse 1.6s ease-in-out infinite}
 }
 @keyframes sbpulse{50%{box-shadow:0 2px 14px rgba(127,166,90,.45)}}
+
+
+/* The dock's contents, rehoused as a grid in the Ledger. Four things nobody touches twice a session
+   should not own a permanent column down the side of the walls — see renderHoldTools. */
+.toolgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(6.5rem,1fr));gap:.5rem}
+.toolgrid button{
+  display:flex;flex-direction:column;align-items:center;gap:.3rem;
+  min-height:3.4rem;padding:.5rem .4rem;
+  font-family:var(--sans);font-size:.66rem;letter-spacing:.06em;
+}
+.toolgrid button span{font-size:1.15rem;line-height:1}
+.panel>h2 .vchip{font-family:var(--sans);font-size:.58rem;color:var(--ink-dim);letter-spacing:.1em}

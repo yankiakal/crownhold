@@ -142,8 +142,15 @@ function renderHeader(S){
   const th = S.b.townhall || 1;
   const who = net.isOnline() ? net.accountName() : null;
   let h = '<header><div class="brand">'
-    + '<span class="holdchip"><b>TH' + th + '</b>' + (who ? ' ' + esc(who) : '') + '</span>'
-    + '<h1>CROWNHOLD</h1><span class="tag">hold the frontier</span></div><div class="res-row">';
+    /* A BUTTON now, not a span — the dock is gone and this is where its ☁ went. Whiteout Survival
+       puts your avatar in this corner and opening it is how you reach your account, which is the
+       same gesture. Sized to 44px in the stylesheet because it is tappable, which is exactly why it
+       could not be a button while the dock still carried that job. */
+    + '<button class="holdchip" data-act="account" aria-label="'
+    + (who ? 'Your account' : 'Play online') + '"><b>TH' + th + '</b>'
+    + (who ? ' ' + esc(who) : ' ☁') + '</button>'
+    + '<h1>CROWNHOLD</h1><span class="tag">hold the frontier</span>'
+    + '</div><div class="res-row">';
   for(const [r,m] of Object.entries(RES_META)){
     if(!isUnlocked(S, r)) continue;                   // refined goods appear once you can make them
     let rate, rateTxt;
@@ -914,18 +921,30 @@ function renderLesson(S){
    The version chip is here on purpose. The footer carries it on a desktop, and hiding the footer
    on phones would have hidden the one piece of build metadata that exists specifically so you can
    tell which build you are looking at — the whole reason it was added. */
-function renderDock(S){
-  if(tab !== 'hold') return '';
-  const b = (act, icon, label) => '<button data-act="'+act+'" title="'+label+'" aria-label="'+label
-    + '"><span>'+icon+'</span></button>';
-  return '<div class="dock">'
-    + b('account', net.accountName() ? '☁' : '☁', net.accountName() || 'Play online')
-    + b('store',   '🛍', 'Store — cosmetics only')
-    + b('codex',   '📖', 'Codex — all the rules')
-    + b('lore',    '📜', 'Annals — the story of the Reach')
+/* ── the dock is gone ──
+   Asked for: "we don't have a dock in the app do we? if we do then remove it, UI will be like WoS."
+   Right — a floating column of five icons down the right edge of the walls is this game's own
+   invention, and Whiteout Survival puts none of that there.
+
+   But five things lived in it, and deleting the shelf without rehousing them would have removed
+   access to sign-in, the store, the Codex, the Annals and the MUTE TOGGLE. So:
+     · ☁ account  → the hold chip in the top-left corner, which is where WoS keeps your avatar and
+                    is the same gesture. It is a button now for exactly this reason.
+     · everything else → a Hold panel at the top of the Ledger tab, which is already where the
+                    once-a-session things live (the Chronicle, the Calendar, Mastery).
+   The version chip goes with them, because "which build am I on" is the question this whole project
+   answers with it, and the phone harness asserts it is somewhere visible. */
+function renderHoldTools(S){
+  const b = (act, icon, label) => '<button data-act="'+act+'" aria-label="'+label+'">'
+    + '<span aria-hidden="true">'+icon+'</span>'+label+'</button>';
+  return '<section class="panel"><h2>The Hold <span class="vchip" title="build '+BUILD+'">'
+    + VERSION+'</span></h2>'
+    + '<div class="toolgrid">'
+    + b('store',    '🛍', 'Store')
+    + b('codex',    '📖', 'Codex')
+    + b('lore',     '📜', 'Annals')
     + b('settings', sound.muted() ? '🔇' : '⚙', 'Settings')
-    + '<span class="vchip" title="build '+BUILD+'">'+VERSION+'</span>'
-    + '</div>';
+    + '</div></section>';
 }
 
 function renderStore(S){
@@ -2972,11 +2991,11 @@ export function render(){
       + inTab('court',  renderHeroes(S) + renderPets(S) + renderRegalia(S) + renderSpoils(S))
       + inTab('hold',   renderDecrees(S) + renderResearch(S))
       + inTab(paneFor('ally'), renderAlliance(S) + renderMusterRoll(S) + renderRealm(S) + renderRift(S))
-      + inTab('ledger', renderQuest(S) + renderDaily(S) + renderEvent(S) + renderCalendar(S)
+      + inTab('ledger', renderHoldTools(S) + renderQuest(S) + renderDaily(S) + renderEvent(S) + renderCalendar(S)
                       + renderLeaderboard(S) + renderMastery(S) + renderAchievements(S)
                       + renderChronicle(S))
     + '</div>'
-    + '</main>' + renderFooter() + renderDock(S) + renderTabBar());
+    + '</main>' + renderFooter() + renderTabBar());
   writeKeepingScroll(fx, renderFx(S) + renderLesson(S) + renderLore(S) + renderStore(S) + renderSettings(S)
     + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) : ''));
   setSkinTint((HOLD_SKINS[(S.cos && S.cos.hold) || 'default'] || {}).tint);

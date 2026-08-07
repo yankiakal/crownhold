@@ -199,11 +199,22 @@ setTimeout(() => {
             }
           });
         }
-        rows.push('  dock ' + btns.length + ' icons'
-          + (buried ? ' ✗ ' + buried + ' BUTTONS BURIED under it (' + buriedWhat.join(', ') + ')'
-                    : ' · buries nothing ✓')
-          + (small ? ' ✗ ' + small + ' under 44px' : ' ✓ all thumb-sized')
-          + (dock && dock.querySelector('.vchip') ? ' · version chip present ✓' : ' ✗ NO VERSION VISIBLE')
+        /* The dock was REMOVED in v2.0 — a floating column of five icons down the right edge of the
+           walls was this game's own invention and no part of the shell it is modelled on. So the
+           burial check above now has nothing to test on most screens, and what has to be asserted
+           instead is that removing the shelf did not remove what stood on it: the version chip, and
+           the four tools that moved into the Ledger. A harness that kept measuring a dock would go
+           quietly green while sign-in had vanished. */
+        const chip = d.querySelector('.vchip');
+        const rehoused = ['store','codex','lore','settings']
+          .filter(a => !d.querySelector('[data-act="' + a + '"]'));
+        rows.push('  ' + (dock ? 'dock ' + btns.length + ' icons'
+              + (buried ? ' ✗ ' + buried + ' BUTTONS BURIED (' + buriedWhat.join(', ') + ')' : ' · buries nothing ✓')
+              + (small ? ' ✗ ' + small + ' under 44px' : ' ✓ all thumb-sized')
+            : 'no dock ✓')
+          + (chip ? ' · version chip present ✓' : ' ✗ NO VERSION VISIBLE')
+          + (d.querySelector('[data-act="account"]') ? ' · account reachable ✓' : ' ✗ NO WAY TO SIGN IN')
+          + (rehoused.length ? ' ✗ LOST: ' + rehoused.join(', ') : ' · tools rehoused ✓')
           + (d.querySelector('footer') && d.querySelector('footer').offsetHeight
               ? ' ✗ footer still taking space' : ' · footer hidden ✓'));
       }

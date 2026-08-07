@@ -424,8 +424,17 @@ try {
     UI.render();
     const head = (nodes.app && nodes.app.innerHTML) || '';
     ok('the header carries a hold chip with the Town Hall level',
-       /class="holdchip"><b>TH20<\/b>/.test(head),
-       (head.match(/class="holdchip">[^<]*<b>[^<]*<\/b>[^<]*/) || ['(absent)'])[0]);
+       /class="holdchip"[^>]*><b>TH20<\/b>/.test(head),
+       (head.match(/class="holdchip"[\s\S]{0,80}?<\/button>/) || ['(absent)'])[0]);
+    /* The dock is gone, so the chip is the only way to your account — WoS's avatar corner. If this
+       stops being a button, sign-in becomes unreachable on a phone, which is the regression that
+       removing a shelf of five icons invites. */
+    ok('and it is the way into your account now the dock is gone',
+       /class="holdchip" data-act="account"/.test(head));
+    ok('nothing renders a dock any more', !/class="dock"/.test(head));
+    /* And its four other items have somewhere to live, or removing it deleted the mute toggle. */
+    for(const act of ['store','codex','lore','settings'])
+      ok('the ' + act + ' is still reachable', new RegExp('data-act="' + act + '"').test(head));
 
     /* The bubble only exists online — there is nobody to talk to solo. Rendered through the same
        fake-session seam the account-deletion test uses. */
