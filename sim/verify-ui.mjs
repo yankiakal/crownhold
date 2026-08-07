@@ -294,6 +294,17 @@ try {
   ok('but the wall still gets a badge and a name at the gatehouse',
      typeof ISO.wallAnchor === 'function' && Array.isArray(ISO.wallAnchor()),
      'gate anchor ' + (typeof ISO.wallAnchor === 'function' ? JSON.stringify(ISO.wallAnchor()) : 'MISSING'));
+  /* AND IT HAS TO BE TAPPABLE. Fixing the badge and the name first made things worse, not better:
+     the scene pointed at the Wall and then ignored the press, because pickBuilding walks PLOTS as
+     well. Reported in that exact order. Every perimeter tile answers 'wall'; nothing inside does. */
+  ok('and a tap anywhere on the perimeter picks the wall',
+     typeof ISO.pickTile === 'function'
+       && ISO.pickTile(0, 0) === 'wall' && ISO.pickTile(4, 8) === 'wall'
+       && ISO.pickTile(8, 3) === 'wall' && ISO.pickTile(3, 7) !== 'wall',
+     typeof ISO.pickTile === 'function'
+       ? 'corner ' + ISO.pickTile(0,0) + ', gate ' + ISO.pickTile(4,8)
+         + ', inside ' + (ISO.pickTile(3,7) || 'nothing')
+       : 'pickTile MISSING');
 
   // two buildings must never share a tile, or one silently hides the other
   const seen = new Map(), clashes = [];

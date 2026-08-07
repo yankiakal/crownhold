@@ -1304,7 +1304,29 @@ export function pickBuilding(clientX, clientY){
   if(!cv) return null;
   const { x, y } = tileAt(clientX, clientY);
   const at = (tx, ty) => Object.keys(PLOTS).find(k => PLOTS[k] && PLOTS[k][0] === tx && PLOTS[k][1] === ty);
-  return at(x, y) || at(x+1, y) || at(x, y+1) || at(x+1, y+1) || null;
+  const hit = at(x, y) || at(x+1, y) || at(x, y+1) || at(x+1, y+1);
+  if(hit) return hit;
+  /* THE WALL. Third and last thing `PLOTS.wall = null` quietly broke: this lookup walks PLOTS too,
+     so every tap on the perimeter resolved to nothing. Badge and name were fixed first, which made
+     it worse rather than better — the game now pointed at something and then ignored you when you
+     pressed it. Reported in exactly that order: "I can see that wall needs to be built but I can't
+     click it in scene mode."
+
+     Any perimeter tile answers, not just the gatehouse. The wall IS the perimeter, so a tap
+     anywhere along it is unambiguous — nothing else stands there — and asking the player to find
+     one specific tile of twenty-eight would be a worse bug than the one being fixed. */
+  return pickTile(x, y);
+}
+
+/* The tile→building rule on its own, so it can be tested without a canvas. pickBuilding is the
+   same thing with a coordinate conversion in front of it. */
+export function pickTile(x, y){
+  const at = (tx, ty) => Object.keys(PLOTS).find(k => PLOTS[k] && PLOTS[k][0] === tx && PLOTS[k][1] === ty);
+  const hit = at(x, y) || at(x+1, y) || at(x, y+1) || at(x+1, y+1);
+  if(hit) return hit;
+  const onEdge = (x === 0 || y === 0 || x === GRID - 1 || y === GRID - 1)
+              && x >= 0 && y >= 0 && x < GRID && y < GRID;
+  return onEdge ? 'wall' : null;
 }
 
 export function unmountScene(){ cancelAnimationFrame(raf); raf = 0; }
