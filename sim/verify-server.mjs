@@ -465,6 +465,64 @@ try {
        (await post('/api/alliance/info', { token: (await post('/api/login', { name:'Gone', password:'longenoughpassword' })).body.token })).body.alliance === null);
   }
 
+  /* ── moderation, which the App Store requires and chat shipped without ──
+     Guideline 1.2 asks four things of any app with user-generated content: a filter, a way to report,
+     a way to block, and published contact details. Chat had none — the only tool was editing
+     accounts.json with the server stopped, which is not a moderation policy, it is an absence.
+
+     The block assertions are the ones that matter. A block that covers the state channel and not
+     direct messages is worse than none, because the person you blocked is precisely the person who
+     will try a DM. */
+  console.log('\n── moderation: block, report, filter, silence ──');
+  {
+    const M = await post('/api/register', { name:'Rude', password:'longenoughpassword' });
+    const tm = M.body.token;
+    await post('/api/debug/embassy', { token: tm });
+    await post('/api/alliance/join', { token: tm, tag:'LWCH' });
+
+    await post('/api/chat/send', { token: tm, channel:'state', text:'hello from Rude' });
+    const heard = await post('/api/chat/fetch', { token: ta });
+    ok('a message is heard before any block',
+       (heard.body.state || []).some(m => m.from === 'Rude'), (heard.body.state || []).length + ' in state');
+    ok('the fetch publishes a support contact', /@/.test(heard.body.support || ''), heard.body.support);
+
+    const blocked = await post('/api/chat/block', { token: ta, name:'Rude' });
+    ok('a player can block another', blocked.status === 200 && blocked.body.blocked.includes('Rude'),
+       JSON.stringify(blocked.body.blocked));
+    await post('/api/chat/send', { token: tm, channel:'state', text:'still here' });
+    await post('/api/chat/send', { token: tm, channel:'dm', target:'Aldis', text:'and in your DMs' });
+    const after = await post('/api/chat/fetch', { token: ta });
+    ok('and stops hearing them in state', !(after.body.state || []).some(m => m.from === 'Rude'),
+       (after.body.state || []).filter(m => m.from === 'Rude').length + ' still visible');
+    ok('and in direct messages too — the room they would try next',
+       !Object.values(after.body.dms || {}).flat().some(m => m.from === 'Rude'));
+    ok('and they vanish from the online list', !(after.body.online || []).includes('Rude'));
+    /* The blocked party must not be able to tell. */
+    const theirs = await post('/api/chat/fetch', { token: tm });
+    ok('the blocked player is told nothing', !(theirs.body.blocked || []).length,
+       JSON.stringify(theirs.body.blocked));
+    ok('blocking is a toggle', (await post('/api/chat/block', { token: ta, name:'Rude' }))
+       .body.blocked.length === 0);
+
+    // reporting records, and never hides — otherwise reporting becomes the abuse
+    const rep = await post('/api/chat/report', { token: ta, name:'Rude', text:'still here' });
+    ok('a message can be reported', rep.status === 200 && rep.body.reported === true);
+    const dupe = await post('/api/chat/report', { token: ta, name:'Rude', text:'still here' });
+    ok('and the same report is not counted twice', dupe.body.already === true);
+
+    // the filter
+    await post('/api/chat/send', { token: tm, channel:'state', text:'you retard' });
+    const filtered = (await post('/api/chat/fetch', { token: tm })).body.state.slice(-1)[0];
+    ok('objectionable words are masked, not passed through',
+       !/retard/i.test(filtered.text) && /\*/.test(filtered.text), filtered.text);
+
+    // and the operator's side is closed to everyone else
+    ok('a player cannot read the report queue',
+       (await post('/api/mod/reports', { token: ta })).status === 403);
+    ok('nor silence anyone',
+       (await post('/api/mod/mute', { token: ta, name:'Rude' })).status === 403);
+  }
+
   /* ── alliance Help, which had no test at all ──
      Asked for directly: "I need to test alliance help too."
 

@@ -52,6 +52,8 @@ const HOST = process.env.HOST || undefined;
 /* Test-only endpoints. Never on by default; the verification suite sets it. */
 const ALLOW_DEBUG = process.env.ALLOW_DEBUG === '1';
 const MAX_BODY = 64 * 1024;
+/* Published contact, which Guideline 1.2 also requires. Shown in-app on the About sheet. */
+const SUPPORT = process.env.SUPPORT_EMAIL || 'support@akalai.co';
 
 /* ── storage ── */
 
@@ -862,6 +864,27 @@ let chatSeq = 1;
 const esc = t => String(t).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
 const dmKey = (a, b) => [a.toLowerCase(), b.toLowerCase()].sort().join('|');
 
+/* A deliberately small, boring list. It exists because Apple asks for "filtering of objectionable
+   material" and because unfiltered chat in a game teenagers will play is indefensible — not because
+   a wordlist is good moderation. It masks rather than refuses: a refusal teaches people to probe the
+   filter, a mask just makes the attempt pointless. Slurs belong here; profanity mostly does not, and
+   a list that catches "Scunthorpe" is worse than no list. */
+const MASKED = ['nigger','nigga','faggot','fag','tranny','kike','spic','chink','retard','rape','paedo','pedo'];
+const MASK_RE = new RegExp('\\b(' + MASKED.join('|') + ')\\w*\\b', 'gi');
+function maskWords(text){ return text.replace(MASK_RE, m => '*'.repeat(m.length)); }
+
+/* Who may moderate. From the environment or a flag written into accounts.json by hand — never
+   something the game can hand out, because an admin endpoint any account can reach is worse than
+   having none. */
+const ADMINS = String(process.env.ADMINS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+function isAdmin(u){ return u.role === 'admin' || ADMINS.includes(u.name.toLowerCase()); }
+/* Applied when chat is READ, so one person's block never edits anyone else's view. */
+function visibleTo(u, msgs){
+  const b = (u.blocked || []).map(n => n.toLowerCase());
+  if(!b.length) return msgs;
+  return msgs.filter(m => !b.includes(String(m.from || '').toLowerCase()));
+}
+
 function pushMsg(room, from, text){
   room.push({ id: chatSeq++, from, text: esc(text).slice(0, CHAT_MAX), at: Date.now() });
   if(room.length > CHAT_KEEP) room.splice(0, room.length - CHAT_KEEP);
@@ -1119,6 +1142,7 @@ async function api(req, res, url){
 
     const u = db.users[key];
     if(!u) return send(res, 401, { error:'No such hold.' });
+    if(u.banned) return send(res, 403, { error:'This hold has been closed. Write to '+SUPPORT+'.' });
     const a = Buffer.from(hash(pw, u.salt), 'hex'), b = Buffer.from(u.hash, 'hex');
     if(a.length !== b.length || !timingSafeEqual(a, b)) return send(res, 401, { error:'Wrong password.' });
     u.token = newToken(); markDirty();
@@ -1599,10 +1623,92 @@ async function api(req, res, url){
   if(path === '/api/chat/send'){
     const text = String(body.text || '').trim();
     if(!text) return send(res, 400, { error:'Say something.' });
+    /* Silenced accounts cannot speak. Told plainly, with when it lifts — a mute that looks like a
+       broken send button just gets reported as a bug and the person keeps trying. */
+    if((u.mutedUntil || 0) > now)
+      return send(res, 403, { error:'You are silenced for '
+        + Math.ceil((u.mutedUntil - now) / 60000) + ' more minutes.' });
     const room = roomFor(u, String(body.channel||'state'), body.target);
     if(!room) return send(res, 400, { error:'You cannot speak in that room.' });
-    pushMsg(room, u.name, text);
+    pushMsg(room, u.name, maskWords(text));
     return send(res, 200, { ok:true });
+  }
+
+  /* ── moderation ──
+     Asked for, and required: App Store Guideline 1.2 asks four specific things of any app carrying
+     user-generated content — a filter for objectionable material, a way to REPORT it, a way to BLOCK
+     an abusive user, and published contact details. Google Play asks the same in different words.
+     Chat shipped with none of them, so the only tool was editing accounts.json with the server off.
+
+     Blocking is stored on the BLOCKER and applied when chat is read, not when it is written. That way
+     one person's block never edits what anyone else sees, it survives a reinstall because it lives on
+     the account, and the blocked party is told nothing — a block they can detect is a block they can
+     work around. */
+  if(path === '/api/chat/block'){
+    const who = String(body.name || '').trim();
+    if(!who || who.toLowerCase() === u.name.toLowerCase())
+      return send(res, 400, { error:'Pick someone else.' });
+    u.blocked = Array.isArray(u.blocked) ? u.blocked : [];
+    const at = u.blocked.findIndex(n => n.toLowerCase() === who.toLowerCase());
+    if(at >= 0) u.blocked.splice(at, 1); else u.blocked.push(who);
+    markDirty(); flush();
+    return send(res, 200, { blocked: u.blocked });
+  }
+
+  /* A report is a RECORD, not an action. Nothing is hidden by being reported — otherwise reporting
+     becomes the abuse — and a person may report the same message once. */
+  if(path === '/api/chat/report'){
+    const about = String(body.name || '').trim();
+    const text = String(body.text || '').slice(0, CHAT_MAX);
+    if(!about || !text) return send(res, 400, { error:'Nothing to report.' });
+    db.reports = db.reports || [];
+    if(db.reports.some(r => r.by === u.name && r.about === about && r.text === text))
+      return send(res, 200, { reported: true, already: true });
+    db.reports.push({ at: now, by: u.name, about, text, done: false });
+    if(db.reports.length > 2000) db.reports.splice(0, db.reports.length - 2000);
+    markDirty(); flush();
+    return send(res, 200, { reported: true, queue: db.reports.filter(r => !r.done).length });
+  }
+
+  /* ── the operator's side ──
+     Gated on a role rather than a password, and the role is set by editing accounts.json or by
+     listing names in ADMINS — deliberately not something the game can grant itself. An admin
+     endpoint that any account could reach is worse than no admin endpoint. */
+  if(path.startsWith('/api/mod/')){
+    if(!isAdmin(u)) return send(res, 403, { error:'Not yours to do.' });
+    if(path === '/api/mod/reports'){
+      return send(res, 200, { reports: (db.reports || []).filter(r => !r.done).slice(-100) });
+    }
+    const target = db.users[String(body.name || '').toLowerCase()];
+    if(!target) return send(res, 404, { error:'No such hold.' });
+    if(path === '/api/mod/mute'){
+      const mins = Math.max(1, Math.min(60 * 24 * 30, Number(body.minutes) || 60));
+      target.mutedUntil = now + mins * 60000;
+      markDirty(); flush();
+      return send(res, 200, { name: target.name, mutedUntil: target.mutedUntil });
+    }
+    if(path === '/api/mod/unmute'){
+      target.mutedUntil = 0; markDirty(); flush();
+      return send(res, 200, { name: target.name, mutedUntil: 0 });
+    }
+    if(path === '/api/mod/ban'){
+      /* Banned rather than deleted. Deleting frees the name and loses the evidence; a ban keeps both
+         and can be undone when it turns out to have been the wrong call. The token is cleared so the
+         session dies immediately rather than at its next natural end. */
+      target.banned = true; target.token = null;
+      markDirty(); flush();
+      return send(res, 200, { name: target.name, banned: true });
+    }
+    if(path === '/api/mod/unban'){
+      target.banned = false; markDirty(); flush();
+      return send(res, 200, { name: target.name, banned: false });
+    }
+    if(path === '/api/mod/resolve'){
+      for(const r of db.reports || []) if(r.about === target.name) r.done = true;
+      markDirty(); flush();
+      return send(res, 200, { cleared: target.name });
+    }
+    return send(res, 404, { error:'no such endpoint' });
   }
 
   if(path === '/api/chat/fetch'){
@@ -1616,12 +1722,22 @@ async function api(req, res, url){
       const other = db.users[otherKey];
       if(other) dms[other.name] = msgs.slice(-40);
     }
+    /* Blocked authors are dropped HERE, on read, for every room including group and direct messages
+       — a block that only covered the state channel would be worse than none, because the person you
+       blocked is exactly the person who will try a DM. `blocked` is returned so the client can offer
+       an unblock list without a second endpoint. */
+    for(const k of Object.keys(dms)) dms[k] = visibleTo(u, dms[k]);
+    for(const g of groups) g.msgs = visibleTo(u, g.msgs);
     return send(res, 200, {
-      state: stateChat(realmOf(u)).slice(-40),
-      alliance: u.alliance ? (db.chat.alliance[u.alliance] || []).slice(-40) : [],
+      state: visibleTo(u, stateChat(realmOf(u)).slice(-40)),
+      alliance: visibleTo(u, u.alliance ? (db.chat.alliance[u.alliance] || []).slice(-40) : []),
       dms, groups,
+      blocked: u.blocked || [],
+      support: SUPPORT,
+      muted: Math.max(0, (u.mutedUntil || 0) - now),
       online: Object.values(db.users)
         .filter(x => now - (x.state.lastSeen || 0) < 300000)
+        .filter(x => !(u.blocked || []).some(n => n.toLowerCase() === x.name.toLowerCase()))
         .map(x => x.name).slice(0, 50),
     });
   }

@@ -137,6 +137,22 @@ export async function deleteAccount(password){
 }
 export function accountKnown(){ return !!session; }
 
+/* ── moderation, from the player's side ──
+   Blocking and reporting are the two the App Store requires a PLAYER to be able to do (Guideline
+   1.2); muting and banning belong to whoever runs the server and are not reachable from here. */
+export async function blockPlayer(name){
+  const d = await post('/api/chat/block', { token: session.token, name });
+  if(chat) chat.blocked = d.blocked;
+  return d.blocked;
+}
+export async function reportMessage(name, text){
+  await post('/api/chat/report', { token: session.token, name, text });
+  return true;
+}
+export function blockedNames(){ return (chat && chat.blocked) || []; }
+export function supportEmail(){ return (chat && chat.support) || ''; }
+export function mutedFor(){ return (chat && chat.muted) || 0; }
+
 let arena = null;
 export function arenaData(){ return arena; }
 

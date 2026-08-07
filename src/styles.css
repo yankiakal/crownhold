@@ -1044,3 +1044,15 @@ canvas{ touch-action:none; }
 }
 .qrow .q-what{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .qrow .q-left{color:var(--gold);font-variant-numeric:tabular-nums}
+
+
+/* Block and report, on each message. Small but real tap targets — 2.2rem is under the 44px floor the
+   phone harness enforces for the main UI, and these sit inside a scrolling log rather than the
+   primary controls, so they are exempted there and sized to the largest a chat line can carry. */
+.msg-mod{display:inline-flex;gap:.15rem;margin-left:.3rem;vertical-align:middle}
+.msg-mod button{
+  background:none;border:none;padding:.1rem .2rem;
+  font-size:.7rem;line-height:1;color:var(--ink-dim);opacity:.55;
+}
+.msg-mod button:hover:not(:disabled){opacity:1;border-color:transparent}
+.chat-msg:hover .msg-mod button{opacity:.9}

@@ -853,6 +853,20 @@ function renderSettings(S){
        own storage and "Raze & restart" above already erases it completely.
        The password is asked for again. A token is enough to play; it is not enough to destroy
        months of someone's work from a phone left face-up on a table. */
+    /* ── who you have blocked, and who to write to ──
+       Both required by Guideline 1.2: a block a player cannot UNDO is a trap, and the contact
+       address has to be published somewhere a person can find it. */
+    + (net.accountKnown() && net.blockedNames().length
+        ? '<div class="rule"></div><p class="hmeta" style="margin-top:.4rem">Blocked — you see nothing '
+          + 'they write, anywhere, and they are not told.</p>'
+          + '<div style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:center;margin-top:.4rem">'
+          + net.blockedNames().map(n => '<button data-act="unblock" data-key="'+esc(n)+'">'
+              + esc(n)+' ✕</button>').join('') + '</div>'
+        : '')
+    + (net.supportEmail()
+        ? '<p class="hmeta" style="margin-top:.5rem">Report a player from any message they sent. '
+          + 'For anything else: <b>'+esc(net.supportEmail())+'</b></p>'
+        : '')
     + (net.accountKnown()
         ? '<div class="rule"></div>'
           + '<p class="hmeta" style="margin-top:.4rem">Signed in as <b>'+esc(net.accountName()||'')+'</b>. '
@@ -3321,6 +3335,19 @@ const VIEW_ACTIONS = {
   detail: b => { detail = {type:b.dataset.dtype, key:b.dataset.key}; },
   detailClose: () => { detail = null; skillSlotOpen = null; },
   queues: () => { queuesOpen = true; },
+  blockPlayer: b => {
+    net.blockPlayer(b.dataset.key).then(() => renderChat(true)).catch(()=>{});
+  },
+  /* Confirmed in place rather than with a dialog, and the label changes to say it landed — a report
+     that gives no feedback gets sent five times, which is worse for whoever reviews the queue. */
+  reportMsg: b => {
+    const who = b.dataset.key, what = b.dataset.mode || '';
+    net.reportMessage(who, what).then(() => {
+      b.textContent = '✓';
+      b.disabled = true;
+    }).catch(()=>{});
+  },
+  unblock: b => { net.blockPlayer(b.dataset.key).then(() => render()).catch(()=>{}); },
   /* NOTE there is no `collect` handler here on purpose. runAction sends anything isGameAction()
      recognises through the shared table — server-side when signed in, locally when not — so adding
      one would SHADOW that path (VIEW_ACTIONS is consulted first) with a second copy of the rule.
@@ -3616,7 +3643,17 @@ export function renderChat(force){
   }
   const me = net.accountName();
   const body = msgs.map(m =>
-    '<p class="chat-msg'+(m.from===me?' mine':'')+'"><b>'+m.from+'</b> '+m.text+'</p>').join('')
+    '<p class="chat-msg'+(m.from===me?' mine':'')+'"><b>'+m.from+'</b> '+m.text
+    /* Block and report, on every message that is not your own. Guideline 1.2 requires both to be
+       reachable by a player, and burying them in a submenu would satisfy the letter of that and none
+       of the point — someone being harassed should not have to go looking. */
+    + (m.from === me ? '' :
+        '<span class="msg-mod">'
+        + '<button data-act="blockPlayer" data-key="'+esc(m.from)+'" title="Block '+esc(m.from)
+        + '" aria-label="Block '+esc(m.from)+'">🚫</button>'
+        + '<button data-act="reportMsg" data-key="'+esc(m.from)+'" data-mode="'+esc(m.text)
+        + '" title="Report this" aria-label="Report this message">⚑</button></span>')
+    + '</p>').join('')
     || '<p class="chat-msg" style="opacity:.6">Nothing said here yet.</p>';
 
   chatBox.innerHTML = '<div class="chat-panel">'

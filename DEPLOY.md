@@ -154,10 +154,67 @@ Checked before recommending exposure, not assumed:
 
 - **No email, so no password recovery.** A forgotten password is a lost hold. Fine for testing with
   people you know; not fine for strangers.
-- **No moderation tools.** Chat is unfiltered and there is no way to mute or ban from inside the
-  game. Editing `accounts.json` with the server stopped is the whole toolkit.
+- **Moderation exists but has no operator UI.** Players can block and report from any message, a
+  wordlist masks slurs on send, and you can silence or close an account — but only over HTTP, and only
+  as an admin. See below.
 - **The rate limit is per-IP and in memory.** It resets on restart and does not survive a
   distributed attempt. It is a courtesy, not a defence.
 - **One process, one file.** No replication. The VPS is the game.
 - **Token lookup is a linear scan** over every account on every authenticated request
   (`userByToken`). Irrelevant at a few hundred holds, the first thing to fix at a few thousand.
+
+
+## Moderating it
+
+App Store Guideline 1.2 asks four things of any app carrying user-generated content, and Google Play
+asks the same in different words. All four are in:
+
+| | |
+|---|---|
+| A filter | a small wordlist masks slurs on send. Deliberately small — it catches slurs, not profanity, because a list that flags "Scunthorpe" is worse than no list |
+| Report | any message a player did not write carries ⚑. Reports are records, never actions: nothing is hidden by being reported, or reporting becomes the abuse |
+| Block | 🚫 on any message. Stored on the blocker, applied when chat is READ, so it covers state, alliance, groups AND direct messages — and the blocked party is told nothing |
+| Contact | `SUPPORT_EMAIL` is published in the Settings sheet. Set it to an address you actually read |
+
+**Becoming an admin.** Nothing in the game can grant this, on purpose — an admin endpoint any account
+could reach is worse than none. Either list names in the environment:
+
+```ini
+Environment=ADMINS=yourname
+Environment=SUPPORT_EMAIL=support@yourdomain
+```
+
+…or set `"role": "admin"` on your own entry in `accounts.json` with the server stopped.
+
+**The operator's endpoints.** No UI; curl is the tool. `TOKEN` is your own session token — the app
+stores it in localStorage under `crownhold-session`.
+
+```sh
+API=https://crownhold.example.com
+TOKEN=...
+
+# what has been reported, newest last
+curl -s -X POST $API/api/mod/reports -H 'content-type: application/json' \
+  -d "{\"token\":\"$TOKEN\"}" | python3 -m json.tool
+
+# silence someone for two hours — they are told, with the time remaining
+curl -s -X POST $API/api/mod/mute -H 'content-type: application/json' \
+  -d "{\"token\":\"$TOKEN\",\"name\":\"Rude\",\"minutes\":120}"
+
+curl -s -X POST $API/api/mod/unmute -d "{\"token\":\"$TOKEN\",\"name\":\"Rude\"}" -H 'content-type: application/json'
+
+# close an account. Banned rather than deleted: deleting frees the name and loses the evidence
+curl -s -X POST $API/api/mod/ban -d "{\"token\":\"$TOKEN\",\"name\":\"Rude\"}" -H 'content-type: application/json'
+curl -s -X POST $API/api/mod/unban -d "{\"token\":\"$TOKEN\",\"name\":\"Rude\"}" -H 'content-type: application/json'
+
+# mark a person's reports handled, so the queue stays readable
+curl -s -X POST $API/api/mod/resolve -d "{\"token\":\"$TOKEN\",\"name\":\"Rude\"}" -H 'content-type: application/json'
+```
+
+A ban clears the session token, so the account is signed out immediately rather than at the end of its
+natural life, and cannot sign back in — the login refusal names your support address.
+
+**What is still missing**, and worth knowing before a public launch: nobody is watching the queue but
+you, there is no automatic escalation, and "timely responses" in Guideline 1.2 means a reviewer may
+test whether a report gets one. A queue you do not read is a rejection risk as well as a broken
+promise.
