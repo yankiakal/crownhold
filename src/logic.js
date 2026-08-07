@@ -1361,6 +1361,13 @@ export function startUpgrade(s, key, now){
   if(!slot) return false;
   // one crew per building: no stacking two upgrades on the same structure
   if(activeQueues(s).some(q => s[q].key === key)) return false;
+  /* ── and a yard cannot be rebuilt around the men drilling in it ──
+     Asked for after seeing it was possible: "I think we need the restriction." It was not a rule
+     before — startUpgrade only ever checked the build queues and startTraining only the yards, so
+     the two were blind to each other and the Barracks could be torn down mid-drill. Both directions
+     are refused, because guarding one leaves the other order open and a rule you can walk around by
+     doing things in the other sequence is decoration. */
+  if(yardBusyWith(s, key)) return false;
   const d = BUILDINGS[key], lvl = s.b[key];
   if(lvl >= d.max) return false;
   if(key!=='townhall' && lvl >= s.b.townhall) return false;
@@ -1369,10 +1376,45 @@ export function startUpgrade(s, key, now){
   const cost = buildCost(s, key);
   if(!canAfford(s, cost)) return false;
   payCost(s, cost);
-  s[slot] = {key, start:now, end:now+buildTime(s,key)};
+  /* `paid` is kept so a cancellation returns exactly what was taken. Recomputing buildCost at
+     cancel time would usually agree and would quietly disagree the moment a discount landed in
+     between — refunding a different number than was charged, in whichever direction. */
+  s[slot] = {key, start:now, end:now+buildTime(s,key), paid:{...cost}};
   pushLog(s, (lvl===0?'Construction of the ':'Work begins on the ')+d.name+(lvl===0?' begins.':' (level '+(lvl+1)+').'));
   return true;
 }
+/* Is this building a yard with a batch drilling in it? The one place the rule lives, so the two
+   directions cannot drift apart — which is exactly how they came to be blind to each other. */
+export function yardBusyWith(s, key){
+  for(const [tk, t] of Object.entries(TROOPS))
+    if(t.at === key && s.tq && s.tq[tk]) return tk;
+  return null;
+}
+/* Why a build is refused, for the panel that has to say so rather than disable a button in silence. */
+export function upgradeBlockedBy(s, key){
+  const drilling = yardBusyWith(s, key);
+  if(drilling) return (s.tq[drilling].done ? 'Take in the ' : 'Wait for the ')
+    + TROOPS[drilling].plural.toLowerCase() + ' first — the masons cannot work around them.';
+  return null;
+}
+/* ── calling off an upgrade ──
+   Asked for: "we need a cancel button too, to give back the rss used for the upgrade." Nothing could
+   be called off before, so a misplaced tap cost the whole build. The refund is what was PAID, from
+   the queue entry, and it goes through gainRes so every vault's own cap still applies — a refund that
+   overfilled storage would be a way to exceed it. Old saves have no `paid`, so those fall back to
+   recomputing, which is right far more often than it is wrong and is all that can be known. */
+export function cancelUpgrade(s, slot, now){
+  const q = s[slot];
+  if(!q || !q.key) return false;
+  s.now = now;
+  const back = q.paid || buildCost(s, q.key);
+  for(const [r, v] of Object.entries(back)) gainRes(s, r, v);
+  s[slot] = null;
+  pushLog(s, 'Work on the ' + BUILDINGS[q.key].name + ' is called off — '
+    + Object.entries(back).map(([r, v]) => fmt(v) + ' ' + r).join(', ') + ' returned.', 'gold');
+  return true;
+}
+
 export function trainCost(s, key, count){
   const d = TROOPS[key], c = {};
   for(const [r,v] of Object.entries(d.cost)) c[r] = Math.ceil(v * count * tierCostMult(s,key));
@@ -1384,6 +1426,8 @@ export function startTraining(s, key, count, now){
   if(!d) return false;
   if(!s.tq || s.tq.key) s.tq = {};              // migrate a stale single queue
   if(s.tq[key]) return false;                   // that yard is already busy
+  // and the masons have it — the other half of the rule, see yardBusyWith
+  if(activeQueues(s).some(q => s[q].key === d.at)) return false;
   if(trainHouseLvl(s, key) < 1) return false;   // no building, no drilling
   count = Number(count)||1;
   const cost = trainCost(s, key, count);

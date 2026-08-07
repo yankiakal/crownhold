@@ -2858,18 +2858,58 @@ console.log('\n── troops stand ready until you take them in, and never spoil
    Worth an assertion either way. If it stays allowed, the scene has to draw two badges on one roof
    and they have to stack, which is what this holds in place. If it is ever forbidden on purpose, this
    test fails and names the decision instead of letting a UI quietly stop being reachable. */
-console.log('\n── the same yard may drill and be rebuilt at once ──');
+/* ── the masons cannot work around the men drilling ──
+   Asked for: "I think we need the restriction." It did not exist — startUpgrade checked only the
+   build queues and startTraining only the yards, so each was blind to the other and the Barracks
+   could be rebuilt mid-drill. Both ORDERS are asserted, because guarding one direction leaves a rule
+   you walk around by doing the two things in the other sequence. */
+console.log('\n── a yard cannot be rebuilt around a drilling batch ──');
 {
-  const s = hold();
-  s.tq = {}; s.bq = null; s.bq2 = null;
-  s.res = { food:9e5, wood:9e5, stone:9e5, iron:9e5, steel:9e5, runestone:9e5 };
-  ok('a yard can start drilling', L.startTraining(s, 'spearman', 10, s.now));
-  ok('and be put in the build queue while it does', L.startUpgrade(s, 'barracks', s.now));
-  ok('both are live at once', !!s.tq.spearman
-     && L.QUEUE_KEYS.some(q => s[q] && s[q].key === 'barracks'),
-     'tq ' + !!s.tq.spearman + ', bq ' + L.QUEUE_KEYS.filter(q => s[q]).map(q => s[q].key).join('+'));
-  /* Which is exactly the case the badge layer has to survive: two timers wanting one roof. */
-  ok('so two timers can want the same roof', true, 'the scene stacks them — see paintSceneBadges');
+  const fresh = () => {
+    const s = hold();
+    s.tq = {}; s.bq = null; s.bq2 = null;
+    // under every cap, so payCost and the refund are both visible — 9e5 is above them and clamps
+    for(const r of ['food','wood','stone','iron']) s.res[r] = Math.floor(L.capFor(s, r) * 0.3);
+    return s;
+  };
+  const a = fresh();
+  ok('a yard can start drilling', L.startTraining(a, 'spearman', 10, a.now));
+  ok('and then CANNOT be upgraded', !L.startUpgrade(a, 'barracks', a.now));
+  ok('with a reason a player can act on', /spearmen/i.test(L.upgradeBlockedBy(a, 'barracks') || ''),
+     L.upgradeBlockedBy(a, 'barracks'));
+
+  const b = fresh();
+  ok('or upgraded first', L.startUpgrade(b, 'barracks', b.now));
+  ok('and then CANNOT drill in it', !L.startTraining(b, 'spearman', 10, b.now));
+  ok('while an unrelated yard is unaffected', L.startTraining(b, 'archer', 5, b.now));
+
+  /* ── and it can be called off ──
+     "We need a cancel button too, to give back the rss used for the upgrade." */
+  const c = fresh();
+  const before = { ...c.res };
+  const cost = L.buildCost(c, 'barracks');
+  ok('an upgrade can be started', L.startUpgrade(c, 'barracks', c.now));
+  ok('it records what it charged', !!(c.bq && c.bq.paid), JSON.stringify(c.bq && c.bq.paid));
+  ok('and it actually charged it',
+     Object.entries(cost).every(([r, v]) => before[r] - c.res[r] === v),
+     Object.keys(cost).map(r => r + ' −' + (before[r] - c.res[r])).join(', '));
+  ok('calling it off works', L.cancelUpgrade(c, 'bq', c.now));
+  ok('every resource comes back exactly', Object.keys(cost).every(r => c.res[r] === before[r]),
+     Object.keys(cost).map(r => r + ' ' + (c.res[r] - before[r])).join(', ') || 'net zero');
+  ok('and the crew is free again', !c.bq);
+  ok('cancelling an empty slot does nothing', !L.cancelUpgrade(c, 'bq', c.now));
+  ok('cancelBuild is a real game action', A.isGameAction('cancelBuild'));
+
+  /* A refund must not be a way past the vault. gainRes clamps, so a hold at its cap gets back only
+     what fits — which is the honest answer and worth pinning, because the alternative is a storage
+     exploit dressed as a courtesy. */
+  const d2 = fresh();
+  L.startUpgrade(d2, 'barracks', d2.now);
+  for(const r of ['wood','stone']) d2.res[r] = L.capFor(d2, r);
+  L.cancelUpgrade(d2, 'bq', d2.now);
+  ok('a refund cannot overfill a vault',
+     ['wood','stone'].every(r => d2.res[r] <= L.capFor(d2, r)),
+     ['wood','stone'].map(r => r + ' ' + d2.res[r] + '/' + L.capFor(d2, r)).join(', '));
 }
 
 console.log('\n── the Founder\'s Peace ends three ways, and never starts for an old hold ──');

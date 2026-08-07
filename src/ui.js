@@ -28,6 +28,7 @@ import {
   fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor, capFor, isUnlocked,
   activeTrainings, trainQueue, readyTroops, woundedTotal, woundedCap, woundShare, healCost, healTime,
   prodPerSec, prodMult, upkeepPerSec, supplyPerSec, troopDraw, musterDraw, shortFrac, supplyMult, buildCost, buildTime, canAfford, armyPower,
+  upgradeBlockedBy, yardBusyWith,
   decreeOf, decreeLeft, canDecree, wallWear, wallMendPerSec,
   armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
   valorQuota, valorToday, isRested, QUEUE_KEYS, buildSlots, activeQueues, freeSlot, townhallReq, townhallPath,
@@ -347,7 +348,13 @@ function renderHold(S){
   for(const q of QUEUE_KEYS){
     if(!S[q]) continue;
     const d = BUILDINGS[S[q].key];
-    h += queueStrip(S, S[q], d.icon+' '+d.name+' → '+(S.b[S[q].key]+1), 'finishBuild', q);
+    h += queueStrip(S, S[q], d.icon+' '+d.name+' → '+(S.b[S[q].key]+1), 'finishBuild', q)
+      /* Called off, with everything paid returned. Nothing could be cancelled before, so a
+         misplaced tap cost the whole build and the only way out was to wait for it. */
+      + '<div style="display:flex;justify-content:flex-end;margin:-.45rem 0 .6rem">'
+      + '<button data-act="cancelBuild" data-key="'+q+'" style="font-size:.66rem">'
+      + '✕ Call it off, refund '+Object.entries(S[q].paid || buildCost(S, S[q].key))
+          .map(([r,v]) => fmt(v)+' '+r).join(' + ')+'</button></div>';
   }
   if(buildSlots(S) > 1 && activeQueues(S).length < 2)
     h += '<div class="stat-note">🔨 '+(2-activeQueues(S).length)+' crew idle — two builds can run at once.</div>';
@@ -2165,6 +2172,10 @@ function renderDetail(S){
     title = d.icon+' '+d.name+' — '+(lvl===0?'not built':'level '+lvl+'/'+d.max);
     body += '<p class="d-fx">'+(d.prod ? '+'+d.rate+' '+d.prod+'/s per level' : d.fx)+'</p>';
     if(d.th && S.b.townhall < d.th) body += '<p class="d-warn">Requires Town Hall '+d.th+'</p>';
+    /* A refusal a player can act on. The masons-and-drilling rule is new, and a build button that
+       silently does nothing is the failure this project keeps finding — so the sheet names it. */
+    const blocked = upgradeBlockedBy(S, k);
+    if(blocked) body += '<p class="d-warn">'+blocked+'</p>';
     /* ── a yard you tap is a yard you can drill from ──
        Reported: "you wanna train spearmen — you have to tap the building, else you won't be able to
        go to the training window." Quite right, and it was not possible: tapping the Barracks opened
