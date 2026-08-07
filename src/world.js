@@ -424,7 +424,21 @@ export function startMarch(s, idx, want, now, longHaul, heroes){
   if(party.some(id => !heroCanLead(s, id))) return false;
   const kind = TILE_TYPES[tile.type].kind;
   const long = !!longHaul && kind === 'gather';   // only nodes can be worked for hours
-  const { troops, total } = fitColumn(s, want, party);
+  const { troops, total, cap } = fitColumn(s, want, party);
+  /* ── how much of the node this column can actually carry away ──
+     Reported from play: "gathering nodes should be collected based on troops sent — if I send a full
+     march or 1/4 march it doesn't change anything." Exactly so: the haul was computed from the tile
+     and a bonus multiplier and never once looked at the troops, so three soldiers stripped a node as
+     thoroughly as three hundred.
+
+     Recorded as a FRACTION of the column's own capacity rather than an absolute carrying weight,
+     because the two do not scale together: a node's yield is 14.7× a full column's load at Town Hall
+     3 and 51× at Town Hall 25, so any fixed carry-per-soldier is either useless early or free late.
+     A fraction is stage-independent and needs no constant to tune.
+
+     Stored at DEPARTURE because the captains that set the capacity leave with the column, so it
+     cannot be recomputed honestly on the way home. */
+  const fill = cap > 0 ? Math.min(1, columnLoad(troops) / cap) : 1;
   if(total === 0) return false;
   for(const [k,n] of Object.entries(troops)) s.t[k] -= n;
   const travel = Math.round(tileDist(tile)*TRAVEL_MS_PER_TILE*marchSpeed(s)
@@ -433,7 +447,7 @@ export function startMarch(s, idx, want, now, longHaul, heroes){
   const boost = !!s.marchBoost;                   // Fair Winds, spent on this column
   s.marchBoost = false;
   s.marches.push({
-    tile:idx, troops, long, heroes: party, boost, out: travel,
+    tile:idx, troops, long, heroes: party, boost, out: travel, fill,
     arriveAt: now+travel, homeAt: now+travel+work+travel,
     resolved:false,
   });
@@ -545,14 +559,16 @@ function resolveArrival(s, m, now, rand){
       m.homeAt = now + (m.out || tileDist(tile)*TRAVEL_MS_PER_TILE);
     }
   }else if(tt.kind==='gather'){
-    const mult = (m.long ? LONG_HAUL_YIELD : 1) * haul;
+    /* `m.fill ?? 1` keeps marches already on the road when this shipped paying out in full rather
+       than being silently short-changed mid-journey. */
+    const mult = (m.long ? LONG_HAUL_YIELD : 1) * haul * (m.fill == null ? 1 : m.fill);
     m.loot = {[tt.res]: Math.round(gatherYield(s, tile) * mult)};
     m.valor = m.long ? 8 : 0; m.mxp = m.long ? 30 : 6;
     m.report = m.long ? '⛏ The '+tt.name+' is stripped to the bedrock' : '⛏ The '+tt.name+' is worked clean';
     scoreDeed(s, m.long ? 'longHaul' : 'gathered', 1, now);
     tile.respawnAt = now + RESPAWN_MS;
   }else{ // ruin
-    m.loot = {food: Math.round(10*tile.lvl*s.b.townhall*haul)};
+    m.loot = {food: Math.round(10*tile.lvl*s.b.townhall*haul*(m.fill == null ? 1 : m.fill))};
     m.valor = 12; m.mxp = 20+8*tile.lvl;
     m.writ = rand() < 0.20;
     m.report = '🏛️ The ruin gives up its secrets';

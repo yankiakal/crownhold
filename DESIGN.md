@@ -1563,6 +1563,28 @@ players field. Four new tests close it — escorted-efficiency parity, no line b
 constraints, the optimal column must field three of four lines, and no line may escape the screen
 entirely — and all four were confirmed to go red against the old numbers before being kept.
 
+### The haul ignored the column entirely (v1.87)
+
+Reported from play: *"gathering nodes should be collected based on troops sent — if I send a full
+march or 1/4 march it doesn't change anything."*
+
+Literally so. `m.loot` was computed from the tile and a bonus multiplier and never once referenced
+`m.troops`, so three soldiers stripped a node as thoroughly as three hundred. An input the player was
+being asked to choose did nothing at all — which is worse than a bad rule, because the interface
+implied a decision that the engine ignored.
+
+The haul is now scaled by how full the column is, recorded at departure. A **fraction** of the
+column's own capacity rather than an absolute carrying weight, because the two do not scale together:
+a node's yield is 14.7× a full column's load at Town Hall 3 and 51× at Town Hall 25, so any fixed
+carry-per-soldier is useless early or free late. A fraction is stage-independent and needs no
+constant to tune. It is stored at departure because the captains that set the capacity leave *with*
+the column and cannot be consulted on the way home.
+
+The tile sheet now states what your current column would carry — the fraction, the number, and the
+load filled — because a rule the player cannot see before committing is a penalty rather than a
+decision. Marches already on the road when this shipped have no `fill` recorded and pay in full
+rather than being docked halfway home; a test covers that case.
+
 ### Gathering paid less than doing nothing (v1.86)
 
 Reported across several messages, and the last one is the argument that settles it: *"gathering gives

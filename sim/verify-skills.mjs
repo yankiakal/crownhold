@@ -1744,6 +1744,53 @@ console.log('\n── Seafaring: six studies, measured by actually sailing ─�
      String(W.voyageBlockedBy(two, 3, 6)));
 }
 
+console.log('\n── the haul depends on the troops you send ──');
+{
+  /* Reported from play: "gathering nodes should be collected based on troops sent — if I send a full
+     march or 1/4 march it doesn't change anything." The loot was computed from the tile and a bonus
+     multiplier and never once looked at the column, so three soldiers stripped a node as thoroughly
+     as three hundred. A whole input the player was choosing did nothing at all. */
+  const hold = () => {
+    const s = freshState(Date.now(), 1);
+    s.b.townhall = 6;
+    for(const k of ['farm','lumberyard','quarry','command','barracks']) s.b[k] = 5;
+    for(const id of ['marshal','gatekeeper','forager'])
+      s.heroes[id] = { lvl:5, xp:0, stars:0, deeds:0, gear:{}, skills:[] };
+    s.t = { spearman:400, archer:200, knight:120, ballista:60 };
+    s.now = Date.now();
+    return s;
+  };
+  const CAPTAINS = ['marshal','gatekeeper','forager'];
+  /* Find a gather tile the hold can legally work, rather than assuming one is at a fixed index. */
+  const pick = s => s.world.tiles.findIndex((t, i) =>
+    W.TILE_TYPES[t.type].kind === 'gather' && !t.respawnAt && !W.tileLocked(s, t) && !W.tileBusy(s, i));
+  const haulWith = frac => {
+    const s = hold();
+    const idx = pick(s);
+    const cap = W.marchCapacity(s, CAPTAINS);
+    W.startMarch(s, idx, { spearman: Math.max(1, Math.floor(cap * frac)) }, s.now, false, CAPTAINS);
+    const m = s.marches[0];
+    W.tickWorld(s, s.now + 99 * 3600 * 1000, () => 0.5);
+    return Object.values(m.loot || {}).reduce((a, b) => a + b, 0);
+  };
+  const quarter = haulWith(0.25), full = haulWith(1);
+  ok('a quarter-full column brings home about a quarter as much',
+     quarter > 0 && full > quarter * 2.5 && full < quarter * 5.5,
+     quarter + ' against ' + full + ' — ×' + (full / Math.max(quarter, 1)).toFixed(1));
+  ok('and a full column is not short-changed', full > 0 && Math.abs(full - haulWith(1)) / full < 0.01,
+     'full haul ' + full + ', reproducible');
+  /* A march already on the road when this shipped has no `fill` recorded, and must pay in full
+     rather than be silently docked halfway home. */
+  const s2 = hold(); const i2 = pick(s2);
+  W.startMarch(s2, i2, { spearman: 40 }, s2.now, false, CAPTAINS);
+  const legacy = s2.marches[0];                     // held: a resolved march leaves s.marches
+  delete legacy.fill;                               // an in-flight column from before the change
+  W.tickWorld(s2, s2.now + 99 * 3600 * 1000, () => 0.5);
+  const paid = Object.values(legacy.loot || {}).reduce((a, b) => a + b, 0);
+  ok('a column already marching when this shipped still pays in full', paid > 0,
+     'legacy march hauled ' + paid);
+}
+
 console.log('\n── gathering has to beat standing still ──');
 {
   /* Reported from play: "gathering gives too little", then "gatherings should feel rewarded since

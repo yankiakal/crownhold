@@ -2046,8 +2046,24 @@ function renderDetail(S){
         body += '<p class="d-delta">Held at ≈'+campPower(S,tile)+'.</p>';
     }else{
       body += '<p class="d-row">Distance '+tileDist(tile)+' — '+ftime(travel)+' each way.</p>';
-      if(tt.kind==='gather')
+      if(tt.kind==='gather'){
         body += '<p class="d-delta">Yields ~'+fmt(gatherYield(S,tile))+' '+tt.res+' after '+ftime(GATHER_MS)+' of work.</p>';
+        /* And what THIS column would actually carry home. The haul scales with how full the column
+           is, and a rule the player cannot see before committing is a penalty rather than a
+           decision — so the sheet states the fraction and the number beside the node's full worth. */
+        /* marchWant/marchParty are the column the player is composing right now, which is the
+           thing they are about to send — not a hypothetical best party. */
+        const pk = marchParty.length ? marchParty : bestLeaders(S, 3);
+        const capNow = marchCapacity(S, pk);
+        const fitNow = fitColumn(S, marchWant, pk);
+        const fillNow = capNow > 0 ? Math.min(1, fitNow.load / capNow) : 1;
+        body += '<p class="d-row">Your column carries <b>'+Math.round(fillNow*100)+'%</b> of it — '
+          + fmt(Math.round(gatherYield(S,tile)*fillNow))+' '+tt.res
+          + ' (' + fitNow.load + ' of ' + capNow + ' load filled). '
+          + (fillNow > 0.98 ? 'A full column takes the lot.'
+             : 'Send more and you bring more; the node is spent either way.')
+          + '</p>';
+      }
       else if(tt.kind==='camp'){
         body += '<p class="d-delta">Camp strength ≈'+campPower(S,tile)+'. Victory: loot, Valor, Mastery — and the camp burns.</p>';
         if(tile.def)
