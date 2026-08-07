@@ -535,6 +535,27 @@ export function promoteCost(s,k){
 export function promoteTime(s, k){
   return Math.max(PROMOTE_MS_MIN, Math.round((s.t[k] || 0) * PROMOTE_MS_PER_TROOP));
 }
+/* Take a finished batch into the muster. Everything the old auto-join did, at the moment the player
+   asks for it instead of the moment the timer ends — the counters, the Mastery, the deed and the log
+   line all still happen exactly once, because they happen HERE and nowhere else. */
+export function collectTroops(s, k, now){
+  const q = s.tq && s.tq[k];
+  if(!q || !q.done) return 0;
+  const n = q.count;
+  s.t[k] = (s.t[k] || 0) + n;
+  s.trained += n;
+  s.trainedBy[k] = (s.trainedBy[k] || 0) + n;
+  s.tq[k] = null;
+  pushLog(s, n+' '+TROOPS[k].name+(n>1?'s':'')+' join the muster.');
+  gainMastery(s, n, now || s.now || 0);
+  scoreDeed(s, 'trained', n, now || s.now || 0);
+  return n;
+}
+/* Every yard with soldiers standing ready. The scene badges and the queue sheet both read this. */
+export function readyTroops(s){
+  return Object.keys(TROOPS).filter(k => s.tq && s.tq[k] && s.tq[k].done);
+}
+
 export function promoteQueue(s){ return s.pq || null; }
 export function promote(s, k, now){
   s.now = now;
@@ -2014,18 +2035,25 @@ export function tick(s, now, dt, rand=Math.random){
     gainMastery(s, 10, now);
     scoreDeed(s, 'research', 1, now);
   }
+  /* ── a finished batch WAITS to be collected ──
+     Asked for: "you wanna train spearmen — you have to tap collect and then tap again to open the
+     training window." That is how the games this borrows from do it, and it is the tap that makes a
+     hold feel like a place you work rather than a spreadsheet that fills itself in.
+
+     WITH ONE LINE HELD. In Kingshot and Whiteout Survival, production you do not collect is LOST
+     past a cap — that loss is the entire mechanism, and it is there to make you open the app. Here
+     the batch simply waits. Forever, if it has to. Nothing decays, nothing caps, and a week away
+     costs you the week's drilling and not one soldier of it. The tap is a gesture, not a tax.
+
+     Marked rather than moved, so `trainQueue` keeps returning it: that is what stops a second batch
+     starting in the same yard until the first is taken in, which is the behaviour being asked for. */
   if(s.tq && !Array.isArray(s.tq)){
     for(const k of Object.keys(TROOPS)){
       const q = s.tq[k];
-      if(!q || now < q.end) continue;
-      const n = q.count;
-      s.t[k] += n;
-      s.trained += n;
-      s.trainedBy[k] = (s.trainedBy[k]||0) + n;
-      pushLog(s, n+' '+TROOPS[k].name+(n>1?'s':'')+' join the muster.');
-      s.tq[k] = null;
-      gainMastery(s, n, now);
-      scoreDeed(s, 'trained', n, now);
+      if(!q || now < q.end || q.done) continue;
+      q.done = true;
+      pushLog(s, q.count+' '+TROOPS[k].name+(q.count>1?'s':'')+' stand ready at the '
+        + BUILDINGS[TROOPS[k].at].name+' — tap it to take them in.', 'gold');
     }
   }
 

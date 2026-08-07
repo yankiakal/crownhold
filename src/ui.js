@@ -26,7 +26,7 @@ import {
 } from './world.js';
 import {
   fmt, ftime, clock, masteryLvl, perk, shieldCap, storageCap, storageCapFor, capFor, isUnlocked,
-  activeTrainings, trainQueue, woundedTotal, woundedCap, woundShare, healCost, healTime,
+  activeTrainings, trainQueue, readyTroops, woundedTotal, woundedCap, woundShare, healCost, healTime,
   prodPerSec, prodMult, upkeepPerSec, supplyPerSec, troopDraw, musterDraw, shortFrac, supplyMult, buildCost, buildTime, canAfford, armyPower,
   decreeOf, decreeLeft, canDecree, wallWear, wallMendPerSec,
   armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
@@ -958,7 +958,9 @@ export function holdQueues(S){
   if(S.rq && S.rq.key) add('Study', '📚',
     (RESEARCH[S.rq.key] ? RESEARCH[S.rq.key].name : S.rq.key), S.rq.end, 'hold');
   for(const t of Object.values(S.tq || {}))
-    if(t && t.key) add('Drill', '⚔️', t.count + ' ' + (TROOPS[t.key] ? TROOPS[t.key].plural : t.key), t.end, 'war');
+    if(t && t.key) add(t.done ? 'Ready' : 'Drill', t.done ? '✓' : '⚔️',
+      t.count + ' ' + (TROOPS[t.key] ? TROOPS[t.key].plural : t.key)
+      + (t.done ? ' — waiting to be taken in' : ''), t.end, 'hold');
   if(S.hq) add('Tending', '⛑️',
     Object.values(S.hq.troops || {}).reduce((a, b) => a + (b || 0), 0) + ' wounded', S.hq.end, 'war');
   if(S.gq) add('Forge', '🔥', (S.gq.who === 'lord' ? 'Regalia' : 'Wargear')
@@ -2181,11 +2183,20 @@ function renderDetail(S){
         const built = (S.b[k] || 0) >= 1;
         body += '<p class="d-row">' + td.icon + ' Drills <b>' + td.plural + '</b>'
           + (built ? ' · ' + fmt(S.t[tk] || 0) + ' in the muster' : ' — not built yet') + '.</p>';
-        if(q) body += '<p class="d-delta">' + fmt(q.count) + ' ' + td.plural.toLowerCase()
-          + ' drilling — ' + ftime(Math.max(0, q.end - (S.now || Date.now()))) + ' left.</p>';
-        if(built) body += '<div class="d-acts"><button class="primary" data-act="drillHere" '
-          + 'data-key="' + tk + '">' + (q ? 'See the yard' : '⚔️ Drill ' + td.plural.toLowerCase())
-          + '</button></div>';
+        if(q && q.done){
+          /* The two-tap loop, in the order it was asked for: take them in, THEN drill again. */
+          body += '<p class="d-delta">' + fmt(q.count) + ' ' + td.plural.toLowerCase()
+            + ' stand ready. They wait as long as they must — nothing is lost by leaving them.</p>'
+            + '<div class="d-acts"><button class="primary" data-act="collect" data-key="' + tk + '">'
+            + '✓ Take in ' + fmt(q.count) + '</button></div>';
+        } else if(q){
+          body += '<p class="d-delta">' + fmt(q.count) + ' ' + td.plural.toLowerCase()
+            + ' drilling — ' + ftime(Math.max(0, q.end - (S.now || Date.now()))) + ' left.</p>';
+        }
+        if(built && !(q && q.done))
+          body += '<div class="d-acts"><button class="primary" data-act="drillHere" '
+            + 'data-key="' + tk + '">' + (q ? 'See the yard' : '⚔️ Drill ' + td.plural.toLowerCase())
+            + '</button></div>';
       }
     }
     /* The whole ladder, so "what does this do at max" is answerable without arithmetic.
@@ -3201,6 +3212,17 @@ function paintSceneBadges(S, slot){
     want.push({ key: b.key, at, txt: left > 0 ? ftime(left) : 'done',
                 done: left <= 0, name: BUILDINGS[b.key] ? BUILDINGS[b.key].name : b.key });
   }
+  /* Soldiers standing ready at a yard. This is the badge the whole collect gesture hangs off: the
+     batch is finished, it is waiting, and the walls say so without a tab switch. A drilling batch
+     gets no badge — the yard would wear one permanently and the walls would fill with furniture. */
+  for(const k of readyTroops(S)){
+    const yard = TROOPS[k].at;
+    const at = plotScreen(yard);
+    if(!at) continue;
+    want.push({ key: 'ready-' + k, act: 'collect', actKey: k, at,
+                txt: fmt((S.tq[k] || {}).count || 0) + ' ready', done: true,
+                name: TROOPS[k].plural + ' ready at the ' + BUILDINGS[yard].name });
+  }
   const box = slot.getBoundingClientRect();
   /* No layout, no badges. While the scene is off-screen or unmeasured the slot reports 0×0, and
      subtracting that origin from a page coordinate yields a position relative to nothing — the
@@ -3213,10 +3235,12 @@ function paintSceneBadges(S, slot){
   const sig = want.map(w => w.key + (w.done ? '!' : '')).join(',');
   if(layer.dataset.sig !== sig){
     layer.dataset.sig = sig;
-    layer.innerHTML = want.map(w =>
-      '<button class="sbadge'+(w.done ? ' done' : '')+'" data-act="detail" data-dtype="building"'
-      + ' data-key="'+w.key+'" data-badge="'+w.key+'"'
-      + ' aria-label="'+esc(w.name)+'" style="left:0;top:0"><b></b></button>').join('');
+    layer.innerHTML = want.map(w => w.act === 'collect'
+      ? '<button class="sbadge done ready" data-act="collect" data-key="'+w.actKey+'"'
+        + ' data-badge="'+w.key+'" aria-label="'+esc(w.name)+'" style="left:0;top:0"><b></b></button>'
+      : '<button class="sbadge'+(w.done ? ' done' : '')+'" data-act="detail" data-dtype="building"'
+        + ' data-key="'+w.key+'" data-badge="'+w.key+'"'
+        + ' aria-label="'+esc(w.name)+'" style="left:0;top:0"><b></b></button>').join('');
   }
   for(const w of want){
     const el = layer.querySelector('[data-badge="'+w.key+'"]');
@@ -3262,6 +3286,10 @@ const VIEW_ACTIONS = {
   detail: b => { detail = {type:b.dataset.dtype, key:b.dataset.key}; },
   detailClose: () => { detail = null; skillSlotOpen = null; },
   queues: () => { queuesOpen = true; },
+  /* NOTE there is no `collect` handler here on purpose. runAction sends anything isGameAction()
+     recognises through the shared table — server-side when signed in, locally when not — so adding
+     one would SHADOW that path (VIEW_ACTIONS is consulted first) with a second copy of the rule.
+     The first draft of this did exactly that, against two net.js functions that do not exist. */
   /* Tapping a yard's Drill button leaves the sheet and lands on the muster. The scroll is one-shot
      and flag-guarded for the same reason the research strip's is: re-scrolling every render would
      fight the player's own thumb four times a second. */

@@ -2805,6 +2805,51 @@ console.log('\n── every vault fills in the same time, and still holds its la
    never begin — a save that predates the feature is an existing player, not a new hold, and
    defaulting their `founded` to the current time would have handed the entire playerbase three days
    of immunity on release day. That is a one-character mistake with a live consequence. */
+/* ── a finished batch waits, and waiting costs nothing ──
+   Asked for: "you have to tap collect and then tap again to open the training window." The tap is the
+   point; the PUNISHMENT that comes with it in the games this borrows from is not. There,
+   uncollected production is lost past a cap, and the loss is what makes you open the app. Here the
+   batch waits — so the assertions that matter are the ones about leaving it alone for a week. */
+console.log('\n── troops stand ready until you take them in, and never spoil ──');
+{
+  const s = hold();
+  s.t = { spearman:0, archer:0, knight:0, ballista:0 };
+  s.tq = {};
+  const t0 = s.now;
+  ok('a batch can be started', L.startTraining(s, 'spearman', 20, t0));
+  const q = s.tq.spearman;
+  L.tick(s, q.end + 1000, 1);
+  ok('it does not join the muster on its own', s.t.spearman === 0, String(s.t.spearman));
+  ok('it is marked ready instead', !!(s.tq.spearman && s.tq.spearman.done));
+  ok('and the hold knows which yards are waiting', L.readyTroops(s).join(',') === 'spearman',
+     L.readyTroops(s).join(',') || 'none');
+  ok('the yard stays busy, so a second batch cannot start', !L.startTraining(s, 'spearman', 5, q.end + 2000));
+
+  /* A WEEK later, ticked the whole way. Nothing may decay, and no cap may eat it. */
+  let at = q.end + 1000;
+  for(let i = 0; i < 200; i++){ at += 3600000; L.tick(s, at, 3600); }
+  ok('a week of neglect costs not one soldier', s.tq.spearman && s.tq.spearman.count === 20,
+     s.tq.spearman ? String(s.tq.spearman.count) : 'THE BATCH IS GONE');
+
+  const before = s.trained;
+  const got = L.collectTroops(s, 'spearman', at);
+  ok('taking them in delivers all 20', got === 20 && s.t.spearman === 20,
+     got + ' delivered, muster ' + s.t.spearman);
+  ok('and counts them once, not twice', s.trained === before + 20, before + ' → ' + s.trained);
+  ok('the yard is free again', !L.trainQueue(s, 'spearman'));
+  ok('collecting an empty yard does nothing', L.collectTroops(s, 'spearman', at) === 0);
+
+  /* And the action table has to carry it, or online play cannot collect at all. */
+  ok('collect is a real game action', A.isGameAction('collect'));
+  const s2 = hold();
+  s2.t.archer = 0; s2.tq = {};
+  L.startTraining(s2, 'archer', 8, s2.now);
+  L.tick(s2, s2.tq.archer.end + 1000, 1);
+  ok('and applying it through the table takes them in',
+     A.applyAction(s2, 'collect', { key:'archer' }, s2.now) === true && s2.t.archer === 8,
+     'muster ' + s2.t.archer);
+}
+
 console.log('\n── the Founder\'s Peace ends three ways, and never starts for an old hold ──');
 {
   const RAID = await import('../src/raid.js');

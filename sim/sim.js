@@ -315,6 +315,13 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
     }
 
     // training: keep ahead of the next wave, but never beyond food sustainability
+    /* Take in anything standing ready, FIRST. A finished batch waits to be collected now — the tap
+       the shell is built around — and until it is taken in, trainQueue still returns it, which is
+       what stops a second batch starting in the same yard. So this cannot live inside the loop
+       below: its own guard is `!trainQueue`, which a ready batch makes false, so a collect placed
+       there could never once run. Measured with it in the wrong place — army 212 against a floor of
+       1500 — and it read exactly like a broken economy. */
+    for(const k of L.readyTroops(s)) L.collectTroops(s, k, ms);
     for(const troopKey of ['ballista','knight','archer','spearman']){
      if(!L.trainQueue(s, troopKey) && (s.b[TROOPS[troopKey].at]||0) >= 1){
       const wb = s.wave%5===0;
