@@ -8,7 +8,7 @@ import { TROOPS, TIME_SCALE, HERO_POOL, BEASTS, BEAST_UNLOCK, BEAST_COUNT, BEAST
 import { ISLE_TH, VOYAGE_MS, RATION_COST, ISLE_REVEAL, ISLE_SITES,
          genIsle, cellAt, revealAround } from './isle.js';
 import { scoreDeed } from './events.js';
-import { takeCasualties } from './logic.js';
+import { takeCasualties, rollRelic } from './logic.js';
 import {
   tierPower, heroBonus, spoilBonus, perk, wavePower, leadBonus, leadTotal, classMult, heroAway,
   coverOf, coverMult, matchupEdge, powerShares,
@@ -559,6 +559,7 @@ function resolveHunt(s, m, now, rand){
     m.bond = d.pet * b.lvl;                // the hunt is the only road to a companion
     m.report = d.icon+' The '+d.name+' is brought down ('+mine+' vs '+Math.round(enemy)+')';
     s.beastsSlain = (s.beastsSlain||0) + 1;
+    rollRelic(s, 'beast', now, rand);   // the herds carry the best of the chase drops
     scoreDeed(s, 'beast', 1, now);
     s.world.beasts.splice(m.beast, 1);
     s.world.spawnAt = now + BEAST_RESPAWN_MS;   // the herds wander back in their own time
@@ -610,6 +611,7 @@ function resolveArrival(s, m, now, rand){
       m.valor = 10+5*tile.lvl; m.mxp = 20+10*tile.lvl;
       m.report = '⚔️ The camp is burned ('+mine+' vs '+Math.round(enemy)+')';
       s.campsBurned = (s.campsBurned||0) + 1;
+      rollRelic(s, 'camp', now, rand);
       scoreDeed(s, 'camp', 1, now);
       tile.respawnAt = now + RESPAWN_MS;
     }else{

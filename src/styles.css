@@ -1141,3 +1141,15 @@ canvas{ touch-action:none; }
   position:absolute;top:-2px;right:-8px;width:8px;height:8px;border-radius:50%;
   background:var(--gold);box-shadow:0 0 4px rgba(217,164,65,.8);
 }
+
+
+/* the relic wall — found ones lit, missing ones showing only their rarity and source */
+.relicwall{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:.5rem}
+.relic{
+  display:flex;flex-direction:column;gap:.15rem;padding:.5rem;
+  border:1px solid var(--edge);border-radius:4px;background:var(--panel-2);opacity:.5;
+}
+.relic.got{opacity:1;border-color:var(--gold-deep)}
+.relic .r-ic{font-size:1.3rem;line-height:1}
+.relic .r-name{font-family:var(--sans);font-size:.7rem;font-weight:600;letter-spacing:.04em}
+.relic .r-fx{font-family:var(--sans);font-size:.64rem;color:var(--ink-dim)}

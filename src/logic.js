@@ -5,7 +5,7 @@
 
 import {
   BUILDINGS, TROOPS, MASTERY, QUESTS, ACHIEVEMENTS, RES_META,
-  HERO_POOL, HERO_SLOTS, SPOILS, RARITY,
+  HERO_POOL, HERO_SLOTS, SPOILS, RARITY, RELICS, RELIC_ODDS, RELIC_HOUR_MS, relicBurnable, QUALITY_TAG, qualityBand,
   COURT_BASE, COURT_PER_TH, COURT_MAX, seasonNo, CLASS_AFFINITY, MARCH_HEROES,
   LOAD, HOLDS, NEEDS, EXPOSED_LOSS, BEATS, MATCHUP,
   SUPPLY, SUPPLY_RES, SUPPLY_PENALTY, SHORT_RAMP, SHORT_MEND, SUPPLY_FROM_TH, SUPPLY_FULL_TH,
@@ -373,8 +373,54 @@ export function spoilBonus(s, key){
     const d = SPOILS[id];
     if(d && d.bonus[key]) b += d.bonus[key]*n;
   }
+  /* Relics ride the SAME funnel. Every rule in the game already asks spoilBonus for these keys —
+     troop power, upkeep, build time, loot, Valor, casualties, march speed — so folding relics in
+     here gives them effect everywhere without touching one call site. Adding a parallel relicBonus()
+     would have meant finding and editing every consumer, and missing one is how a relic ends up
+     pretty and inert, which is the bug this project has fixed most often. */
+  for(const [id,n] of Object.entries(s.relics||{})){
+    const d = RELICS[id];
+    if(d && d.bonus[key]) b += d.bonus[key]*n;
+  }
   return b;
 }
+/* ── the roll ──
+   Pure and rand-injected like everything else, so the sim and the tests can measure the curve
+   rather than trust it. One relic per call at most; duplicates stack, because a second Great
+   Antlers should be worth something rather than being a consolation message. */
+export function rollRelic(s, src, now, rand = Math.random){
+  if(!(RELIC_ODDS[src] > 0) || rand() > RELIC_ODDS[src]) return null;
+  const pool = Object.entries(RELICS).filter(([, d]) => d.find === src);
+  if(!pool.length) return null;
+  const total = pool.reduce((t, [, d]) => t + d.weight, 0);
+  let roll = rand() * total, hit = pool[0];
+  for(const e of pool){ roll -= e[1].weight; if(roll <= 0){ hit = e; break; } }
+  const [id, d] = hit;
+  s.relics = s.relics || {};
+  s.relics[id] = (s.relics[id] || 0) + 1;
+  const first = s.relics[id] === 1;
+  pushLog(s, d.icon + ' ' + (first ? 'A relic! ' : 'Another ') + d.name + ' — ' + d.fx + '.', 'gold');
+  if(first) showBanner(s, d.icon + ' ' + d.name, 'win', now || s.now || 0);
+  return id;
+}
+export function relicsFound(s){ return Object.keys(s.relics || {}).length; }
+/* Offer a relic to the forge: an hour off whatever is on the anvil. Refuses when there is nothing
+   being made (the hour would vanish), when the relic is not held, and when it is a Legendary —
+   `keep` exists so the game says no rather than letting someone burn the Silent Bell for an hour. */
+export function burnRelic(s, id, now){
+  if(!s.gq || !relicBurnable(id)) return false;
+  const have = (s.relics || {})[id] || 0;
+  if(have < 1) return false;
+  s.now = now;
+  s.relics[id] = have - 1;
+  if(!s.relics[id]) delete s.relics[id];
+  s.gq.end = Math.max(now, s.gq.end - RELIC_HOUR_MS);
+  pushLog(s, RELICS[id].icon + ' ' + RELICS[id].name + ' goes into the fire — an hour off the work.', 'gold');
+  return true;
+}
+/* Relic-granted troop-tier headroom, read by maxTier so the Drillfield stays the gate and the
+   relic only lifts its ceiling. */
+export function relicTierCap(s){ return Math.round(spoilBonus(s, 'tierCap')); }
 
 /* ── derived values ── */
 export function perk(s,n){ return masteryLvl(s)>=n; }
@@ -423,7 +469,8 @@ export function prodPerSec(s, res){
    IX and hard-code X at the top, which is the shape of a formula fighting its own numbers. */
 export function maxTier(s){
   const a = s.b.academy || 0;
-  return Math.min(TIERS.length, Math.max(1, Math.floor(a / ACADEMY_PER_TIER)));
+  return Math.min(TIERS.length,
+                  Math.max(1, Math.floor(a / ACADEMY_PER_TIER) + relicTierCap(s)));
 }
 /* The Drillfield level that opens a given tier — what the UI has to name when it refuses.
    Tier I is free; every tier after it sits at exactly its own number times the step. */
@@ -1912,6 +1959,8 @@ export function resolveWave(s, now, rand=Math.random){
     gainValor(s, valor);
     for(const id of Object.keys(s.heroes)) gainHeroXp(s, id, (12+3*w)*(isWB?2:1));
     gainMastery(s, (8+2*w)*(isWB?2:1), now);
+    rollRelic(s, 'wave', now, rand);
+    if(isWB) rollRelic(s, 'wave', now, rand);   // a Warband is the boss fight; it rolls twice
     s.wavesWon++; s.wave++; s.streak = 0;
     batterWall(s);   // even a wave you threw back left marks on the stonework
     scoreDeed(s, 'waveWon', 1, now);

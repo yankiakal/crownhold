@@ -899,6 +899,64 @@ export const HERO_SLOTS = [
 ];
 
 // permanent relics offered (3, pick 1) after every Warband win
+/* ── relics: the chase ──
+   Asked for, after a good correction from the player: World of Warcraft's randomness is EARNED, not
+   sold. You kill the boss and it might drop the sword. That is the loop worth copying — the thrill
+   is the roll, and the roll costs time rather than money. Gacha is the same excitement with a price
+   tag welded on, which is the only part this game refuses.
+
+   So relics drop from the three things you already fight: waves, camps, beasts. No currency touches
+   them, there is no pull button, and nothing anywhere sells one. They band onto the same QUALITY
+   ladder as gear and troop tiers, so a Legendary relic is the same orange as a Legendary blade.
+
+   Their bonuses land on keys spoilBonus already answers, which means every existing consumer picks
+   them up without a single call site changing — the funnel lesson this codebase keeps relearning.
+   `find` is the source that can drop it; weight is relative within that source. */
+export const RELICS = {
+  hornpipe:  {name:'Cracked Hornpipe',    icon:'🎺', q:'uncommon',  find:'wave',  weight:30,
+              fx:'−5% expedition cooldown', bonus:{expedCd:0.05}},
+  ledger:    {name:"Quartermaster's Ledger", icon:'📒', q:'uncommon', find:'wave', weight:30,
+              fx:'−5% upkeep',             bonus:{upkeep:0.05}},
+  whetstone: {name:'Old Whetstone',       icon:'🪨', q:'uncommon',  find:'camp',  weight:30,
+              fx:'−6% training time',      bonus:{trainTime:0.06}},
+  seal:      {name:'Broken Seal',         icon:'🔰', q:'rare',      find:'wave',  weight:14,
+              fx:'+7% Valor',              bonus:{valor:0.07}},
+  chart:     {name:'Smuggler’s Chart',    icon:'🧭', q:'rare',      find:'camp',  weight:14,
+              fx:'+10% raid loot',         bonus:{loot:0.10}},
+  antlers:   {name:'Great Antlers',       icon:'🦌', q:'rare',      find:'beast', weight:16,
+              fx:'+12% haul carried',      bonus:{haul:0.12}},
+  crownlet:  {name:'Tarnished Crownlet',  icon:'👑', q:'epic',      find:'wave',  weight:5,
+              fx:'+12% food, wood, stone & iron',
+              bonus:{foodProd:0.12, woodProd:0.12, stoneProd:0.12, ironProd:0.12}},
+  gauntlet:  {name:'Warden’s Gauntlet',   icon:'🛡️', q:'epic',      find:'camp',  weight:5,
+              fx:'+2 alliance helps your builds may take', bonus:{helpCap:2}},
+  hide:      {name:'Frost-Hide Cloak',    icon:'🧥', q:'epic',      find:'beast', weight:5,
+              fx:'+15% march speed',       bonus:{speed:0.15}},
+  bell:      {name:'The Silent Bell',     icon:'🔔', q:'legendary', find:'wave',  weight:1,
+              fx:'+1 Writ of Peace held, and −12% build time', bonus:{shieldCap:1, buildTime:0.12},
+              keep:true},
+  spear:     {name:'The First Spear',     icon:'🗡️', q:'legendary', find:'beast', weight:1,
+              fx:'+1 troop tier at the Drillfield’s cap', bonus:{tierCap:1}, keep:true},
+};
+/* ── relics go SIDEWAYS, never up ──
+   The first draft handed relics troop power, which is the forge's own currency — so luck competed
+   with the plan, and if luck wins the plan is pointless. Not one relic grants troop power now. They
+   do what the forge cannot: a Writ held, raid loot, march speed, an extra alliance help, a tier past
+   the Drillfield's cap. The forge remains the only road to combat numbers, and it is not close — a
+   full Regalia is +20% production, +20% Valor, +20% troop power and −15% casualties, and wargear is
+   +10 effective levels a captain.
+
+   AND THEY FEED IT. A relic can be offered up at the Forge to cut an hour off whatever is being
+   made, which points the chase AT the plan rather than beside it. The cap matters: the forge's real
+   cost is its single queue, so a relic that skipped a whole build would delete the pacing rather
+   than ease a wait. One hour, and the two Legendaries carry `keep` — too rare to burn, so the game
+   refuses rather than letting you regret it. */
+export const RELIC_HOUR_MS = 3600000;
+export const relicBurnable = (id) => !!RELICS[id] && !RELICS[id].keep;
+/* Odds per kill, per source. Low enough that a find is an event, high enough that the wall is
+   completable inside a normal campaign — measured, not guessed. Warbands roll twice. */
+export const RELIC_ODDS = { wave: 0.035, camp: 0.10, beast: 0.14 };
+
 export const SPOILS = {
   banner:  {name:'Banner of the Bloodied', icon:'🚩', fx:'+6% troop power',             stack:true,  bonus:{troopPower:0.06}},
   granary: {name:'Granary Charter',        icon:'🌾', fx:'+8% food production',         stack:true,  bonus:{foodProd:0.08}},

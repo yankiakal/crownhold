@@ -13,7 +13,7 @@ import {
    carries only what is not already in scope. */
 import { TIERS, SUPPLY_RES, SUPPLY, HOLDS, NEEDS, BEATS, MATCHUP,
          DECREES, DECREE_MS, decreeUp, decreeDown, QUALITY, QUALITY_TAG, qualityBand,
-         ALLY_FROM, canAlly, allyBlockedWhy, WAVE_LOSS_FLOOR, WAVE_LOSS_SPAN, WAVE_PLUNDER_FLOOR, WAVE_PLUNDER_SPAN } from './defs.js';
+         ALLY_FROM, canAlly, allyBlockedWhy, RELICS, relicBurnable, WAVE_LOSS_FLOOR, WAVE_LOSS_SPAN, WAVE_PLUNDER_FLOOR, WAVE_PLUNDER_SPAN } from './defs.js';
 import {
   TILE_TYPES, MAP_W, MAP_H, CX, CY, TRAVEL_MS_PER_TILE, GATHER_MS,
   tileDist, marchSlots, tileBusy, marchPower, campPower, gatherYield, startMarch,
@@ -33,7 +33,7 @@ import {
   armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
   valorQuota, valorToday, isRested, QUEUE_KEYS, buildSlots, activeQueues, freeSlot, townhallReq, townhallPath,
   maxTier, academyForTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, promoteTime, promoteQueue, trainCost, buildingCurve,
-  wavePower, streakMult, finishCost, xpNeed,
+  wavePower, streakMult, finishCost, xpNeed, relicsFound,
   courtSeats, courtSeated, heroAway, leadBonus, leadTotal, heroSeasonOpen, classLift,
   effLvl, heroStarCap, arenaTeam, setArenaTeam, gearBlockedBy, petBonus, screenCover,
 } from './logic.js';
@@ -706,12 +706,45 @@ function renderRegalia(S){
   let h = '<section class="panel"><h2>The Lord’s Regalia <span style="letter-spacing:.05em">worn by you, not by any captain</span></h2>'
     + '<div class="stat-note">Forged from Steel and Runestone, never bought. No random stats — a tier-6 blade is a '
     + 'tier-6 blade for everyone, so there is nothing to reroll.</div>';
+  if(S.gq && relicsFound(S))
+    h += '<div class="stat-note">🔥 A relic can be offered to the fire — an hour off the work, from '
+      + 'the Relics wall in the Court. The forge is still the only road to the numbers.</div>';
   if(S.gq) h += queueStrip(S, S.gq, '🔥 '+(S.gq.who==='lord' ? REGALIA[S.gq.slot].name
       : (HERO_POOL[S.gq.who] ? HERO_POOL[S.gq.who].name.split(',')[0] : '')+'’s '+WARGEAR[S.gq.slot].name.toLowerCase())
       +' → tier '+S.gq.to, 'finishGear', null);
   for(const [slot,d] of Object.entries(REGALIA))
     h += gearRow(S, 'lord', slot, d.name, d.icon, d.fx(regaliaTier(S, slot)) || 'nothing yet');
   return h + '</section>';
+}
+
+/* ── the relic wall ──
+   A collection, which is the other half of what makes the chase work: eleven slots, the found ones
+   lit and counted, the missing ones showing only their rarity and where they come from. Nothing here
+   is buyable, so there is no "complete it now" button — the wall is the ask. */
+function renderRelics(S){
+  const found = S.relics || {};
+  const n = Object.keys(found).length, all = Object.keys(RELICS).length;
+  const src = { wave:'raids', camp:'camps', beast:'the herds' };
+  let h = '<section class="panel"><h2>Relics <span>'+n+' of '+all+' found</span></h2>'
+    + '<div class="stat-note">Carried home from fighting — raids, camps and the herds. Never sold, '
+    + 'never rolled for money: the only way to a relic is a fight you chose to take.</div>'
+    + '<div class="relicwall">';
+  for(const [id, d] of Object.entries(RELICS)){
+    const have = found[id] || 0;
+    h += '<div class="relic'+(have?' got':'')+'">'
+      + '<span class="r-ic">'+(have ? d.icon : '❔')+'</span>'
+      + '<span class="r-name '+qClass(d.q)+'">'+(have ? d.name : QUALITY_TAG[d.q])+'</span>'
+      + '<span class="r-fx">'+(have ? d.fx + (have > 1 ? ' ×'+have : '') : 'from '+src[d.find])+'</span>'
+      /* Offered up only at the Forge, and only while something is on the anvil — an hour off work
+         that is not happening would simply vanish. Legendaries carry `keep`: the game refuses
+         rather than letting anyone burn the Silent Bell for sixty minutes. */
+      + (have && S.gq && relicBurnable(id)
+          ? '<button data-act="burnRelic" data-key="'+id+'" style="margin-top:.3rem;font-size:.62rem">'
+            + '🔥 Into the fire · −1h</button>'
+          : have && d.keep ? '<span class="r-fx" style="color:var(--gold)">too rare to burn</span>' : '')
+      + '</div>';
+  }
+  return h + '</div></section>';
 }
 
 function renderSpoils(S){
@@ -3141,7 +3174,7 @@ export function render(){
     + '<div class="rail">'
       + inTab('war',    renderMuster(S) + renderWatch(S) + renderRaid(S) + renderArena(S)
                       + renderRally(S) + renderBoss(S))
-      + inTab('court',  renderHeroes(S) + renderPets(S) + renderRegalia(S) + renderSpoils(S))
+      + inTab('court',  renderHeroes(S) + renderPets(S) + renderRegalia(S) + renderRelics(S) + renderSpoils(S))
       + inTab('build',  renderHoldPanels(S) + renderDecrees(S) + renderResearch(S))
       + inTab(paneFor('ally'), renderAlliance(S) + renderMusterRoll(S) + renderRealm(S) + renderRift(S))
       + inTab('ledger', renderHoldTools(S) + renderQuest(S) + renderDaily(S) + renderEvent(S) + renderCalendar(S)

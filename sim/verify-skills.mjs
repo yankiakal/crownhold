@@ -2912,6 +2912,88 @@ console.log('\n── a yard cannot be rebuilt around a drilling batch ──');
      ['wood','stone'].map(r => r + ' ' + d2.res[r] + '/' + L.capFor(d2, r)).join(', '));
 }
 
+/* ── relics: the chase is earned, and it must not out-forge the forge ──
+   Asked for after a correction worth recording: WoW's randomness is EARNED, not sold — you kill the
+   boss and it might drop the sword. That loop is worth copying; gacha is the same excitement with a
+   price welded on, which is the only part refused.
+
+   The assertions that matter are the ones about BALANCE, not about drops. Relics must go sideways:
+   not one may grant troop power, or luck competes with the plan and the plan is what the player
+   controls. And they must feed the forge rather than replace it. */
+console.log('\n── relics are earned, sideways, and feed the forge ──');
+{
+  const R = D.RELICS;
+  ok('every relic is findable from a real source', Object.values(R)
+     .every(d => ['wave','camp','beast'].includes(d.find)), Object.keys(R).length + ' relics');
+  ok('every relic bands onto the quality ladder', Object.values(R)
+     .every(d => D.QUALITY.includes(d.q)), [...new Set(Object.values(R).map(d => d.q))].join(', '));
+  /* THE RULE. Troop power is the forge's currency; a relic granting it competes rather than
+     complements, which is exactly the mistake the first draft made. */
+  const usurpers = Object.entries(R).filter(([, d]) => d.bonus.troopPower);
+  ok('no relic grants troop power — that is the forge\'s alone', usurpers.length === 0,
+     usurpers.map(([k]) => k).join(', ') || 'all sideways');
+  ok('nothing about a relic is priced', Object.values(R)
+     .every(d => !('price' in d) && !('cost' in d) && !('gems' in d)));
+
+  /* Every relic must move a number somewhere, or it is a pretty inert thing — the bug this project
+     has fixed most often. spoilBonus is the funnel they ride. */
+  const inert = [];
+  for(const [id, d] of Object.entries(R)){
+    const s = hold(); s.relics = { [id]: 1 };
+    const bare = hold(); bare.relics = {};
+    const moved = Object.keys(d.bonus).some(k => L.spoilBonus(s, k) > L.spoilBonus(bare, k));
+    if(!moved) inert.push(id);
+  }
+  ok('every relic moves a number through the shared funnel', inert.length === 0,
+     inert.join(', ') || 'all live');
+
+  /* The one that reaches furthest: a tier past the Drillfield's cap. */
+  {
+    const s = hold(); s.b.academy = 9; s.relics = {};
+    const before = L.maxTier(s);
+    s.relics = { spear: 1 };
+    ok('the First Spear lifts the troop-tier ceiling', L.maxTier(s) === before + 1,
+       before + ' → ' + L.maxTier(s));
+  }
+
+  // drops, and the wall being completable
+  {
+    const s = hold(); s.relics = {};
+    let rolls = 0, seq = 0;
+    const rand = () => ((seq = (seq * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    for(let i = 0; i < 4000; i++){ if(L.rollRelic(s, 'wave', s.now, rand)) rolls++; }
+    ok('waves drop relics at roughly the stated rate', rolls > 60 && rolls < 220,
+       rolls + ' in 4000 raids, expected ~' + Math.round(4000 * D.RELIC_ODDS.wave));
+    const s2 = hold(); s2.relics = {};
+    for(const src of ['wave','camp','beast'])
+      for(let i = 0; i < 6000; i++) L.rollRelic(s2, src, s2.now, rand);
+    ok('the whole wall is reachable by fighting alone',
+       Object.keys(s2.relics).length === Object.keys(R).length,
+       Object.keys(s2.relics).length + ' of ' + Object.keys(R).length);
+  }
+
+  /* Into the fire: an hour off, only at the forge, never a Legendary. */
+  {
+    const s = hold();
+    s.relics = { whetstone: 1, bell: 1 };
+    ok('a relic cannot be burnt with nothing on the anvil', !L.burnRelic(s, 'whetstone', s.now));
+    s.gq = { who:'lord', slot:'blade', to:3, start:s.now, end:s.now + 5 * 3600000 };
+    const end0 = s.gq.end;
+    ok('offered to the fire it cuts an hour', L.burnRelic(s, 'whetstone', s.now)
+       && end0 - s.gq.end === D.RELIC_HOUR_MS, Math.round((end0 - s.gq.end) / 60000) + ' min off');
+    ok('and the relic is spent', !(s.relics.whetstone > 0));
+    ok('a Legendary is too rare to burn', !L.burnRelic(s, 'bell', s.now) && s.relics.bell === 1);
+    ok('one you do not hold cannot be burnt', !L.burnRelic(s, 'chart', s.now));
+    ok('burnRelic is a real game action', A.isGameAction('burnRelic'));
+    /* And it cannot rewind past now — an hour off a build with ten minutes left finishes it, it does
+       not schedule it in the past. */
+    s.relics = { whetstone: 1 };
+    s.gq.end = s.now + 600000;
+    L.burnRelic(s, 'whetstone', s.now);
+    ok('and never pushes a forge into the past', s.gq.end >= s.now, String(s.gq.end - s.now));
+  }
+}
+
 console.log('\n── the Founder\'s Peace ends three ways, and never starts for an old hold ──');
 {
   const RAID = await import('../src/raid.js');
