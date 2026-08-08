@@ -3630,7 +3630,17 @@ sceneDock.addEventListener('pointermove', e => {
 });
 const camEnd = e => {
   const had = cam.pts.delete(e.pointerId);
-  if(had && cam.pts.size === 0 && !cam.moved && e.target && e.target.id === 'holdscene'){
+  if(!(had && cam.pts.size === 0 && !cam.moved)) return;
+  /* Pointer capture redirects every event to the dock, so e.target is useless here — the element
+     under the finger has to be asked for by coordinate. A clean release on a badge runs the badge;
+     on the walls, it picks the building. Reported: starting a drag on a badge opened its sheet —
+     badges are buttons, and buttons fire on pointerdown everywhere else because the 4Hz rebuild
+     destroys them between press and release. The dock is outside that rebuild, so HERE release is
+     safe, and it is the only correct reading of a finger that might have been starting a pan. */
+  const el = document.elementFromPoint && document.elementFromPoint(e.clientX, e.clientY);
+  const btn = el && el.closest && el.closest('button[data-act]');
+  if(btn && sceneDock.contains(btn)){ runAction(btn); return; }
+  if(el && el.id === 'holdscene'){
     const key = pickBuilding(e.clientX, e.clientY);
     if(key){ detail = { type:'building', key }; render(); }
   }
@@ -3828,6 +3838,7 @@ export function wire(){
       return;
     }
     const btn = e.target.closest('button[data-act],[role="button"][data-act]');
+    if(btn && sceneDock.contains(btn)) return;   // dock buttons act on RELEASE — see camEnd
     if(btn){ runAction(btn); return; }
     /* Tapping the dark outside a sheet closes it. Three sheets have carried a
        `data-act-bg` attribute since they were written and nothing ever read it, so the
