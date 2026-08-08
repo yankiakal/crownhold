@@ -122,7 +122,11 @@ try {
     /* pointerdown, not click. The canvas handler is bound to pointerdown — its own comment says
        "so the 4 Hz re-render can never swallow a click", which is this same bug seen from the
        other side. A dispatched 'click' reaches nothing and opens nothing. */
-    cv.dispatchEvent(new w.MouseEvent('pointerdown', { bubbles:true, clientX: cx, clientY: cy }));
+    /* down AND up: the frontier is a camera now and acts on RELEASE, so a lone pointerdown opens
+       nothing — which the probe reported as "no sheet", i.e. as a bug in the game. */
+    for(const type of ['pointerdown', 'pointerup'])
+      cv.dispatchEvent(new w.PointerEvent(type, { bubbles:true, pointerId: 7, isPrimary: true,
+                                                  clientX: cx, clientY: cy }));
     await wait(400);
     if(!d.querySelector('.overlay'))
       say('  (clicked ' + tile.type + ' at ' + tile.x + ',' + tile.y + ' → ' + Math.round(cx) + ',' + Math.round(cy)

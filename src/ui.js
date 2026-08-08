@@ -2943,8 +2943,8 @@ function renderWorld(S){
      pannable view for the same reason. At natural size the cells are 56px and you see about
      seven columns, swiping for the rest; the tap handler works off proportional coordinates so
      it needed no change at all. */
-  h += '<div class="mapwrap" id="mapwrap">'
-    + '<canvas id="worldmap" width="'+(MAP_W*56)+'" height="'+(MAP_H*56)+'"></canvas></div>';
+  // the canvas lives in #map-dock now (outside the render tree); the pane keeps only its panels
+  h += '<div id="mapwrap" class="mapwrap-gone"></div>';
   const now = Date.now();
   for(const m of S.marches){
     // a column is out after a tile or after a beast; a slain beast leaves neither
@@ -2971,7 +2971,7 @@ function renderWorld(S){
 }
 
 function drawMap(S){
-  const cv = document.getElementById('worldmap');
+  const cv = mapCanvas;
   if(!cv) return;
   const ctx = cv.getContext('2d'), C = 56;
   // the canvas is scaled to fit 640px, so a 15-wide grid renders every glyph at
@@ -3135,6 +3135,37 @@ const inTab = (key, body) => {
     + body + '</div>';
 };
 
+/* The frontier's camera: cover the viewport at minimum so the edges are never visible, up to 2.4×
+   in. Same midpoint-preserving arithmetic as the hold's zoomAt — convert the pinch point through
+   the old scale, then put the same world point back under the fingers. */
+function mapZoomAt(cx, cy, factor){
+  const before = mapZoom;
+  mapZoom = Math.max(0.5, Math.min(2.4, mapZoom * factor));
+  if(mapZoom === before) return;
+  sizeMap();
+  const k = mapZoom / before;
+  const box = mapDock.getBoundingClientRect();
+  mapDock.scrollLeft = (mapDock.scrollLeft + cx - box.left) * k - (cx - box.left);
+  mapDock.scrollTop  = (mapDock.scrollTop  + cy - box.top)  * k - (cy - box.top);
+}
+function sizeMap(){
+  const box = mapDock.getBoundingClientRect();
+  if(!box.width) return;
+  const w = MAP_W * 56, hgt = MAP_H * 56;
+  const cover = Math.max(box.width / w, box.height / hgt);
+  const px = Math.round(w * cover * mapZoom), py = Math.round(hgt * cover * mapZoom);
+  mapCanvas.style.width = px + 'px';
+  mapCanvas.style.height = py + 'px';
+  /* Opens on YOUR hold, not on the middle of the grid — every distance in the world is measured
+     from that square, so it is the one cell the player needs to find first. */
+  if(!mapCentred && mapDock.scrollWidth > mapDock.clientWidth){
+    const cell = px / MAP_W;
+    mapDock.scrollLeft = Math.max(0, (CX + 0.5) * cell - mapDock.clientWidth / 2);
+    mapDock.scrollTop  = Math.max(0, (CY + 0.5) * (py / MAP_H) - mapDock.clientHeight / 2);
+    mapCentred = true;
+  }
+}
+
 function renderTabBar(){
   /* ── one quiet dot, only when something is genuinely claimable ──
      WoS red-dots everything until the dots mean nothing. Here a single dot appears on LEDGER when
@@ -3198,13 +3229,8 @@ export function render(){
   if(hdr && hdr.offsetHeight && root.style && root.style.setProperty)
     root.style.setProperty('--hdr', hdr.offsetHeight + 'px');
 
-  /* Centre the frontier on your own hold the first time it is drawn. Re-centring on every
-     render would yank the view back mid-swipe, four times a second. */
-  const wrap = document.getElementById('mapwrap');
-  if(wrap && !mapCentred && wrap.scrollWidth > wrap.clientWidth){
-    wrap.scrollLeft = Math.max(0, (CX + 0.5) * 56 - wrap.clientWidth / 2);
-    mapCentred = true;
-  }
+  /* The frontier's first centring lives in sizeMap() now, on the dock — the old .mapwrap strip it
+     used to scroll no longer holds the canvas. */
 
   /* Bring the chosen branch tab fully into view, once per change. Four branches cannot fit 318px
      — each tab is ~110px — so the strip scrolls, and picking the last one left it half cut off at
@@ -3251,6 +3277,13 @@ export function render(){
     else sceneResize();
     paintSceneBadges(S, slot);
     paintPeek(S, slot);
+  }
+  /* The frontier dock shows only on its own tab, and sizes itself when it does — a canvas measured
+     while display:none has a zero box, which is how the hold camera first placed badges at NaN. */
+  {
+    const onWorld = tab === 'world';
+    mapDock.style.display = onWorld ? 'block' : 'none';
+    if(onWorld) sizeMap();
   }
 }
 
@@ -3698,6 +3731,81 @@ document.body.appendChild(sceneDock);
    fingers zoom about their midpoint (zoomAt in iso.js), and a press that MOVED less than a thumb's
    slop is a tap — which also fixes the fullscreen camera's nastiest tell, taps firing on
    pointerdown so that starting a drag on a building opened its sheet. */
+/* ── the frontier is a camera too ──
+   Same disease the hold had: the world pane is rebuilt four times a second, so a native pan died
+   mid-gesture and the map could only ever be swiped in a strip. The map dock is created once,
+   outside the render tree, and the canvas is re-parented into it — exactly the fix that made the
+   hold camera hold. */
+const mapDock = document.createElement('div');
+mapDock.id = 'map-dock';
+document.body.appendChild(mapDock);
+const mapCanvas = document.createElement('canvas');
+mapCanvas.id = 'worldmap';
+mapDock.appendChild(mapCanvas);
+let mapZoom = 1;   // mapCentred already exists above — one flag, one meaning
+/* wired HERE, beside the declarations. Called earlier in the file it ran before mapDock existed —
+   a plain temporal-dead-zone crash at import, which the UI suite caught on the first run. */
+wireCamera(mapDock, {
+  zoom: mapZoomAt,
+  pick: (cx, cy) => {
+    const r = mapCanvas.getBoundingClientRect();
+    const x = Math.floor((cx - r.left) / r.width * MAP_W);
+    const y = Math.floor((cy - r.top) / r.height * MAP_H);
+    const idx = store.s.world.tiles.findIndex(t => t.x === x && t.y === y);
+    if(idx >= 0){ detail = { type:'tile', key:idx }; render(); return; }
+    const bi = (store.s.world.beasts || []).findIndex(b => b.x === x && b.y === y);
+    if(bi >= 0){ detail = { type:'beast', key:bi }; render(); }
+  },
+});
+
+export function mapScale(){ return mapZoom; }
+
+/* One gesture engine, two cameras. `pick` is what a clean release means on each: the hold picks a
+   building, the frontier picks a tile or a beast. Written once because the second copy is where the
+   two would drift — the hold's taps already had to be moved from press to release, and doing that
+   twice by hand is how one of them stays wrong. */
+function wireCamera(dock, opts){
+  const cam = { pts: new Map(), d0: 0, moved: false, acted: 0 };
+  dock.addEventListener('pointerdown', e => {
+    /* try/catch, not a truthiness check: setPointerCapture THROWS on an id it does not know, and a
+       throw inside pointerdown kills the whole gesture before it starts. */
+    try { dock.setPointerCapture(e.pointerId); } catch {}
+    cam.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if(cam.pts.size === 1) cam.moved = false;
+    if(cam.pts.size === 2){
+      const [a, b] = [...cam.pts.values()];
+      cam.d0 = Math.hypot(a.x - b.x, a.y - b.y);
+    }
+  });
+  dock.addEventListener('pointermove', e => {
+    const p = cam.pts.get(e.pointerId);
+    if(!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    if(Math.hypot(dx, dy) <= 1) return;
+    if(cam.pts.size === 1){
+      if(Math.abs(dx) + Math.abs(dy) > 3) cam.moved = true;
+      dock.scrollLeft -= dx; dock.scrollTop -= dy;
+    } else if(cam.pts.size === 2){
+      cam.moved = true;
+      const [a, b] = [...cam.pts.values()];
+      const d1 = Math.hypot(a.x - b.x, a.y - b.y);
+      if(cam.d0 > 0) opts.zoom((a.x + b.x) / 2, (a.y + b.y) / 2, d1 / cam.d0);
+      cam.d0 = d1;
+    }
+  });
+  dock.addEventListener('pointerup', e => {
+    const had = cam.pts.delete(e.pointerId);
+    if(!(had && cam.pts.size === 0 && !cam.moved)) return;
+    const el = document.elementFromPoint && document.elementFromPoint(e.clientX, e.clientY);
+    const btn = el && el.closest && el.closest('button[data-act]');
+    if(btn && dock.contains(btn)){ cam.acted = Date.now(); runAction(btn); return; }
+    opts.pick(e.clientX, e.clientY, el);
+  });
+  dock.addEventListener('pointercancel', e => { cam.pts.delete(e.pointerId); });
+  return cam;
+}
+
 const cam = { pts: new Map(), d0: 0, moved: false };
 sceneDock.addEventListener('pointerdown', e => {
   sceneDock.setPointerCapture && sceneDock.setPointerCapture(e.pointerId);
@@ -3926,18 +4034,8 @@ export function wire(){
       if(key){ detail = {type:'building', key}; render(); }
       return;
     }
-    // taps on the world map open the tile's sheet
-    if(e.target && e.target.id === 'worldmap'){
-      const rect = e.target.getBoundingClientRect();
-      const x = Math.floor((e.clientX-rect.left)/rect.width*MAP_W);
-      const y = Math.floor((e.clientY-rect.top)/rect.height*MAP_H);
-      const idx = store.s.world.tiles.findIndex(t => t.x===x && t.y===y);
-      if(idx >= 0){ detail = {type:'tile', key:idx}; render(); return; }
-      // nothing built there — a beast may be standing on it
-      const bi = (store.s.world.beasts||[]).findIndex(b => b.x===x && b.y===y);
-      if(bi >= 0){ detail = {type:'beast', key:bi}; render(); }
-      return;
-    }
+    // the frontier's taps are handled on RELEASE by the map dock's camera — see wireCamera
+    if(e.target && e.target.id === 'worldmap') return;
     const btn = e.target.closest('button[data-act],[role="button"][data-act]');
     if(btn && sceneDock.contains(btn)) return;   // dock buttons act on RELEASE — see camEnd
     if(btn){ runAction(btn); return; }
