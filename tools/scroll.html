@@ -139,6 +139,115 @@ try {
     return (card.scrollHeight - card.clientHeight) > 40 ? card : d.querySelector('.overlay');
   });
 
+  /* ── can you actually SEE the frontier? ──
+     Reported with two screenshots: "it's still fucked even when zoomed out" — a couple of enormous
+     blurry glyphs, black below them, and pinching out did not help.
+
+     Three numbers say why, and none of them is reachable from a stub DOM:
+       · the canvas BACKING STORE against the 840×504 world drawMap paints. A canvas element made
+         with createElement and never given width/height is 300×150, so most of the map is painted
+         off the edge of the buffer and the scrap that landed is stretched — which is the blur.
+       · TILES ACROSS at the minimum zoom. A 15-wide map you can only see four columns of is not a
+         map you can plan on.
+       · the canvas against its dock. Zoomed out under a cover-fit floor the canvas ends up SHORTER
+         than the viewport, and the gap below it is the black void in the screenshot. */
+  {
+    /* Back to the hold FIRST. A tab tap toggles — "tapping the tab you are already on closes its
+       sheet" — and the gather probe left this one on world, so clicking world sent it to hold and
+       the dock was measured at display:none. Every number came back 0 and the probe reported the
+       camera as broken in a way it was not. */
+    click('[data-act="detailClose"]');
+    await wait(200);
+    click('[data-act="tab"][data-key="hold"]');
+    await wait(300);
+    click('[data-act="tab"][data-key="world"]');
+    await wait(700);
+    const cv = d.getElementById('worldmap'), dock = d.getElementById('map-dock');
+    if(!cv || !dock) say('frontier'.padEnd(16) + ' NO MAP CANVAS');
+    else {
+      const MAP_W = 15, MAP_H = 9, C = 56;   // the world drawMap paints, in its own units
+      const want = MAP_W * C + '×' + MAP_H * C;
+      const got = cv.width + '×' + cv.height;
+      /* Enough buffer to hold the drawing at the size it is displayed. A store SMALLER than the
+         painted world clips it; a store smaller than the CSS box is merely blurry. Both are faults,
+         and the first is the one that hides the map. */
+      const clipped = cv.width < MAP_W * C || cv.height < MAP_H * C;
+      say('map buffer'.padEnd(16) + got + ' for a ' + want + ' drawing'
+        + (clipped ? '  CLIPPED' : '  HOLDS THE MAP'));
+
+      const r = cv.getBoundingClientRect(), dr = dock.getBoundingClientRect();
+      const sharp = r.width > 0 && cv.width / r.width >= 0.9;
+      say('map sharpness'.padEnd(16) + Math.round(r.width) + 'px wide from a ' + cv.width
+        + 'px buffer — ' + (r.width ? (cv.width / r.width).toFixed(2) : '?') + '× device pixels'
+        + (sharp ? '  SHARP' : '  BLURRY'));
+
+      /* Two demands that conflict on a 393px screen, so they are checked at the two moments they
+         apply. What it OPENS at has to be tappable — fifteen columns squeezed into a phone makes
+         26px cells, under the 44px a thumb can reliably hit. */
+      const cell = r.width / MAP_W;
+      say('map opens at'.padEnd(16) + cell.toFixed(0) + 'px cells, '
+        + (r.width ? (dr.width / cell).toFixed(1) : '?') + ' columns in view'
+        + (cell >= 44 ? '  THUMB-SIZED' : '  TOO SMALL TO TAP'));
+
+      /* The void. A map smaller than its dock has to sit in the FREE ROOM — below the frontier card,
+         above the tab bar — and be roughly centred in it. Measured against that furniture rather
+         than against the raw viewport: the camera is fullscreen and the card floats over its top, so
+         a map centred in the dock hides behind the card, and a map centred in the room reads as a
+         void to any check that only knows about the dock. This assertion is the intent, not the
+         geometry that happened: hidden under the card, under the tab bar, or shoved into a corner of
+         its room all fail. */
+      const card = d.querySelector('.tabpane.sheet.on[data-pane="world"] section');
+      const bar = d.querySelector('.tabbar');
+      const cb = card ? card.getBoundingClientRect().bottom : dr.top;
+      const bt = bar ? bar.getBoundingClientRect().top : dr.bottom;
+      const above = Math.round(r.top - cb), below = Math.round(bt - r.bottom);
+      /* both non-negative means it is clear of the furniture; within 24px of each other means it is
+         centred in what is left. When the map overflows its room, only clearance matters. */
+      const fits = r.height <= (bt - cb) + 2;
+      const placed = above >= -2 && below >= -2 && (!fits || Math.abs(above - below) <= 24);
+      say('map in its room'.padEnd(16) + Math.round(r.width) + '×' + Math.round(r.height)
+        + ' in ' + Math.round(dr.width) + '×' + Math.round(dr.height) + ' dock · '
+        + above + 'px under the card, ' + below + 'px above the tab bar'
+        + (placed ? '  IN ITS ROOM' : '  VOID'));
+
+      /* ── the panels are furniture, and furniture has a budget ──
+         "It should be only map and buttons." The two cards that used to live here came to more than
+         a phone's height between them, so the map was complete and entirely behind them. A share of
+         the screen is the honest way to state that rule, and it is the one a new panel would break. */
+      let furn = 0;
+      d.querySelectorAll('.tabpane.sheet.on[data-pane="world"] section')
+        .forEach(sec => { furn += sec.getBoundingClientRect().height; });
+      say('frontier panels'.padEnd(16) + Math.round(furn) + 'px of ' + Math.round(dr.height)
+        + ' — ' + Math.round(100 * furn / dr.height) + '% of the screen'
+        + (furn <= dr.height * 0.30 ? '  FURNITURE' : '  BURIES THE MAP'));
+
+      /* ── and the other half: can you get OUT? ──
+         "It's still fucked even when zoomed out" was the report, so the check drives the actual
+         gesture rather than reading the clamp: two fingers, moved together, through wireCamera's own
+         pointer handlers. Reading `mapZoom` would only prove the arithmetic; this proves the pinch
+         reaches it, which is the thing that was broken. */
+      const mid = { x: dr.left + dr.width / 2, y: dr.top + dr.height / 2 };
+      const send = (type, id, x, y) => dock.dispatchEvent(new w.PointerEvent(type, {
+        bubbles:true, pointerId:id, isPrimary:id===1, clientX:x, clientY:y }));
+      send('pointerdown', 1, mid.x - 150, mid.y);
+      send('pointerdown', 2, mid.x + 150, mid.y);
+      for(let step = 140; step >= 20; step -= 30){          // fingers converge → factor < 1
+        send('pointermove', 1, mid.x - step, mid.y);
+        send('pointermove', 2, mid.x + step, mid.y);
+      }
+      send('pointerup', 1, mid.x - 20, mid.y);
+      send('pointerup', 2, mid.x + 20, mid.y);
+      await wait(500);
+      const r2 = cv.getBoundingClientRect();
+      const out = r2.width ? dr.width / (r2.width / MAP_W) : 0;
+      say('pinch out'.padEnd(16) + Math.round(r.width) + 'px → ' + Math.round(r2.width) + 'px · '
+        + out.toFixed(1) + ' of ' + MAP_W + ' columns in view'
+        + (out >= MAP_W - 0.5 ? '  WHOLE MAP' : '  CANNOT ZOOM OUT'));
+    }
+    click('[data-act="tab"][data-key="hold"]');
+    await wait(400);
+  }
+
   /* ── badges that sit on the buildings ──
      The WoS-style build timer floats over the building it belongs to, positioned by plotScreen —
      the exact inverse of the tap hit-test. Arithmetic like that cannot be checked by reading it:

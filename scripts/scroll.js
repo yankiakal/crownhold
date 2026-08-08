@@ -94,6 +94,12 @@ console.log(report.trim().split('\n').map(l => '  ' + l).join('\n'));
 const badgeFaults = ['MISSING', 'OFF THE WALLS', 'NO TIME SHOWN', 'NO SHEET',
                      'NO BUILDABLE BUILDING', 'SCROLLED AWAY'].filter(t => report.includes(t));
 
+/* The frontier's own faults, kept separate so the message names the right camera. CLIPPED is the
+   one that hid the map: a canvas never given width/height is 300×150, and drawMap paints an 840×504
+   world into it. */
+const mapFaults = ['NO MAP CANVAS', 'CLIPPED', 'BLURRY', 'TOO SMALL TO TAP',
+                   'CANNOT ZOOM OUT', 'VOID', 'BURIES THE MAP'].filter(t => report.includes(t));
+
 const lost = (report.match(/LOST/g) || []).length;
 const kept = (report.match(/KEPT/g) || []).length;
 const blind = /COULD NOT OPEN|NO SCROLLER FOUND|nothing to scroll/.test(report);
@@ -112,6 +118,14 @@ if(blind){
 }
 if(badgeFaults.length){
   console.log('  ✗ the scene badges: ' + badgeFaults.join(', '));
+  process.exit(1);
+}
+if(mapFaults.length){
+  console.log('  ✗ the frontier camera: ' + mapFaults.join(', '));
+  process.exit(1);
+}
+if(!report.includes('WHOLE MAP')){
+  console.log('  ✗ the frontier camera was never measured — not a pass');
   process.exit(1);
 }
 console.log('  ✓ ' + kept + ' surface(s) hold their scroll position across a render tick'

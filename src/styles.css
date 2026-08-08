@@ -419,16 +419,41 @@ section.panel{
   #scene-slot + .stat-note{display:none}
 }
 
-/* the frontier map — scrolls at a thumb-sized scale rather than shrinking to fit */
-.mapwrap{
-  max-width:640px;margin:0 auto .5rem;
-  overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;
-  border:1px solid var(--edge);border-radius:4px;background:#1b1511;
-}
 #worldmap{
-  width:100%;display:block;background:#1b1511;
+  display:block;background:#1b1511;
   cursor:pointer;touch-action:manipulation;
 }
+
+/* ── the frontier's ribbon ──
+   Furniture over a map, so it is sized like furniture. What was here was a full-width panel with a
+   heading and a paragraph per column, and the Salt Isle's whole chart stacked under it: together
+   taller than a phone, painted opaque over the camera they share a tab with. The map was fine and
+   invisible. This is one line, plus a strip of chips when columns are out. */
+.worldbar{padding:.4rem .55rem;margin-bottom:.35rem}
+.wbrow{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.wbrow > b{font-family:var(--serif);color:var(--gold);letter-spacing:.06em;font-size:.9rem}
+.wbmeta{font-family:var(--sans);font-size:.68rem;color:var(--ink-dim);font-variant-numeric:tabular-nums}
+/* 44px both ways. The ⓘ holds one glyph, so padding alone left it 22px wide — under the thumb
+   budget, which the layout harness named as `button.wbbtn[codex]`. */
+.wbbtn{
+  font-size:.68rem;padding:.25rem .5rem;margin-left:auto;
+  min-width:44px;min-height:44px;
+  display:inline-flex;align-items:center;justify-content:center;
+}
+/* the ⓘ sits beside the Salt Isle button, not pushed to its own end of the row */
+.wbbtn + .wbbtn{margin-left:0}
+.wbhint{font-family:var(--sans);font-size:.68rem;color:var(--ink-dim);margin-top:.3rem;line-height:1.35}
+.marchstrip{
+  display:flex;gap:.35rem;margin-top:.35rem;
+  overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+}
+.marchstrip::-webkit-scrollbar{display:none}
+.marchchip{
+  flex:0 0 auto;font-size:.68rem;padding:.2rem .45rem;white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+}
+.marchchip.home{color:var(--good);border-color:#3f5a3f}
 /* ── the frontier is a camera, like the hold ──
    Its canvas lives in #map-dock, created once outside the 4Hz render tree, because a pan whose
    scroll container is rebuilt four times a second cannot be held — the same fault that made the
@@ -444,7 +469,6 @@ section.panel{
 }
 #map-dock, #map-dock #worldmap{touch-action:none}
 #map-dock #worldmap{display:block;background:#1b1511}
-.mapwrap-gone{display:none}
 @media(min-width:821px){
   /* on a desktop the frontier sits in its panel column, not over the page */
   #map-dock{position:relative;inset:auto;max-width:640px;margin:0 auto .5rem;height:60vh;

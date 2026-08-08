@@ -133,7 +133,12 @@ setTimeout(() => {
         }
       }
       if(t === 'world'){
-        const cv = d.getElementById('worldmap'), wrap = d.getElementById('mapwrap');
+        /* #map-dock, not #mapwrap. The frontier became a camera in v3.9 and the old strip was left
+           behind as an empty display:none div — which this harness went on measuring, and dutifully
+           reported the map as living "in a 0px window" for two sessions. The corpse is gone now; the
+           dock is the window. Same trap as the hold camera above, which is why that one carries the
+           same warning. */
+        const cv = d.getElementById('worldmap'), wrap = d.getElementById('map-dock');
         if(cv && wrap){
           const cell = cv.getBoundingClientRect().width / 15;
           rows.push('  frontier cells ' + cell.toFixed(0) + 'px'

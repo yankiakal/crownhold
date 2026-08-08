@@ -1071,7 +1071,14 @@ export function holdQueues(S){
       ? ((S.world.beasts || [])[m.beast] ? BEASTS[S.world.beasts[m.beast].species].name : 'a herd')
       : (S.world.tiles[m.tile] ? TILE_TYPES[S.world.tiles[m.tile].type].name : 'the frontier');
     const leg = now < m.arriveAt ? 'riding to ' : now < m.homeAt - m.out ? 'working ' : 'riding home from ';
-    add('Column', '🐎', leg + to, m.homeAt, 'world');
+    /* Who rode out, named here because this row is now the only place it is said. The frontier's
+       panel used to spell each column out in a paragraph; that became a chip when the panels were
+       cut down to stop them covering the map, and the captains would have been dropped on the floor
+       with the paragraph. */
+    const party = partyOf(m).filter(id => HERO_POOL[id]);
+    add('Column', '🐎', leg + to
+      + (party.length ? ' · ' + party.map(id => HERO_POOL[id].name.split(',')[0]).join(', ') : ''),
+      m.homeAt, 'world');
   }
   const v = S.isle && S.isle.voyage;
   if(v) add('Voyage', '⛵', 'at sea', v.end, 'world');
@@ -1184,6 +1191,26 @@ function renderStore(S){
 
 /* The Salt Isle. A fogged grid you learn by landing on it — so the panel's job is
    to show how little you know, and make the one ship you have feel like a choice. */
+/* Is there an Isle to speak of? The ribbon's button and the panel itself both need this answer, and
+   the cheap way to get it was calling renderIsle() and testing the string — which built the whole
+   chart four times a second to decide whether to draw a button. One predicate instead. */
+function isleShown(S){
+  if(isleReady(S)) return !!S.isle;
+  return (S.b.townhall || 0) >= ISLE_TH - 3;   // near enough to be told it exists
+}
+
+/* The Isle in its own sheet, reached from the frontier ribbon's ⛵ button. The panel it wraps is
+   unchanged — it moved rather than shrank, because the thing wrong with it was where it was. */
+function renderIsleSheet(S){
+  if(!isleOpen) return '';
+  const body = renderIsle(S);
+  if(!body){ isleOpen = false; return ''; }   // nothing to show is not a sheet
+  return '<div class="overlay" data-act-bg="isleClose"><div class="card dsheet">'
+    + '<div class="sheethead"><span>⛵ The Salt Isle</span>'
+    + '<button data-act="isleClose" aria-label="Close">✕</button></div>'
+    + body + '</div></div>';
+}
+
 function renderIsle(S){
   if(!isleReady(S)){
     if(S.b.townhall < ISLE_TH - 3) return '';   // don't tease it from a great distance
@@ -2054,6 +2081,10 @@ function renderFooter(){
 }
 
 let codexOpen = false, loreOpen = false, storeOpen = false, settingsOpen = false;
+/* The Salt Isle is a sheet now, not a card stacked on the frontier's map. It is a whole second
+   board — a chart, a voyage, a landing — and at full width it was taller than a phone, sitting
+   directly over the camera it shares a tab with. */
+let isleOpen = false;
 let mapCentred = false, sceneCentred = false;
 /* set when the branch changes, cleared once the tab has been scrolled into view */
 let branchScrollWanted = false;
@@ -2981,50 +3012,75 @@ function renderChoice(S){
     + '</div></div>';
 }
 
+/* ── the frontier is the MAP, and the panels are furniture on top of it ──
+   Asked for plainly, twice: "the UI needs to be like WoS", "it should be only map and buttons". What
+   was here instead was two full-width opaque cards stacked from the top of a fullscreen camera — the
+   Frontier brief and the whole Salt Isle chart, together taller than a phone — so the map was
+   complete, correct, and behind a wall. Reported as "the frontier doesn't work".
+   So: one slim ribbon carrying what you need while looking at a map, the Isle behind a button, and
+   the columns you have out as chips rather than paragraphs. Everything the ribbon dropped is still
+   reachable — the Isle in its own sheet, a tile's detail on tap — which is the same grammar as the
+   building popup keeping its detail behind an ⓘ. */
 function renderWorld(S){
   const slots = marchSlots(S);
-  let h = '<section class="panel"><h2>The Frontier <span style="letter-spacing:.05em">marches '+S.marches.length+'/'+slots+' · troops away don’t defend the wall</span></h2>';
-  /* The map scrolls rather than shrinking to fit. Squeezed into 393px, fifteen columns gave
-     26px cells with 6px labels — below the ~44px a thumb can reliably hit, and too small to read
-     what a tile holds, which is the whole point of scouting it. Whiteout Survival's map is a
-     pannable view for the same reason. At natural size the cells are 56px and you see about
-     seven columns, swiping for the rest; the tap handler works off proportional coordinates so
-     it needed no change at all. */
-  // the canvas lives in #map-dock now (outside the render tree); the pane keeps only its panels
-  h += '<div id="mapwrap" class="mapwrap-gone"></div>';
-  const now = Date.now();
-  for(const m of S.marches){
-    // a column is out after a tile or after a beast; a slain beast leaves neither
-    let icon = '🏹', name = 'the hunt';
-    if(m.beast == null){
-      const tile = S.world.tiles[m.tile], tt = TILE_TYPES[tile.type];
-      icon = tt.icon; name = tt.name;
-    }else{
-      const b = (S.world.beasts||[])[m.beast], d = b && BEASTS[b.species];
-      if(d){ icon = d.icon; name = d.name; }
+  const now0 = Date.now();
+  let h = '<section class="panel worldbar">';
+  h += '<div class="wbrow">'
+    + '<b>🗺️ Frontier</b>'
+    + '<span class="wbmeta">marches ' + S.marches.length + '/' + slots + '</span>';
+  /* The Isle button only when there is an Isle to speak of — renderIsle says nothing at all below
+     Town Hall 12, and a button onto an empty sheet is worse than no button. */
+  if(isleShown(S)) h += '<button class="wbbtn" data-act="isle">⛵ Salt Isle</button>';
+  h += '<button class="wbbtn" data-act="codex" aria-label="Open the Codex">ⓘ</button>';
+  h += '</div>';
+  /* Columns as chips on one scrolling line. As stat-notes they were a paragraph each, and three
+     marches out buried the map they were about. */
+  if(S.marches.length){
+    h += '<div class="marchstrip">';
+    for(const m of S.marches){
+      let icon = '🏹';
+      if(m.beast == null){
+        const tile = S.world.tiles[m.tile], tt = TILE_TYPES[tile.type];
+        icon = tt.icon;
+      }else{
+        const b = (S.world.beasts||[])[m.beast], d = b && BEASTS[b.species];
+        if(d) icon = d.icon;
+      }
+      const n = Object.values(m.troops).reduce((a,b)=>a+b,0);
+      /* Opens the queue sheet, which already lists every column with its destination, its leg and
+         its captains — so the chip can stay a chip. */
+      h += '<button class="marchchip' + (m.resolved ? ' home' : '') + '" data-act="queues">'
+        + icon + ' ' + n + ' · ' + ftime((m.resolved ? m.homeAt : m.arriveAt) - now0) + '</button>';
     }
-    const n = Object.values(m.troops).reduce((a,b)=>a+b,0);
-    const phase = !m.resolved ? 'outbound · arrives '+ftime(m.arriveAt-now)
-                              : 'returning · home '+ftime(m.homeAt-now);
-    const party = partyOf(m).filter(id => HERO_POOL[id]);
-    h += '<div class="stat-note">'+(m.beast==null?'🚩 ':'🏹 ')+n+' troops → '+icon+' '+name+' — '+phase
-      + (party.length ? ' <span style="color:var(--gold)">· '
-          + party.map(id => HERO_POOL[id].icon+' '+HERO_POOL[id].name.split(',')[0]).join(', ')+'</span>' : '')+'</div>';
+    h += '</div>';
+  } else {
+    h += '<div class="wbhint">Tap a tile to inspect it and send a march. Troops away don’t defend the wall.</div>';
   }
-  if(!S.marches.length)
-    h += '<div class="stat-note">Tap a tile to inspect it and send a march.</div>';
   h += '</section>';
   return h;
 }
 
+/* The world drawMap paints in, in its own units. Named once because the buffer, the fit and the
+   drawing all have to agree about it, and the one time they did not the map vanished. */
+const MAP_C = 56, MAP_PX_W = MAP_W * MAP_C, MAP_PX_H = MAP_H * MAP_C;
+
 function drawMap(S){
   const cv = mapCanvas;
   if(!cv) return;
-  const ctx = cv.getContext('2d'), C = 56;
+  const ctx = cv.getContext('2d'), C = MAP_C;
   // the canvas is scaled to fit 640px, so a 15-wide grid renders every glyph at
   // ~76% — the icons are drawn larger to land at the same apparent size as before
   const IF = Math.round(24 * 15 / MAP_W), LF = Math.max(9, Math.round(9 * 15 / MAP_W));
+  /* Everything below paints in WORLD units — an 840×504 grid of 56px cells — and the transform
+     carries that onto however many device pixels the buffer actually has. Without it the drawing
+     ran off the edge of the buffer: v3.9 moved this canvas from markup that said width="840"
+     height="504" to a bare createElement, which is 300×150, so five and a half columns landed in
+     the buffer and CSS stretched that scrap over the whole screen. Reported as "it's still fucked
+     even when zoomed out", and it was never about zoom. */
+  const scale = cv.width / (MAP_W * C);
+  ctx.setTransform(1,0,0,1,0,0);
   ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.setTransform(scale,0,0,scale,0,0);
   for(let y=0;y<MAP_H;y++) for(let x=0;x<MAP_W;x++){
     ctx.fillStyle = (x+y)%2 ? '#241d17' : '#221b15';
     ctx.fillRect(x*C+1, y*C+1, C-2, C-2);
@@ -3182,12 +3238,16 @@ const inTab = (key, body) => {
     + body + '</div>';
 };
 
-/* The frontier's camera: cover the viewport at minimum so the edges are never visible, up to 2.4×
-   in. Same midpoint-preserving arithmetic as the hold's zoomAt — convert the pinch point through
-   the old scale, then put the same world point back under the fingers. */
+/* ── the frontier's camera ──
+   CONTAIN, not cover, and that is the difference between the two cameras rather than an oversight.
+   The hold is a subject: you look AT your walls, and a contain-fit was rejected on sight — "30% of
+   the screen, too small to be the subject". The frontier is a MAP: fifteen columns of targets whose
+   whole point is choosing between them, and a cover-fit put a landscape grid inside a portrait
+   phone at 1.7×, so four columns filled the screen and pinching out could not help because 0.5×
+   still only reached eight. Zoom 1 now means the WHOLE MAP, and in is the only direction to go. */
 function mapZoomAt(cx, cy, factor){
   const before = mapZoom;
-  mapZoom = Math.max(0.5, Math.min(2.4, mapZoom * factor));
+  mapZoom = Math.max(1, Math.min(4, mapZoom * factor));
   if(mapZoom === before) return;
   sizeMap();
   const k = mapZoom / before;
@@ -3197,14 +3257,65 @@ function mapZoomAt(cx, cy, factor){
 }
 function sizeMap(){
   const box = mapDock.getBoundingClientRect();
-  if(!box.width) return;
-  const w = MAP_W * 56, hgt = MAP_H * 56;
-  const cover = Math.max(box.width / w, box.height / hgt);
-  const px = Math.round(w * cover * mapZoom), py = Math.round(hgt * cover * mapZoom);
+  if(!box.width || !box.height) return;
+  const fit = Math.min(box.width / MAP_PX_W, box.height / MAP_PX_H);
+  /* OPENS in close, and pinches out to the whole map. The two demands genuinely conflict on a
+     393px screen — fifteen thumb-sized cells need 660px — so they are answered at different times
+     rather than compromised: the floor is the whole map, because "I can't zoom out" was the report,
+     and the OPENING view is whatever makes a cell worth a thumb, because a map you cannot tap is
+     not better than one you cannot see. Phones only; a mouse hits a 42px cell without complaint and
+     a desktop has the room to show everything at once.
+     Set here rather than at the declaration because it depends on a measured box. */
+  if(!mapCentred && typeof matchMedia === 'function' && matchMedia('(max-width:820px)').matches)
+    mapZoom = Math.max(1, Math.min(4, 48 / (MAP_C * fit)));
+  const px = Math.round(MAP_PX_W * fit * mapZoom), py = Math.round(MAP_PX_H * fit * mapZoom);
   mapCanvas.style.width = px + 'px';
   mapCanvas.style.height = py + 'px';
+
+  /* The BACKING STORE, which is a separate thing from the CSS box and the one v3.9 forgot. Enough
+     device pixels for the size it is displayed at, and never fewer than the world drawMap paints,
+     so the map is whole even before a layout has been measured. Capped at 2× because a 3× phone
+     zoomed to 4 would ask for a 20-megapixel buffer to draw nine rows of emoji.
+     Assigning width/height CLEARS the canvas, so it is only touched when it changed, and the
+     redraw happens here rather than being left for the next tick to notice. */
+  const dpr = Math.min(2, (typeof devicePixelRatio === 'number' && devicePixelRatio) || 1);
+  const bw = Math.max(MAP_PX_W, Math.round(px * dpr)), bh = Math.max(MAP_PX_H, Math.round(py * dpr));
+  if(mapCanvas.width !== bw || mapCanvas.height !== bh){
+    mapCanvas.width = bw; mapCanvas.height = bh;
+    drawMap(store.s);
+  }
+
+  /* No void under the map. At zoom 1 a landscape grid contained in a portrait screen leaves most of
+     the height spare, and bare background below the map reads as the map having failed to draw —
+     which is half of what the screenshot showed. The margins are set explicitly rather than by
+     centring the flex box, because auto-centring a child LARGER than its scroll container makes the
+     overflow above and to the left unreachable, and zoomed in it always is larger.
+     Centred in the room BELOW the frontier card, not in the raw viewport: the card is furniture over
+     the top of a fullscreen camera, and a map centred behind it hides under it. */
+  /* EVERY section, not the first one. The first version took querySelector's single answer, and the
+     world pane had two cards — so the map was centred below the frontier brief and squarely behind
+     the Salt Isle's chart. The panels are a ribbon now and there is only one, but the measurement
+     should not go wrong again the next time something is added above the map. */
+  const cards = document.querySelectorAll('.tabpane.sheet.on[data-pane="world"] section');
+  const bar = document.querySelector('.tabbar');
+  const br = bar && bar.getBoundingClientRect();
+  let furniture = box.top;
+  cards.forEach(c => {
+    const cr = c.getBoundingClientRect();
+    if(cr.height && cr.bottom > furniture) furniture = Math.min(cr.bottom, box.bottom);
+  });
+  const bottom = br && br.top > box.top ? Math.min(br.top, box.bottom) : box.bottom;
+  /* If the furniture ever eats most of the screen, give the map the room anyway and let it sit
+     behind: a map squeezed into a sliver is the fault being hidden, and the harness checks the
+     clearance, so the loud version is the one that gets fixed. */
+  const top = (bottom - furniture) >= box.height * 0.45 ? furniture : box.top;
+  const room = Math.max(0, bottom - top);
+  mapCanvas.style.marginTop = Math.round(Math.max(0, (top - box.top) + (room - py) / 2)) + 'px';
+  mapCanvas.style.marginLeft = Math.round(Math.max(0, (box.width - px) / 2)) + 'px';
+
   /* Opens on YOUR hold, not on the middle of the grid — every distance in the world is measured
-     from that square, so it is the one cell the player needs to find first. */
+     from that square, so it is the one cell the player needs to find first. Only when there is
+     anything to scroll: at zoom 1 the whole map is on screen and there is nowhere to go. */
   if(!mapCentred && mapDock.scrollWidth > mapDock.clientWidth){
     const cell = px / MAP_W;
     mapDock.scrollLeft = Math.max(0, (CX + 0.5) * cell - mapDock.clientWidth / 2);
@@ -3248,7 +3359,7 @@ export function render(){
      out exactly as it did before — renderHold in the left cell, the rail on the right. Below
      820px they become real boxes and all but one is hidden. */
   writeKeepingScroll(app, renderHeader(S) + renderThreat(S)
-    + inTab('world', renderWorld(S) + renderIsle(S))
+    + inTab('world', renderWorld(S))
     + '<main>' + inTab('hold', renderScene(S))
     + '<div class="rail">'
       + inTab('war',    renderMuster(S) + renderWatch(S) + renderRaid(S) + renderArena(S)
@@ -3262,7 +3373,8 @@ export function render(){
     + '</div>'
     + '</main>' + renderFooter() + renderTabBar());
   writeKeepingScroll(fx, renderFx(S) + renderLesson(S) + renderLore(S) + renderStore(S) + renderSettings(S)
-    + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) + renderQueues(S) : ''));
+    + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) + renderQueues(S)
+                     + renderIsleSheet(S) : ''));
   setSkinTint((HOLD_SKINS[(S.cos && S.cos.hold) || 'default'] || {}).tint);
   drawMap(S);
   /* The header's real height, published to CSS. A sheet has to start below the resource row —
@@ -3514,6 +3626,8 @@ const VIEW_ACTIONS = {
   detail: b => { detail = {type:b.dataset.dtype, key:b.dataset.key}; peek = null; },
   detailClose: () => { detail = null; skillSlotOpen = null; },
   queues: () => { queuesOpen = true; },
+  isle: () => { isleOpen = true; },
+  isleClose: () => { isleOpen = false; },
   blockPlayer: b => {
     net.blockPlayer(b.dataset.key).then(() => renderChat(true)).catch(()=>{});
   },

@@ -81,7 +81,9 @@ appendFileSync(join(dir, 'src', 'ui.js'),
   // chatBox is createElement'd and appended to body, so the stub's getElementById never sees it
   '\nexport { chatBox as _chatBox };' +
   // the detail sheet is opened by a tap on a canvas; `detail` is module-local
-  '\nexport function _openDetail(type, key){ detail = type ? { type, key } : null; }\n');
+  '\nexport function _openDetail(type, key){ detail = type ? { type, key } : null; }' +
+  // the Salt Isle moved into a sheet behind the frontier ribbon's button; its flag is module-local
+  '\nexport function _openIsle(){ isleOpen = true; }\n');
 /* Same seam for net.js: the session is module-local, and the App Store's account-deletion control
    only exists when signed in — so without a way to fake a session there is nothing to assert, and
    the requirement would be untested until a reviewer found it missing. */
@@ -489,6 +491,34 @@ try {
        rows.map(r => r.what).join(' | ').slice(0, 90));
     /* And an idle hold must report zero rather than a stale count — the chip's whole job. */
     ok('an idle hold has an empty sheet', UI.holdQueues(ST.freshState(now, 6)).length === 0);
+  }
+
+  /* ── the frontier's panels are furniture, and the Salt Isle is behind a button ──
+     The map is a fullscreen camera; the panels sit on top of it. What was there was the frontier
+     brief and the whole Salt Isle chart as two full-width opaque cards, together taller than a
+     phone, so the map was complete and entirely hidden. Reported as "the frontier doesn't work".
+
+     The layout is measured in a real browser by `npm run scroll` — a stub DOM has no heights, so
+     "does it cover the map" is not a question that can be asked here. What CAN be asked, and is the
+     regression that matters, is whether moving the Isle made it UNREACHABLE: a button whose sheet
+     never renders is worse than the card that was in the way. */
+  {
+    ST.store.s = s;
+    UI.render();
+    const app = (nodes.app && nodes.app.innerHTML) || '';
+    const pane = (app.match(/data-pane="world"[\s\S]*?(?=<div class="tabpane)/) || [''])[0];
+    ok('the frontier pane is a ribbon', /class="panel worldbar"/.test(pane),
+       (pane.match(/class="panel[^"]*"/) || ['(no panel)'])[0]);
+    ok('and the Isle chart is no longer stacked on the map', !/islegrid/.test(pane));
+    ok('the Isle is offered as a button instead', /data-act="isle"/.test(pane));
+
+    UI._openIsle();
+    UI.render();
+    const sheet = (nodes.fx && nodes.fx.innerHTML) || '';
+    ok('and that button leads to a sheet that actually renders', /data-act-bg="isleClose"/.test(sheet),
+       sheet ? sheet.slice(0, 100) : '(nothing in the overlay layer)');
+    ok('which carries the chart it used to show inline', /islegrid/.test(sheet));
+    ok('and a way back out', /data-act="isleClose"/.test(sheet));
   }
 
   /* ── the phone shell: who you are, and what was said ──
