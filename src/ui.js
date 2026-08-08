@@ -3230,7 +3230,8 @@ function paintPeek(S, slot){
   const at = d && plotScreen(peek);
   if(!d || !at){ if(el) el.remove(); return; }
   const k = peek, lvl = S.b[k] || 0;
-  const busy = QUEUE_KEYS.some(q => S[q] && S[q].key === k);
+  const busyQ = QUEUE_KEYS.find(q => S[q] && S[q].key === k);
+  const busy = !!busyQ;
   const blocked = upgradeBlockedBy(S, k);
   const cost = lvl < d.max ? buildCost(S, k) : null;
   const capped = k !== 'townhall' && lvl >= S.b.townhall;
@@ -3248,7 +3249,15 @@ function paintPeek(S, slot){
     + '<b>'+(lvl===0?'—':'Lv '+lvl)+'</b>'
     + '<button data-act="detail" data-dtype="building" data-key="'+k+'" aria-label="Details">ⓘ</button>'
     + '<button data-act="peekClose" aria-label="Close">✕</button></div>'
-    + (busy ? '<div class="bp-note">🔨 building…</div>'
+    /* Under construction the popup does what WoS's does: finish now for Valor — the same
+       1-per-4s finishCost every queue strip charges — or call it off with the refund. Both are
+       existing game actions dispatched by key of the QUEUE SLOT, not the building. */
+    + (busy ? '<div class="bp-note">🔨 '+ftime(Math.max(0, S[busyQ].end - (S.now || Date.now())))+' left</div>'
+        + '<div class="bp-acts">'
+        + '<button class="valor-btn" data-act="finishBuild" data-key="'+busyQ+'"'
+          + ((S.valor||0) < finishCost(S[busyQ].end, S.now || Date.now()) ? ' disabled' : '')
+          + '>⚡ '+finishCost(S[busyQ].end, S.now || Date.now())+' ✦</button>'
+        + '<button data-act="cancelBuild" data-key="'+busyQ+'">✕ Cancel</button></div>'
        : blocked ? '<div class="bp-note">'+blocked+'</div>'
        : capped && cost ? '<div class="bp-note">Town Hall must lead</div>' : '')
     + (cost && !busy ? '<div class="bp-cost">'+costHtml(S, cost)+'</div>' : '')
