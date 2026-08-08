@@ -1107,3 +1107,29 @@ canvas{ touch-action:none; }
 }
 .msg-mod button:hover:not(:disabled){opacity:1;border-color:transparent}
 .chat-msg:hover .msg-mod button{opacity:.9}
+
+
+/* ── the building popup — WoS's tap grammar ──
+   Anchored on the building inside the camera dock, so it pans and zooms with the walls. The full
+   stats sheet hides behind ⓘ; the popup carries only what a tap wants: the level, the one or two
+   actions, and the reason when an action is refused. */
+.bpeek{
+  position:absolute;transform:translate(-50%,-112%);z-index:6;
+  min-width:13rem;max-width:16rem;padding:.5rem .6rem;
+  background:rgba(22,17,11,.96);border:1px solid var(--gold-deep);border-radius:8px;
+  box-shadow:0 6px 24px rgba(0,0,0,.6);
+  font-family:var(--sans);font-size:.72rem;
+  display:flex;flex-direction:column;gap:.4rem;
+}
+.bpeek::after{
+  content:'';position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);
+  border:6px solid transparent;border-top-color:var(--gold-deep);border-bottom:none;
+}
+.bpeek .bp-head{display:flex;align-items:center;gap:.4rem}
+.bpeek .bp-head span{font-size:.82rem;color:var(--ink);flex:1;min-width:0}
+.bpeek .bp-head b{color:var(--gold);font-variant-numeric:tabular-nums}
+.bpeek .bp-head button{min-width:2.2rem;min-height:2.2rem;padding:.15rem;background:none;border-radius:50%}
+.bpeek .bp-note{color:var(--ink-dim);font-style:italic}
+.bpeek .bp-cost{display:flex;gap:.5rem;flex-wrap:wrap;font-variant-numeric:tabular-nums}
+.bpeek .bp-acts{display:flex;gap:.4rem;flex-wrap:wrap}
+.bpeek .bp-acts button{flex:1;min-height:2.4rem;white-space:nowrap}

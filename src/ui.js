@@ -3206,6 +3206,7 @@ export function render(){
     if(!sceneMounted){ mountScene(sceneCanvas, store); sceneMounted = true; }
     else sceneResize();
     paintSceneBadges(S, slot);
+    paintPeek(S, slot);
   }
 }
 
@@ -3222,6 +3223,44 @@ export function render(){
    Deliberately only the QUEUE. Not production, not "collect me", not idle hints — one badge per
    thing genuinely happening, or the walls disappear behind their own furniture, which is the
    failure mode of every game this borrows from. */
+/* The building popup, content-positioned inside the dock so it pans and zooms with the walls. */
+function paintPeek(S, slot){
+  let el = slot.querySelector('.bpeek');
+  const d = peek && BUILDINGS[peek];
+  const at = d && plotScreen(peek);
+  if(!d || !at){ if(el) el.remove(); return; }
+  const k = peek, lvl = S.b[k] || 0;
+  const busy = QUEUE_KEYS.some(q => S[q] && S[q].key === k);
+  const blocked = upgradeBlockedBy(S, k);
+  const cost = lvl < d.max ? buildCost(S, k) : null;
+  const capped = k !== 'townhall' && lvl >= S.b.townhall;
+  const dis = !cost || busy || capped || !!blocked || !freeSlot(S) || !canAfford(S, cost);
+  const line = Object.entries(TROOPS).find(([, t]) => t.at === k);
+  const q = line && trainQueue(S, line[0]);
+  let acts = '';
+  if(line && q && q.done)
+    acts += '<button class="primary" data-act="collect" data-key="'+line[0]+'">✓ Take in '+fmt(q.count)+'</button>';
+  else if(line && lvl >= 1 && !q)
+    acts += '<button data-act="drillHere" data-key="'+line[0]+'">⚔️ Drill</button>';
+  if(cost) acts += '<button class="primary" data-act="upgrade" data-key="'+k+'"'+(dis?' disabled':'')+'>'
+    + (lvl===0?'Build':'⬆ Lv '+(lvl+1))+' · '+ftime(buildTime(S,k))+'</button>';
+  const html = '<div class="bp-head"><span>'+d.icon+' '+d.name+'</span>'
+    + '<b>'+(lvl===0?'—':'Lv '+lvl)+'</b>'
+    + '<button data-act="detail" data-dtype="building" data-key="'+k+'" aria-label="Details">ⓘ</button>'
+    + '<button data-act="peekClose" aria-label="Close">✕</button></div>'
+    + (busy ? '<div class="bp-note">🔨 building…</div>'
+       : blocked ? '<div class="bp-note">'+blocked+'</div>'
+       : capped && cost ? '<div class="bp-note">Town Hall must lead</div>' : '')
+    + (cost && !busy ? '<div class="bp-cost">'+costHtml(S, cost)+'</div>' : '')
+    + (acts ? '<div class="bp-acts">'+acts+'</div>' : '');
+  if(!el){ el = document.createElement('div'); el.className = 'bpeek'; slot.appendChild(el); }
+  if(el.__html !== html){ el.__html = html; el.innerHTML = html; }
+  const box = slot.getBoundingClientRect();
+  if(!box.width){ el.remove(); return; }
+  el.style.left = Math.round(at.x - box.left + slot.scrollLeft) + 'px';
+  el.style.top  = Math.round(at.y - box.top + slot.scrollTop) + 'px';
+}
+
 function paintSceneBadges(S, slot){
   let layer = slot.querySelector('.scenebadges');
   if(!layer){
@@ -3335,7 +3374,7 @@ const VIEW_ACTIONS = {
       + 'nothing here will pretend to take your money.';
     acctOpen = true; renderAccount();
   },
-  detail: b => { detail = {type:b.dataset.dtype, key:b.dataset.key}; },
+  detail: b => { detail = {type:b.dataset.dtype, key:b.dataset.key}; peek = null; },
   detailClose: () => { detail = null; skillSlotOpen = null; },
   queues: () => { queuesOpen = true; },
   blockPlayer: b => {
@@ -3364,6 +3403,7 @@ const VIEW_ACTIONS = {
     musterScrollWanted = b.dataset.key || true;
   },
   queuesClose: () => { queuesOpen = false; },
+  peekClose: () => { peek = null; },
   // expanding a skill slot's menu is a view state, not a change to the hold
   skillPick: b => {
     const hero = b.dataset.mode, slot = Number(b.dataset.n);
@@ -3573,6 +3613,7 @@ const acctBox = document.createElement('div');
 document.body.appendChild(acctBox);
 let acctOpen = false, acctMsg = '';
 let queuesOpen = false;
+let peek = null;   // the building the camera popup is standing on
 let musterScrollWanted = null;
 
 /* ── chat ──
@@ -3639,10 +3680,13 @@ const camEnd = e => {
      safe, and it is the only correct reading of a finger that might have been starting a pan. */
   const el = document.elementFromPoint && document.elementFromPoint(e.clientX, e.clientY);
   const btn = el && el.closest && el.closest('button[data-act]');
-  if(btn && sceneDock.contains(btn)){ runAction(btn); return; }
+  if(btn && sceneDock.contains(btn)){ cam.acted = Date.now(); runAction(btn); return; }
   if(el && el.id === 'holdscene'){
+    /* WoS's grammar: a tap raises the POPUP on the building — name, level, the one or two actions
+       that matter — and the full sheet hides behind its ⓘ. Tapping empty ground puts it away. */
     const key = pickBuilding(e.clientX, e.clientY);
-    if(key){ detail = { type:'building', key }; render(); }
+    peek = key || null;
+    render();
   }
 };
 sceneDock.addEventListener('pointerup', camEnd);
@@ -3855,6 +3899,7 @@ export function wire(){
   document.addEventListener('click', e => {
     if(e.detail !== 0) return;
     const btn = e.target.closest('button[data-act],[role="button"][data-act]');
+    if(btn && sceneDock.contains(btn) && Date.now() - (cam.acted || 0) < 400) return;   // camEnd already ran it
     if(btn) runAction(btn);
   });
   /* Audio has to be built inside a real gesture or the browser hands back a context
