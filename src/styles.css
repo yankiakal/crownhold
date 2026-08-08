@@ -835,9 +835,16 @@ footer button{font-size:.68rem;padding:.25rem .6rem}
      power, standing order, the muster — was floating over half the map. On the phone only the
      first row and the countdown bar survive; everything else in the panel is folded away, and the
      whole strip opens the War sheet, where all of it already lives. */
-  .threat{position:relative;z-index:5;margin:.5rem 0 0;padding:.45rem .8rem .55rem}
+  .threat{position:relative;z-index:5;margin:.4rem 0 0;padding:.3rem .7rem .4rem}
   .threat > :not(.row):not(.bar){display:none}
+  /* the scouts/power line is a SECOND .row — the first fold kept every row, which is why the
+     panel still stood 200px over the map. One row, one hairline bar, nothing else: the full
+     story is one tap away in War. */
+  .threat > .row + .row{display:none}
   .threat .row > :not(.title):not(.meta){display:none}
+  .threat .row .title{font-size:.85rem}
+  .threat .row .meta{font-size:.66rem}
+  .threat .bar{margin-top:.3rem;height:4px}
 
   .tabbar{
     display:grid;grid-auto-flow:column;grid-auto-columns:1fr;
