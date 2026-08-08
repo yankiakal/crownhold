@@ -3338,7 +3338,10 @@ function paintSceneBadges(S, slot){
         + ' data-badge="'+w.key+'" aria-label="'+esc(w.name)+'"'
         + ' style="left:0;top:0;--tier:'+w.tier+'"><b></b></button>'
       : '<button class="sbadge'+(w.done ? ' done' : '')+(w.drill ? ' drill' : '')
-        + '" data-act="detail" data-dtype="building"'
+        /* the badge raises the POPUP, not the sheet — reported: "when I click the building that's
+           being built it opens the details window." The popup is where finish-for-Valor and cancel
+           live now; the sheet stays behind the popup's ⓘ. */
+        + '" data-act="peek"'
         + ' data-key="'+(w.plot || w.key)+'" data-badge="'+w.key+'"'
         + ' aria-label="'+esc(w.name)+'" style="left:0;top:0;--tier:'+w.tier+'"><b></b></button>').join('');
   }
@@ -3413,6 +3416,7 @@ const VIEW_ACTIONS = {
   },
   queuesClose: () => { queuesOpen = false; },
   peekClose: () => { peek = null; },
+  peek: b => { peek = b.dataset.key; },
   // expanding a skill slot's menu is a view state, not a change to the hold
   skillPick: b => {
     const hero = b.dataset.mode, slot = Number(b.dataset.n);

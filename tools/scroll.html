@@ -193,8 +193,9 @@ try {
         // and it has to be the way into that building
         badges[0].click();
         await wait(400);
-        say('badge opens it'.padEnd(16) + (d.querySelector('.overlay .card.dsheet') ? '  yes' : '  NO SHEET'));
-        click('[data-act="detailClose"]');
+        // v3.6: a badge raises the on-building POPUP now; the sheet moved behind its ⓘ
+        say('badge opens it'.padEnd(16) + (d.querySelector('.bpeek, .overlay .card.dsheet') ? '  yes' : '  NO SHEET'));
+        click('[data-act="peekClose"]'); click('[data-act="detailClose"]');
         await wait(300);
       }
     }
