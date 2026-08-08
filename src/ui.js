@@ -45,7 +45,7 @@ import { REGALIA, WARGEAR, GEAR_MAX, GEAR_PER_LEVEL, gearCost, gearTime,
          regaliaTier, wargearTier, wargearTotal, gearLevels, costLabel } from './gear.js';
 import { SKILLS, SKILL_SLOTS, SLOT_AT, slotsOpen, legalSkills } from './skills.js';
 import { NOVICE_PEACE_TH } from './raid.js';
-import { plotScreen } from './iso.js';
+import { plotScreen, zoomAt } from './iso.js';
 import { ISLE_W, ISLE_H, ISLE_TH, ISLE_SITES, RATION_COST, cellAt, charted } from './isle.js';
 import { COS_KINDS, CATALOGUE, HOLD_SKINS, SUBSCRIPTIONS, EARN, itemsOf, itemDef, isOwned, PURCHASES_ON } from './shop.js';
 import {
@@ -3593,6 +3593,51 @@ const sceneDock = document.createElement('div');
 sceneDock.id = 'scene-dock';
 document.body.appendChild(sceneDock);
 
+/* ── the camera owns its gestures ──
+   Native scroll cannot give us pinch: with touch-action pan-x/pan-y the browser hijacks the
+   gesture and fires pointercancel, so a pinch handler never sees the second move. So the dock is
+   touch-action:none and the three gestures are by hand: one finger pans (scrollLeft/Top), two
+   fingers zoom about their midpoint (zoomAt in iso.js), and a press that MOVED less than a thumb's
+   slop is a tap — which also fixes the fullscreen camera's nastiest tell, taps firing on
+   pointerdown so that starting a drag on a building opened its sheet. */
+const cam = { pts: new Map(), d0: 0, moved: false };
+sceneDock.addEventListener('pointerdown', e => {
+  sceneDock.setPointerCapture && sceneDock.setPointerCapture(e.pointerId);
+  cam.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if(cam.pts.size === 1) cam.moved = false;
+  if(cam.pts.size === 2){
+    const [a, b] = [...cam.pts.values()];
+    cam.d0 = Math.hypot(a.x - b.x, a.y - b.y);
+  }
+});
+sceneDock.addEventListener('pointermove', e => {
+  const p = cam.pts.get(e.pointerId);
+  if(!p) return;
+  const dx = e.clientX - p.x, dy = e.clientY - p.y;
+  p.x = e.clientX; p.y = e.clientY;
+  if(Math.hypot(dx, dy) > 1) {
+    if(cam.pts.size === 1){
+      if(Math.abs(dx) + Math.abs(dy) > 3) cam.moved = true;
+      sceneDock.scrollLeft -= dx; sceneDock.scrollTop -= dy;
+    } else if(cam.pts.size === 2){
+      cam.moved = true;
+      const [a, b] = [...cam.pts.values()];
+      const d1 = Math.hypot(a.x - b.x, a.y - b.y);
+      if(cam.d0 > 0) zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, d1 / cam.d0);
+      cam.d0 = d1;
+    }
+  }
+});
+const camEnd = e => {
+  const had = cam.pts.delete(e.pointerId);
+  if(had && cam.pts.size === 0 && !cam.moved && e.target && e.target.id === 'holdscene'){
+    const key = pickBuilding(e.clientX, e.clientY);
+    if(key){ detail = { type:'building', key }; render(); }
+  }
+};
+sceneDock.addEventListener('pointerup', camEnd);
+sceneDock.addEventListener('pointercancel', e => { cam.pts.delete(e.pointerId); });
+
 // native prompt() is blocked in sandboxed frames, same as confirm() was
 function prompt2(question){
   const el = document.getElementById('chat-input');
@@ -3764,6 +3809,8 @@ export function wire(){
   document.addEventListener('pointerdown', e => {
     // taps on the hold scene open that building's sheet
     if(e.target && e.target.id === 'holdscene'){
+      // the phone camera handles its own taps (see the sceneDock gestures); desktop keeps this path
+      if(e.target.parentElement === sceneDock) return;
       const key = pickBuilding(e.clientX, e.clientY);
       if(key){ detail = {type:'building', key}; render(); }
       return;

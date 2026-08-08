@@ -903,6 +903,22 @@ export function mountScene(canvas, gameStore, opts){
 }
 
 let lastCssW = 0;
+/* ── pinch zoom, camera mode only ──
+   The factor a pinch has earned, over the cover scale. zoomAt keeps the map point under the pinch
+   midpoint stationary: convert the midpoint to content coordinates at the old scale, rescale, then
+   put the same content point back under the fingers by moving the dock's scroll. */
+let userZoom = 1;
+export function zoomAt(cx, cy, factor){
+  if(!cv || !cv.parentElement) return;
+  const dock = cv.parentElement;
+  const before = scale;
+  userZoom = Math.max(1, Math.min(2.4, userZoom * factor));
+  lastCssW = ''; resize();
+  if(scale === before) return;
+  const k = scale / before;
+  dock.scrollLeft = (dock.scrollLeft + cx) * k - cx;
+  dock.scrollTop  = (dock.scrollTop  + cy) * k - cy;
+}
 function resize(){
   if(!cv) return;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -940,7 +956,7 @@ function resize(){
      the camera could never cover a phone vertically — the grid is a wide 2:1 diamond, so covering
      852px of height needs ~2.3×, and the cap left a 250px dead band under the walls that read as
      "this thing is broken". Big tiles panned under a thumb is exactly what the reference game does. */
-  const next = fixed ? Math.min(2.6, Math.max(boxW / w, boxH / hgt))
+  const next = fixed ? Math.min(3.4, Math.min(2.6, Math.max(boxW / w, boxH / hgt)) * userZoom)
              : narrow ? Math.min(1.6, wantH / hgt)
              : Math.min(1, boxW / w);
   const sizeKey = boxW + 'x' + boxH;

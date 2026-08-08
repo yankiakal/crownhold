@@ -824,7 +824,7 @@ footer button{font-size:.68rem;padding:.25rem .6rem}
   /* Dragging the walls pans the camera. The global canvas{touch-action:none} exists so a canvas
      drag never scrolls the PAGE — here the drag is supposed to scroll the slot, which is the
      camera, so the walls opt back in to panning. Taps still land: pointerdown fires either way. */
-  #holdscene{touch-action:pan-x pan-y}
+  #scene-dock, #scene-dock #holdscene{touch-action:none}
   /* ── the threat bar is a STRIP over the camera, not a document ──
      Reported with a screenshot: "this thing blocks the screen." The full raid panel — scouts,
      power, standing order, the muster — was floating over half the map. On the phone only the
