@@ -1133,3 +1133,11 @@ canvas{ touch-action:none; }
 .bpeek .bp-cost{display:flex;gap:.5rem;flex-wrap:wrap;font-variant-numeric:tabular-nums}
 .bpeek .bp-acts{display:flex;gap:.4rem;flex-wrap:wrap}
 .bpeek .bp-acts button{flex:1;min-height:2.4rem;white-space:nowrap}
+
+
+/* the one claim dot — gold, not red: it is an invitation, not an alarm */
+.tabbar button span{position:relative}
+.claimdot{
+  position:absolute;top:-2px;right:-8px;width:8px;height:8px;border-radius:50%;
+  background:var(--gold);box-shadow:0 0 4px rgba(217,164,65,.8);
+}

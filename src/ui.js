@@ -3103,9 +3103,20 @@ const inTab = (key, body) => {
 };
 
 function renderTabBar(){
+  /* ── one quiet dot, only when something is genuinely claimable ──
+     WoS red-dots everything until the dots mean nothing. Here a single dot appears on LEDGER when
+     a finished Daily or event milestone is actually waiting — computed from the same two functions
+     the panels themselves use, so the dot cannot claim what the panel will not pay. */
+  const S = store.s, now = Date.now();
+  let owed = false;
+  try {
+    owed = dailyProgress(S, now).some(t => t.done && !t.claimed)
+        || claimableMilestones(S, now).length > 0;
+  } catch { owed = false; }
   return '<nav class="tabbar">' + liveTabs().map(t =>
     '<button data-act="tab" data-key="'+t.key+'"'+(tab === t.key ? ' class="on"' : '')+'>'
-    + '<span>'+t.icon+'</span>'+t.name+'</button>').join('') + '</nav>';
+    + '<span>'+t.icon+(t.key === 'ledger' && owed ? '<i class="claimdot"></i>' : '')+'</span>'
+    + t.name+'</button>').join('') + '</nav>';
 }
 
 export function render(){
