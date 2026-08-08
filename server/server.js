@@ -86,6 +86,14 @@ function userByToken(token){
   for(const u of Object.values(db.users)) if(u.token === token) return u;
   return null;
 }
+/* Newest last, capped — an inbox that grows without limit is a save file that grows without limit,
+   and forty reports is already more history than anyone reopens. */
+const MAIL_KEEP = 40;
+function pushMail(u, entry){
+  u.state.mail = Array.isArray(u.state.mail) ? u.state.mail : [];
+  u.state.mail.push(entry);
+  if(u.state.mail.length > MAIL_KEEP) u.state.mail.splice(0, u.state.mail.length - MAIL_KEEP);
+}
 function publicState(u){ return { name: u.name, state: u.state, alliance: u.alliance || null }; }
 
 /* ── alliances ── */
@@ -696,6 +704,19 @@ function resolveRaids(now){
     /* Kept on both holds, not only on the in-flight record — the register is emptied
        when the column gets home, and a battle you cannot look at afterwards may as well
        not have had a result. Each side sees it from their own side. */
+    /* ── the inbox ──
+       Both sides keep a LIST now, not just the latest. A battle you cannot reopen may as well not
+       have had a result, and the report that matters most is the one about the raid that landed
+       while you were asleep — which the old single slot lost the moment a second raid arrived.
+       Kept on `state`, so it reaches the client through /api/state with no new endpoint and no
+       second copy of the truth. */
+    pushMail(att, { kind:'raid', at: now, who: def.name, won: out.won,
+                    mine: out.mine, theirs: out.theirs, loot: out.loot,
+                    hurt: out.attHurt, dead: out.attDead, edge: out.edge });
+    pushMail(def, { kind:'defence', at: now, who: att.name, won: !out.won,
+                    mine: out.theirs, theirs: out.mine, loot: out.loot,
+                    hurt: out.defHurt + out.watchHurt, dead: 0, edge: -out.edge,
+                    watchers: out.watchers });
     att.state.lastRaid = { at: now, against: def.name, won: out.won,
                            mine: out.mine, theirs: out.theirs, loot: out.loot,
                            hurt: out.attHurt, dead: out.attDead, edge: out.edge,

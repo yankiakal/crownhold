@@ -6,7 +6,7 @@ import {
   startUpgrade, startTraining, finishBuildNow, finishTrainNow, startResearch, finishResearchNow, claimEvent, claimDaily, startHealing, finishHealNow,
   expedition, setCaravan, setStance, setDefStance, setCaptain, seatHero, useOrder, raiseShield,
   chooseOption, rerollChoice, promote, saveFormation, deleteFormation, setArenaTeam,
-  startGear, finishGearNow, setPetOut, setSkill, equipCos, announceDecree, finishPromoteNow, closeLesson, collectTroops, cancelUpgrade, burnRelic } from './logic.js';
+  startGear, finishGearNow, setPetOut, setSkill, equipCos, announceDecree, finishPromoteNow, closeLesson, collectTroops, cancelUpgrade, burnRelic, readMail } from './logic.js';
 import { startMarch, startHunt, startVoyage } from './world.js';
 import { TROOPS } from './defs.js';
 
@@ -34,6 +34,7 @@ export const GAME_ACTIONS = {
   collect:      (s,p,now)      => collectTroops(s, p.key, now) > 0,
   cancelBuild:  (s,p,now)      => cancelUpgrade(s, p.key, now),
   burnRelic:    (s,p,now)      => burnRelic(s, p.key, now),
+  readMail:     (s,p,now)      => readMail(s, now),
   finishTrain:  (s,p,now)      => finishTrainNow(s, now, p.key),
   expedition:   (s,p,now,rand) => expedition(s, p.key, now, rand),
   caravan:      (s,p,now)      => setCaravan(s, p.key, now),

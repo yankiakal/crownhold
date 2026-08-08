@@ -404,6 +404,12 @@ export function rollRelic(s, src, now, rand = Math.random){
   return id;
 }
 export function relicsFound(s){ return Object.keys(s.relics || {}).length; }
+/* Reports arrived since you last opened the inbox. Drives the mail panel's count and the tab dot —
+   one number, read from the same place both, so the dot cannot disagree with the list. */
+export function unreadMail(s){
+  return (s.mail || []).filter(m => m.at > (s.mailSeen || 0)).length;
+}
+export function readMail(s, now){ s.mailSeen = now || s.now || 0; return true; }
 /* Offer a relic to the forge: an hour off whatever is on the anvil. Refuses when there is nothing
    being made (the hour would vanish), when the relic is not held, and when it is a Legendary —
    `keep` exists so the game says no rather than letting someone burn the Silent Bell for an hour. */

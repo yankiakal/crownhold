@@ -33,7 +33,7 @@ import {
   armyBreakdown, trainMult, trainMultFor, bluntFor, counterMult,
   valorQuota, valorToday, isRested, QUEUE_KEYS, buildSlots, activeQueues, freeSlot, townhallReq, townhallPath,
   maxTier, academyForTier, tierOf, tierPower, tierUpkeep, promoteCost, promote, promoteTime, promoteQueue, trainCost, buildingCurve,
-  wavePower, streakMult, finishCost, xpNeed, relicsFound,
+  wavePower, streakMult, finishCost, xpNeed, relicsFound, unreadMail,
   courtSeats, courtSeated, heroAway, leadBonus, leadTotal, heroSeasonOpen, classLift,
   effLvl, heroStarCap, arenaTeam, setArenaTeam, gearBlockedBy, petBonus, screenCover,
 } from './logic.js';
@@ -546,15 +546,27 @@ function heroRow(S, k, where){
                     : LEAD_FX[d.lead.key](eff) + ' · +'+Math.round(CLASS_AFFINITY*eff*100)
                       +'% to '+TROOPS[d.cls].plural.toLowerCase();
   const st = heroStars(S, k);
-  return '<div class="hero'+(where==='away'?' away':'')+'">'
-    + '<span class="hname">'+(isCapt?'★ ':'')+(where==='away'?'🚩 ':'')+d.icon+' '+d.name+'</span>'
-    + (st ? ' <span class="stars">'+starStr(st, heroStarCap(S))+'</span>' : '')
-    + ' <span class="rar rar-'+d.rarity+'">'+TROOPS[d.cls].icon+' '+RARITY[d.rarity].tag+'</span>'
-    + '<button class="info-btn" data-act="detail" data-dtype="hero" data-key="'+k+'" title="hero details">ⓘ</button>'
-    + '<div class="order-row"><span class="hmeta">L'+hero.lvl+(st?'+'+st+'✦':'')+' · '+fx+'</span>'
-    + '<button class="order-btn" data-act="order" data-key="'+k+'" '+(cd>0?'disabled':'')
-    + ' title="'+d.order.desc+'">'+d.order.name+(cd>0?' · '+cd+'w':'')+'</button></div>'
-    + '</div>';
+  /* ── a card, not a row ──
+     Asked for from the WoS gap list: heroes were the least game-like screen we had — four lines of
+     text apiece. A card gives the portrait its own frame, colours the frame by RARITY off the shared
+     quality ladder, puts the class and stars where the eye lands, and keeps the effect and the order
+     underneath. The portrait is the hero's glyph until real art exists; the frame is what makes it
+     read as a card, so the art can drop in without touching the layout. */
+  return '<div class="herocard'+(where==='away'?' away':'')+(isCapt?' capt':'')+' q-'+d.rarity+'">'
+    + '<div class="hc-port"><span class="hc-glyph">'+d.icon+'</span>'
+      + '<span class="hc-cls" title="'+TROOPS[d.cls].name+'">'+TROOPS[d.cls].icon+'</span>'
+      + (isCapt ? '<span class="hc-capt" title="Your captain">★</span>' : '')
+      + (where==='away' ? '<span class="hc-away" title="On the road">🚩</span>' : '')
+      + '<span class="hc-lvl">L'+hero.lvl+'</span></div>'
+    + '<div class="hc-body">'
+      + '<div class="hc-top"><span class="hc-name">'+d.name+'</span>'
+      + '<button class="info-btn" data-act="detail" data-dtype="hero" data-key="'+k+'" title="hero details">ⓘ</button></div>'
+      + '<div class="hc-meta"><span class="rar rar-'+d.rarity+'">'+RARITY[d.rarity].tag+'</span>'
+      + (st ? ' <span class="stars">'+starStr(st, heroStarCap(S))+'</span>' : '')+'</div>'
+      + '<div class="hc-fx">'+fx+'</div>'
+      + '<button class="order-btn" data-act="order" data-key="'+k+'" '+(cd>0?'disabled':'')
+      + ' title="'+d.order.desc+'">'+d.order.name+(cd>0?' · '+cd+'w':'')+'</button>'
+    + '</div></div>';
 }
 
 function renderHeroes(S){
@@ -721,6 +733,41 @@ function renderRegalia(S){
    A collection, which is the other half of what makes the chase work: eleven slots, the found ones
    lit and counted, the missing ones showing only their rarity and where they come from. Nothing here
    is buyable, so there is no "complete it now" button — the wall is the ask. */
+/* ── the inbox ──
+   Every raid, both sides, newest first, reopenable. WoS's mail is where you learn what hit you in
+   the night; ours used to keep exactly one report and drop it when a second raid arrived. Only
+   PvP: waves resolve while you are watching, so mailing yourself about them would be noise. */
+function renderMail(S){
+  const mail = (S.mail || []).slice().reverse();
+  if(!mail.length && !net.isOnline()) return '';
+  const unread = unreadMail(S);
+  let h = '<section class="panel" id="mail"><h2>Dispatches <span>'
+    + (mail.length ? mail.length + ' kept' + (unread ? ' · ' + unread + ' new' : '') : 'nothing yet')
+    + '</span>'
+    + (unread ? '<button class="info-btn" data-act="readMail">mark read</button>' : '')
+    + '</h2>';
+  if(!mail.length)
+    return h + '<div class="stat-note">Reports of raids — yours and theirs — arrive here and stay '
+      + 'readable. Nothing has been fought yet.</div></section>';
+  for(const m of mail.slice(0, 20)){
+    const fresh = m.at > (S.mailSeen || 0);
+    const good = m.kind === 'raid' ? m.won : m.won;   // `won` is already from this hold's side
+    h += '<div class="mailrow'+(fresh ? ' fresh' : '')+'">'
+      + '<span class="m-ic">'+(m.kind === 'raid' ? '🐎' : '🛡️')+'</span>'
+      + '<span class="m-what"><b>'+(m.kind === 'raid' ? 'You raided ' : 'Raided by ')+esc(m.who)+'</b>'
+      + '<span class="m-sub">'+(good ? 'won' : 'lost')+' · '+fmt(m.mine)+' vs '+fmt(m.theirs)
+      + (m.hurt ? ' · '+fmt(m.hurt)+' wounded' : '')
+      + (m.dead ? ' · '+fmt(m.dead)+' fell' : '')
+      + (m.loot && Object.keys(m.loot).length
+          ? ' · '+Object.entries(m.loot).map(([r,v]) => fmt(v)+' '+r).join(', ') : '')
+      + (m.watchers ? ' · '+m.watchers+' allied column'+(m.watchers===1?'':'s')+' stood with you' : '')
+      + '</span></span>'
+      + '<span class="m-when">'+ftime(Math.max(0, (S.now||Date.now()) - m.at))+' ago</span>'
+      + '</div>';
+  }
+  return h + '</section>';
+}
+
 function renderRelics(S){
   const found = S.relics || {};
   const n = Object.keys(found).length, all = Object.keys(RELICS).length;
@@ -3175,7 +3222,8 @@ function renderTabBar(){
   let owed = false;
   try {
     owed = dailyProgress(S, now).some(t => t.done && !t.claimed)
-        || claimableMilestones(S, now).length > 0;
+        || claimableMilestones(S, now).length > 0
+        || unreadMail(S) > 0;
   } catch { owed = false; }
   return '<nav class="tabbar">' + liveTabs().map(t =>
     '<button data-act="tab" data-key="'+t.key+'"'+(tab === t.key ? ' class="on"' : '')+'>'
@@ -3208,7 +3256,7 @@ export function render(){
       + inTab('court',  renderHeroes(S) + renderPets(S) + renderRegalia(S) + renderRelics(S) + renderSpoils(S))
       + inTab('build',  renderHoldPanels(S) + renderDecrees(S) + renderResearch(S))
       + inTab(paneFor('ally'), renderAlliance(S) + renderMusterRoll(S) + renderRealm(S) + renderRift(S))
-      + inTab('ledger', renderHoldTools(S) + renderQuest(S) + renderDaily(S) + renderEvent(S) + renderCalendar(S)
+      + inTab('ledger', renderHoldTools(S) + renderMail(S) + renderQuest(S) + renderDaily(S) + renderEvent(S) + renderCalendar(S)
                       + renderLeaderboard(S) + renderMastery(S) + renderAchievements(S)
                       + renderChronicle(S))
     + '</div>'

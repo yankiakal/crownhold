@@ -465,6 +465,38 @@ try {
        (await post('/api/alliance/info', { token: (await post('/api/login', { name:'Gone', password:'longenoughpassword' })).body.token })).body.alliance === null);
   }
 
+  /* ── the inbox keeps every report, not just the last ──
+     WoS's mail is where you learn what hit you overnight. Ours kept a single lastRaid/lastDefence
+     slot, so a second raid ERASED the first — precisely the report a player most wants. The list
+     assertions are the point; that one report renders was never the problem. */
+  console.log('\n── dispatches: both sides, and the second raid does not erase the first ──');
+  {
+    const P = await post('/api/register', { name:'Postie', password:'longenoughpassword' });
+    const tp = P.body.token;
+    await post('/api/debug/kit', { token: tp, strong: true, spearmen: 400 });
+    await post('/api/debug/kit', { token: tb, strong: true, spearmen: 300 });
+    const before = ((await post('/api/state', { token: tp })).body.state.mail || []).length;
+    let sent = 0;
+    for(let i = 0; i < 2; i++){
+      const r = await post('/api/raid/send', { token: tp, to:'Brenna', troops:{ spearman: 60 } });
+      if(r.status === 200) sent++;
+      await post('/api/debug/warp', { token: tp, ms: 9 * 60 * 1000 });
+      await post('/api/state', { token: tp });
+    }
+    const mine = (await post('/api/state', { token: tp })).body.state.mail || [];
+    ok('a raid writes a dispatch to the attacker', mine.length > before,
+       before + ' → ' + mine.length + ' after ' + sent + ' raid(s)');
+    ok('and every one is kept, not overwritten', sent < 2 || mine.length - before === sent,
+       sent + ' sent, ' + (mine.length - before) + ' kept');
+    ok('each carries both strengths and a verdict', mine.length === 0
+       || (mine[mine.length-1].mine > 0 && mine[mine.length-1].theirs > 0
+           && typeof mine[mine.length-1].won === 'boolean'),
+       JSON.stringify(mine[mine.length-1] || {}).slice(0, 110));
+    const theirs = (await post('/api/state', { token: tb })).body.state.mail || [];
+    ok('the DEFENDER gets their own, from their own side', theirs.some(m => m.kind === 'defence'),
+       theirs.length + ' dispatches at Brenna');
+  }
+
   /* ── moderation, which the App Store requires and chat shipped without ──
      Guideline 1.2 asks four things of any app with user-generated content: a filter, a way to report,
      a way to block, and published contact details. Chat had none — the only tool was editing

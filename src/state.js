@@ -37,7 +37,7 @@ export function freshState(now, seed){
        range:0,stable:0,siegeyard:0,embassy:0,command:0,kitchen:0,crucible:0},
     t:{spearman:8,archer:0,knight:0,ballista:0},
     tier:{spearman:1,archer:1,knight:1,ballista:1},
-    heroes:{}, spoils:{}, relics:{}, court:[], arenaTeam:[], marchBoost:false, formations:[],
+    heroes:{}, spoils:{}, relics:{}, mail:[], mailSeen:0, court:[], arenaTeam:[], marchBoost:false, formations:[],
     regalia:{}, gq:null,
     cos:{owned:{}, hold:'default', sigil:'none', title:'none'},
     pets:{}, petOut:null, bond:0, beastsSlain:0,
@@ -139,6 +139,8 @@ export function migrate(s, now){
        existing player, and defaulting to now would have granted every one of them three days of
        immunity on the day this shipped. 0 reads as "founded long ago", so their peace is already
        spent, which is the truth. */
+    if(!Array.isArray(s.mail)) s.mail = [];   // v4.0: battle reports you can reopen
+    if(s.mailSeen == null) s.mailSeen = 0;
     if(!s.relics) s.relics = {};     // v3.8: relics — chase drops, earned and never sold
     if(s.founded == null) s.founded = 0;
     if(s.peaceBroken == null) s.peaceBroken = false;
