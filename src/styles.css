@@ -433,8 +433,12 @@ section.panel{
    Its canvas lives in #map-dock, created once outside the 4Hz render tree, because a pan whose
    scroll container is rebuilt four times a second cannot be held — the same fault that made the
    hold camera feel stuck. Fixed over the viewport, cover-fit, pinch and pan by hand. */
+/* z-index 79: UNDER the world sheet's panels (80) and over everything else. The dock sat at 1 and
+   the sheet painted its opaque ground straight over the camera — reported as "frontier doesn't work",
+   and it was a blank screen with a working map behind it. The hold camera never hit this because the
+   hold is the BASE pane; every other tab is a fixed, opaque sheet. */
 #map-dock{
-  position:fixed;inset:0;z-index:1;display:none;
+  position:fixed;inset:0;z-index:79;display:none;
   overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
   background:#1b1511;
 }
@@ -783,6 +787,10 @@ footer button{font-size:.68rem;padding:.25rem .6rem}
   /* Starts below the resource row, which stays visible — as it does over every modal in the
      games this borrows from. --hdr is measured in render(), because the header wraps to two rows
      at some widths and a hardcoded offset would clip or gap depending on the phone. */
+  /* The frontier sheet is a HUD over its own camera: transparent, and inert except for its panels,
+     so a drag across empty space pans the map instead of being swallowed by an invisible box. */
+  .tabpane.sheet.on[data-pane="world"]{background:transparent;pointer-events:none}
+  .tabpane.sheet.on[data-pane="world"] > *{pointer-events:auto}
   .tabpane.sheet.on{
     display:block;position:fixed;top:var(--hdr,5.9rem);left:0;right:0;bottom:0;z-index:80;
     overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
