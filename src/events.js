@@ -187,7 +187,14 @@ export const EVENTS = [
     sources:{ waveWon:43, warbandWon:125, built:21, help:100 },   // waveWon 40% · warbandWon 25% · built 25% · help 10%
   },
 
-  /* ── watch, 12h: one sitting ── */
+  /* ── watch, 12h: one sitting ──
+     Two of these four — Gathering Days and The Caravan — read ONLY frontier work and expeditions, and
+     the sim proves the consequence: on the runs where the bot marched nowhere and sent no parties, this
+     lane scored 0/h for the whole window while the other three ran at 2,000–3,800/h. That is deliberate
+     and it is left in. An event whose whole content is "go and do this" has to be scoreable only by
+     doing it, and the other three lanes carry the player who would rather not. The alternative is every
+     event reading the deeds that always happen anyway, which makes seventeen events into one. It is
+     recorded here because it looks exactly like a bug from the outside, and it is not one. */
   {
     id:'roads', lane:'watch', name:'Gathering Days', icon:'🛤️',
     blurb:'The roads are busy. Score by working the frontier and running expeditions.',
