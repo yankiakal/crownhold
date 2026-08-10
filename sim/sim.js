@@ -36,6 +36,8 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
   const campsAt = {}, gathersAt = {};
   const colChoice = {};   // which column shape the bot judged best, and how often
   const probe = { ticks:0, busy:0, couldBuild:0, onlyPoor:0, nothingLegal:0, capped:0, thPace:0, readySum:0, actSum:0, nothingToDo:0, crewFree:0, noPick:0, startFailed:{} };
+  // when something a player would notice happened, in seconds from the start of the run
+  const pace = { seen: 0, at: [], told: 0, lastBanner: '' };
   const mm = t => String(Math.floor(t/60)).padStart(3,' ')+':'+String(t%60).padStart(2,'0');
   const note = (t,txt) => ev.push(mm(t)+'  '+txt);
 
@@ -73,6 +75,32 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
     const ml = L.masteryLvl(s);
     if(ml > prevML){ prevML = ml; note(t,'Mastery → '+ml); }
     if(Object.keys(RES_META).some(r => s.res[r] >= L.capFor(s,r)-1)) cappedTime++;
+
+    /* ── how often does anything HAPPEN? ──
+       Said plainly after playing something else: "I feel like Crownhold is less fun", and what was
+       better about the other game was that "something happened constantly". That is a pacing claim,
+       and pacing is measurable — so it is measured here rather than argued about.
+
+       Read off pushLog, which is the game's OWN funnel for "something a player would notice": a
+       building finished, a wave resolved, a batch drilled, a column home, a draft offered, a
+       milestone paid. Using the game's definition rather than a list of my own matters, because a
+       list of my own would grade the events I remembered to include.
+
+       The log keeps only its last 40 entries, so it is drained every tick rather than read at the
+       end. Gaps are what the player feels: the median is the rhythm, and the LONGEST silence is the
+       one that makes someone put the phone down. */
+    /* And how many of them SAID so. A banner is the only thing that reaches a player who is not
+       currently reading the Ledger; everything else is a line in a list they have to go and open.
+       Counted by watching the banner change, because that is what the screen does. */
+    if(s.banner && s.banner.txt !== pace.lastBanner){ pace.told++; pace.lastBanner = s.banner.txt; }
+
+    while(s.log.length && s.log[0].t > pace.seen){
+      /* newest-first, so walk back to the last one already counted */
+      const fresh = [];
+      for(const e of s.log){ if(e.t <= pace.seen) break; fresh.push(e); }
+      for(const e of fresh.reverse()) pace.at.push(Math.round((e.t - t0) / 1000));
+      pace.seen = s.log[0].t;
+    }
 
 
     /* ── bot decisions ── */
@@ -462,6 +490,44 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
     + ' | startUpgrade refused ' + (sf.length ? sf.map(([k,n])=>k+'×'+n).join(' ') : 'never'));
   console.log('-- things to do at any moment: '+(probe.actSum/Math.max(1,probe.ticks)).toFixed(1)
     +' on average across every track | NOTHING to do '+pc(probe.nothingToDo)+' of the time');
+  /* ── the rhythm ──
+     Gaps between things a player would notice, in seconds. Reported for the FIRST TEN MINUTES on its
+     own as well as the whole run, because the first session is the one that decides whether there is
+     a second, and an average over ten hours hides a silent opening completely. */
+  {
+    const gaps = (list, from, to) => {
+      const pts = list.filter(x => x >= from && x <= to);
+      const out = []; let prev = from;
+      for(const p of pts){ out.push(p - prev); prev = p; }
+      out.push(to - prev);                       // the silence you are still sitting in at the end
+      return out.sort((a, b) => a - b);
+    };
+    const say = (name, from, to) => {
+      const g = gaps(pace.at, from, to);
+      const mid = g[Math.floor(g.length / 2)] || 0;
+      const p90 = g[Math.floor(g.length * 0.9)] || 0;
+      const n = pace.at.filter(x => x >= from && x <= to).length;
+      const mins = (to - from) / 60;
+      console.log('-- rhythm ' + name.padEnd(11) + n + ' events in ' + mins + 'm — one every '
+        + (n ? Math.round((to - from) / n) + 's' : 'never')
+        + ' | median gap ' + mid + 's · 9-in-10 under ' + p90 + 's · longest silence '
+        + Math.round(g[g.length - 1] / 60) + 'm' + (g[g.length - 1] % 60) + 's');
+    };
+    say('first 10m', 0, Math.min(600, T));
+    if(T > 3600) say('first hour', 0, 3600);
+    say('whole run', 0, T);
+    /* The gap between what HAPPENED and what the player was TOLD. If these diverge badly then the
+       game is not short of events — it is short of feedback, which is a completely different fix and
+       a much cheaper one. */
+    /* Banners are the INTERRUPTING channel and there is only one slot, held for four seconds — so at
+       a median gap of a few seconds they overwrite each other, which is why this number being low was
+       the finding. Since v4.4 everything in the log also reaches the screen through the feed, which
+       is UI and therefore invisible from here; this line stays because a banner is still the only
+       thing that takes over the top of the screen, and that should remain rare. */
+    console.log('-- rhythm banners   ' + pace.told + ' of ' + pace.at.length
+      + ' interrupt with a banner (' + Math.round(100 * pace.told / Math.max(1, pace.at.length))
+      + '%) — the rest reach the screen through the feed');
+  }
   console.log('-- when free: '+(probe.readySum/Math.max(1,probe.ticks)).toFixed(1)+' buildings affordable on average'
     +' | blocked by "Town Hall must lead" '+(probe.capped/Math.max(1,probe.ticks)).toFixed(1)+' per check'
     +' | Town Hall itself pace-blocked '+pc(probe.thPace));

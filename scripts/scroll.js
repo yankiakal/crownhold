@@ -94,6 +94,10 @@ console.log(report.trim().split('\n').map(l => '  ' + l).join('\n'));
 const badgeFaults = ['MISSING', 'OFF THE WALLS', 'NO TIME SHOWN', 'NO SHEET',
                      'NO BUILDABLE BUILDING', 'SCROLLED AWAY'].filter(t => report.includes(t));
 
+/* The feed announces what the rules do. Its two ways of being worse than useless: silent, or taking
+   the taps meant for the map it floats over. */
+const feedFaults = ['NO TOAST', 'EATS TAPS', 'OVER THE TABS'].filter(t => report.includes(t));
+
 /* The frontier's own faults, kept separate so the message names the right camera. CLIPPED is the
    one that hid the map: a canvas never given width/height is 300×150, and drawMap paints an 840×504
    world into it. */
@@ -123,6 +127,10 @@ if(badgeFaults.length){
 }
 if(mapFaults.length){
   console.log('  ✗ the frontier camera: ' + mapFaults.join(', '));
+  process.exit(1);
+}
+if(feedFaults.length){
+  console.log('  ✗ the event feed: ' + feedFaults.join(', '));
   process.exit(1);
 }
 if(!report.includes('WHOLE MAP')){

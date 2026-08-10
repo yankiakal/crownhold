@@ -44,14 +44,33 @@ const ctx2d = new Proxy({}, { get:(t, k) => {
 /* `style` is a real CSSStyleDeclaration in a browser, with methods. Leaving it as a bare {}
    meant render() crashed the whole suite the moment it published the header's height as a custom
    property — offsetHeight also needs to exist, or the value written is "undefinedpx". */
+/* appendChild used to be a no-op with nothing to append to, which was fine while every dock was
+   written by assigning innerHTML. The event feed builds real nodes and prunes itself by counting
+   them, so the stub has to actually hold children — otherwise the only way to run it here is to make
+   the game defensive about a DOM that does not exist, and that is the test bending the code. */
 const el = () => ({ style:{ setProperty(){}, removeProperty(){}, getPropertyValue: () => '' },
   offsetHeight:0, offsetWidth:0,
   dataset:{}, classList:{ add(){}, remove(){}, toggle(){} },
-  appendChild(){}, addEventListener(){}, removeEventListener(){}, setAttribute(){},
+  children:[],
+  appendChild(c){ this.children.push(c); if(c) c.parentNode = this; return c; },
+  removeChild(c){ const i = this.children.indexOf(c);
+                  if(i >= 0) this.children.splice(i, 1); if(c) c.parentNode = null; return c; },
+  get firstChild(){ return this.children[0] || null; },
+  addEventListener(){}, removeEventListener(){}, setAttribute(){},
   querySelectorAll: () => [], querySelector: () => null, innerHTML:'', textContent:'',
   width:360, height:360, parentNode:null, remove(){},
   getBoundingClientRect: () => ({ width:360, height:360, left:0, top:0 }),
   getContext: () => ctx2d });
+
+/* The feed schedules its own fade-out and removal. Node keeps the process alive for pending timers,
+   so without this the suite sat for six seconds after its last assertion waiting for a toast nobody
+   was looking at. Unref'd here rather than accommodated in the game. */
+const rawTimeout = globalThis.setTimeout;
+globalThis.setTimeout = (fn, ms) => {
+  const t = rawTimeout(fn, ms);
+  if(t && typeof t.unref === 'function') t.unref();
+  return t;
+};
 
 const nodes = {};
 globalThis.document = { createElement: el, body: el(), documentElement: el(),
@@ -83,7 +102,15 @@ appendFileSync(join(dir, 'src', 'ui.js'),
   // the detail sheet is opened by a tap on a canvas; `detail` is module-local
   '\nexport function _openDetail(type, key){ detail = type ? { type, key } : null; }' +
   // the Salt Isle moved into a sheet behind the frontier ribbon's button; its flag is module-local
-  '\nexport function _openIsle(){ isleOpen = true; }\n');
+  '\nexport function _openIsle(){ isleOpen = true; }' +
+  // the event feed's box is createElement'd like chatBox, and its high-water mark is module-local
+  '\nexport { feedBox as _feedBox };' +
+  '\nexport function _feedMark(){ return feedMark; }' +
+  /* A FRESH open, which is the only state the replay guard exists for. Without this the earlier
+     blocks in this suite have already called render(), the high-water mark is set, and the test
+     passes whether the guard is there or not — which it did, on the first run, until the guard was
+     deleted on purpose and the test stayed green. */
+  '\nexport function _resetFeed(){ feedMark = 0; }\n');
 /* Same seam for net.js: the session is module-local, and the App Store's account-deletion control
    only exists when signed in — so without a way to fake a session there is nothing to assert, and
    the requirement would be untested until a reviewer found it missing. */
@@ -491,6 +518,60 @@ try {
        rows.map(r => r.what).join(' | ').slice(0, 90));
     /* And an idle hold must report zero rather than a stale count — the chip's whole job. */
     ok('an idle hold has an empty sheet', UI.holdQueues(ST.freshState(now, 6)).length === 0);
+  }
+
+  /* ── the feed: the game announces what it does ──
+     From play, after playing something else: "I feel like Crownhold is less fun", and what the other
+     game did better was that "something happened constantly".
+
+     The sim measured the opposite of the obvious reading: an event every 5–8 seconds, median gap 5s,
+     no silence longer than two minutes in ninety. What it also measured is that 12–26% of them
+     reached the screen. The rest were lines in a Ledger nobody has open, and the single banner slot
+     that did reach the screen holds one message for four seconds — so a median gap of 5s means
+     messages routinely overwrite each other.
+
+     The feed reads s.log, the funnel all sixty-four event sites already push through, so a new event
+     anywhere in the rules appears without being routed. The two failures worth guarding are the ones
+     that would make it worse than nothing: replaying history the moment you open the game (offline
+     catch-up settles hours in one tick BEFORE the first render), and an unbounded burst pushing the
+     tab bar off the screen. */
+  {
+    ST.store.s = s;
+    const box = UI._feedBox;
+    box.children.length = 0;
+    UI._resetFeed();          // as if the game had just been opened
+    s.log = [{ t: s.now - 1000, txt: 'an old thing', cls:'' },
+             { t: s.now - 2000, txt: 'an older thing', cls:'' }];
+    UI.render();
+    ok('opening the game never replays the Ledger', box.children.length === 0,
+       box.children.length + ' toast(s) for 2 pre-existing entries');
+    ok('but it remembers where it got to', UI._feedMark() >= s.now - 1000);
+
+    s.log.unshift({ t: s.now + 500, txt: 'a wall went up', cls:'win' });
+    UI.render();
+    ok('a new event is announced on screen', box.children.length === 1,
+       box.children.length + ' toast(s)');
+    ok('and carries the words the rules wrote',
+       (box.children[0] || {}).textContent === 'a wall went up');
+    ok('and its tone', /win/.test((box.children[0] || {}).className || ''));
+
+    /* A burst: what a night away looks like when the tick settles it all at once. */
+    for(let i = 1; i <= 12; i++)
+      s.log.unshift({ t: s.now + 500 + i * 10, txt: 'thing ' + i, cls:'' });
+    UI.render();
+    ok('a burst is capped rather than stacked to the ceiling', box.children.length <= 6,
+       box.children.length + ' toasts for 12 events at once');
+    ok('and says how many it did not show',
+       box.children.some(c => /and \d+ more/.test(c.textContent || '')),
+       box.children.map(c => c.textContent).join(' | '));
+
+    /* Nothing new must produce nothing at all — this runs four times a second. */
+    const held = box.children.length;
+    UI.render(); UI.render();
+    ok('a quiet tick adds nothing', box.children.length === held, held + ' → ' + box.children.length);
+
+    box.children.length = 0;
+    s.log = [];
   }
 
   /* ── the frontier's panels are furniture, and the Salt Isle is behind a button ──

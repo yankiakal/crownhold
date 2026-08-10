@@ -355,6 +355,27 @@ try {
         await wait(400);
         // v3.6: a badge raises the on-building POPUP now; the sheet moved behind its ⓘ
         say('badge opens it'.padEnd(16) + (d.querySelector('.bpeek, .overlay .card.dsheet') ? '  yes' : '  NO SHEET'));
+
+        /* ── the feed, in a real browser ──
+           Starting a build is one of the sixty-four things the rules log, so by now a toast should
+           have appeared. Two properties matter and neither is visible to a stub DOM: that it renders
+           at all, and that it is INERT. It floats over the hold and the frontier map, so if it takes
+           pointer events it silently eats taps aimed at whatever is underneath — which would trade
+           the feedback problem for a worse one. */
+        const toast = d.querySelector('.feeditem');
+        say('feed toast'.padEnd(16) + (toast ? '"' + (toast.textContent || '').trim().slice(0, 34) + '"'
+              : 'NO TOAST — a build was started and nothing said so'));
+        if(toast){
+          const box = d.getElementById('feed');
+          const pe = w.getComputedStyle(box).pointerEvents;
+          say('feed is inert'.padEnd(16) + 'pointer-events: ' + pe
+            + (pe === 'none' ? '  INERT' : '  EATS TAPS'));
+          const fr = box.getBoundingClientRect();
+          const bar = d.querySelector('.tabbar');
+          const bt = bar ? bar.getBoundingClientRect().top : w.innerHeight;
+          say('feed vs tabs'.padEnd(16) + 'bottom ' + Math.round(fr.bottom) + ' vs bar top '
+            + Math.round(bt) + (fr.bottom <= bt + 2 ? '  ABOVE IT' : '  OVER THE TABS'));
+        }
         click('[data-act="peekClose"]'); click('[data-act="detailClose"]');
         await wait(300);
       }

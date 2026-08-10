@@ -856,7 +856,12 @@ function renderChronicle(S){
   let h = '<section class="panel"><h2>Chronicle</h2><div class="chronicle">';
   if(S.log.length===0) h += '<p>The chronicle is blank. For now.</p>';
   for(const e of S.log.slice(0,16))
-    h += '<p class="'+e.cls+'"><time>'+clock(e.t)+'</time>'+e.txt+'</p>';
+    /* ESCAPED. Log text is composed by the rules and contains no markup — but a raid report carries
+       the ATTACKER'S hold name, and that is written by another player. It is safe today only because
+       the server's name pattern happens to exclude angle brackets; that is a regex in a different
+       file holding up two HTML sinks in this one. Escaping costs nothing here and stops depending on
+       it. */
+    h += '<p class="'+e.cls+'"><time>'+clock(e.t)+'</time>'+esc(e.txt)+'</p>';
   h += '</div></section>';
   return h;
 }
@@ -3384,6 +3389,9 @@ export function render(){
                       + renderChronicle(S))
     + '</div>'
     + '</main>' + renderFooter() + renderTabBar());
+  /* Before the sheets, and outside them: the feed's nodes carry running CSS fades, so they cannot
+     live in a tree that is rewritten four times a second. */
+  pumpFeed(S);
   writeKeepingScroll(fx, renderFx(S) + renderLesson(S) + renderLore(S) + renderStore(S) + renderSettings(S)
     + (S.seenIntro ? renderChoice(S) + renderCodex(S) + renderDetail(S) + renderQueues(S)
                      + renderIsleSheet(S) : ''));
@@ -3886,6 +3894,60 @@ let musterScrollWanted = null;
 const chatBox = document.createElement('div');
 chatBox.id = 'chatdock';
 document.body.appendChild(chatBox);
+
+/* ── the feed: what just happened, said out loud ──
+   Reported after playing something else: "I feel like Crownhold is less fun", and what the other
+   game did better was that "something happened constantly".
+
+   Measured before being believed, and the measurement said the opposite of what I assumed. The sim
+   reports an event every 5–8 seconds, median gap 5s, and the longest silence in a ninety-minute run
+   under two minutes. The game is not short of things happening. It announced 12–26% of them. The
+   rest were lines in a Ledger nobody has open — and the one channel that did reach the screen was a
+   SINGLE banner slot with a four-second life, so when three things land in five seconds, which is
+   the median, two of them are overwritten by the third.
+
+   So this reads s.log, which is the funnel all sixty-four event sites already push through. Nothing
+   had to be routed here and nothing can forget to be: a new event anywhere in the rules shows up in
+   the feed by construction. The same shape as funnelling a bonus through the one function every
+   caller passes.
+
+   Imperative rather than rendered, because render() rewrites its trees four times a second and a
+   CSS fade restarted every 250ms never fades. */
+const feedBox = document.createElement('div');
+feedBox.id = 'feed';
+document.body.appendChild(feedBox);
+const FEED_LIFE = 5200, FEED_MAX = 4;
+let feedMark = 0;   // the newest log timestamp already shown
+
+function pumpFeed(S){
+  const log = (S && S.log) || [];
+  /* First pass only takes a high-water mark. Without this, opening the game replays the whole
+     history — and worse, applyOffline settles hours of hold in one tick before the first render, so
+     a night away would arrive as forty toasts about buildings that finished while you slept. */
+  if(!feedMark){ feedMark = log.length ? log[0].t : 1; return; }
+  const fresh = [];
+  for(const e of log){ if(e.t <= feedMark) break; fresh.push(e); }
+  if(!fresh.length) return;
+  feedMark = log[0].t;
+
+  /* A burst is summarised rather than shown in full — a returning player settles a lot at once, and
+     a wall of toasts is the same as no toasts. */
+  const show = fresh.slice(0, FEED_MAX).reverse();
+  const behind = fresh.length - show.length;
+  for(const e of show) feedPush(e.txt, e.cls);
+  if(behind > 0) feedPush('… and ' + behind + ' more in the Ledger', '');
+}
+
+function feedPush(txt, cls){
+  const node = document.createElement('div');
+  node.className = 'feeditem' + (cls ? ' ' + cls : '');
+  node.textContent = txt;   // never innerHTML: a raid line carries another player's hold name
+  feedBox.appendChild(node);
+  /* Oldest out first, so a burst cannot push the tab bar off the screen. */
+  while(feedBox.children.length > FEED_MAX + 1) feedBox.removeChild(feedBox.firstChild);
+  setTimeout(() => { node.classList.add('gone'); }, FEED_LIFE);
+  setTimeout(() => { if(node.parentNode) node.parentNode.removeChild(node); }, FEED_LIFE + 500);
+}
 
 /* ── the camera lives OUTSIDE the rewritten tree ──
    Reported: "still can't scroll — the camera is just stuck." Diagnosed to the render loop, not the
