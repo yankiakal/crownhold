@@ -382,6 +382,87 @@ try {
     }
   }
 
+  /* ── the Events tab, in a real browser ──
+     Two things a stub DOM cannot judge, and both of them are how this rework would fail quietly.
+
+     The week grid is a seven-column TABLE inside a 393px sheet. A table that overflows does not
+     wrap or clip visibly — it pushes the page sideways, and the symptom a player reports is "the
+     whole screen slides about", which is the fault `html,body{overflow-x:hidden}` was added for and
+     which then broke position:sticky elsewhere. So the grid is measured against its own wrapper.
+
+     And the tab bar now has EIGHT buttons where it had seven. At 393px that is 49px each, which is
+     over the 44px thumb minimum by four pixels — worth measuring in a real browser rather than
+     trusting, because the uppercase labels inside were already at the width where "ALLIANCE" did
+     not fit and had to become "ALLY". */
+  {
+    click('[data-act="tab"][data-key="events"]');
+    await wait(600);
+    const pane = d.querySelector('.tabpane.sheet.on[data-pane="events"]');
+    if(!pane){ say('events tab'.padEnd(16) + ' COULD NOT OPEN — nothing measured'); }
+    else {
+      const cards = pane.querySelectorAll('.evcard');
+      say('event cards'.padEnd(16) + cards.length + ' live'
+        + (cards.length === 4 ? '  FOUR LANES' : '  NOT FOUR'));
+
+      const cal = pane.querySelector('table.cal'), wrap = pane.querySelector('.calwrap');
+      if(!cal || !wrap){ say('week grid'.padEnd(16) + ' NO GRID'); }
+      else {
+        const over = cal.scrollWidth - wrap.clientWidth;
+        say('week grid'.padEnd(16) + cal.scrollWidth + 'px in a ' + wrap.clientWidth + 'px wrapper'
+          + (over <= 1 ? '  FITS' : '  ' + over + 'px OVER'));
+        /* The page itself must not have gained a sideways scroll. A table is the classic way to
+           give one to a body that thought it could not have one. */
+        const de = d.documentElement;
+        say('page sideways'.padEnd(16) + de.scrollWidth + ' vs ' + de.clientWidth
+          + (de.scrollWidth <= de.clientWidth + 1 ? '  NONE' : '  PAGE SLIDES'));
+        const cells = [...cal.querySelectorAll('tbody td')];
+        const thin = cells.filter(c => c.getBoundingClientRect().width < 26);
+        say('day cells'.padEnd(16) + cells.length + ' cells, narrowest '
+          + Math.round(Math.min(...cells.map(c => c.getBoundingClientRect().width))) + 'px'
+          + (thin.length ? '  ' + thin.length + ' TOO NARROW' : '  AN ICON FITS'));
+        const blank = cells.filter(c => !c.querySelector('.cev'));
+        say('grid is filled'.padEnd(16) + blank.length + ' empty of ' + cells.length
+          + (blank.length ? '  EMPTY DAYS' : '  NO GAPS'));
+      }
+      /* The sheet is long — four cards, a slate and a grid. It has to hold its scroll like the rest. */
+      await probe('events sheet', async () => true, () =>
+        d.querySelector('.tabpane.sheet.on[data-pane="events"]'));
+    }
+    const bar = d.querySelector('.tabbar');
+    if(bar){
+      const btns = [...bar.querySelectorAll('button')];
+      const small = btns.filter(b => { const r = b.getBoundingClientRect();
+                                       return r.width < 44 || r.height < 44; });
+      say('tab bar'.padEnd(16) + btns.length + ' tabs at '
+        + Math.round(btns[0].getBoundingClientRect().width) + '×'
+        + Math.round(btns[0].getBoundingClientRect().height)
+        + (small.length ? '  ' + small.length + ' UNDER THUMB SIZE' : '  ALL THUMB-SIZED'));
+      /* A label that overflows its button is not a smaller tap target, it is an unreadable one — and
+         `overflow:hidden` means it truncates silently rather than showing anything is wrong. */
+      const clipped = btns.filter(b => b.scrollWidth > b.clientWidth + 1);
+      say('tab labels'.padEnd(16) + (clipped.length
+        ? clipped.map(b => b.textContent.trim()).join(',') + '  LABEL CLIPPED'
+        : 'all ' + btns.length + ' fit'));
+      /* ── and the same bar with EIGHT ──
+         The Alliance tab only exists once you are online, so this probe runs a seven-tab bar and the
+         widest case in the game goes unmeasured. Rather than reason about it, the grid is forced to
+         eight columns and CSS does the arithmetic: 393/8 is 49px against a 44px thumb minimum and a
+         label that was already at the width where "ALLIANCE" had to become "ALLY". */
+      const was = bar.style.gridTemplateColumns;
+      bar.style.gridTemplateColumns = 'repeat(8, 1fr)';
+      await wait(60);
+      const w8 = btns[0].getBoundingClientRect().width;
+      const clip8 = btns.filter(b => b.scrollWidth > b.clientWidth + 1);
+      say('tab bar at 8'.padEnd(16) + Math.round(w8) + 'px each'
+        + (w8 < 44 ? '  UNDER THUMB SIZE' : '  THUMB-SIZED')
+        + (clip8.length ? ' · ' + clip8.map(b => b.textContent.trim()).join(',') + '  LABEL CLIPPED'
+                        : ' · all labels fit'));
+      bar.style.gridTemplateColumns = was;
+    }
+    click('[data-act="tab"][data-key="hold"]');
+    await wait(300);
+  }
+
   /* ── the resource row has to stay on screen ──
      Reported with a screenshot: it was gone. Declared position:sticky, but html,body{overflow-x:hidden}
      made the root a scroll container and that breaks sticky on every descendant. Measured here rather

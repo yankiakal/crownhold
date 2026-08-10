@@ -644,6 +644,48 @@ try {
     ok('and how many builds are waiting for one', view && typeof view.helpAvailable === 'number',
        view ? String(view.helpAvailable) : '—');
   }
+  /* ── the realm's event board, after lanes ──
+     It used to rank on `state.ev.score`, the one slot. That field no longer exists, and a board reading
+     a missing field does not error — it reads `undefined`, scores everyone 0, filters them all out, and
+     renders as an empty leaderboard. Which is indistinguishable from "nobody has scored yet", so
+     nothing would ever have reported it.
+
+     It ranks the BANNER lane alone now, and only the CURRENT window of it: a stale entry from the
+     previous two-day window would otherwise sit at the top of the board for two days after it ended. */
+  {
+    console.log('\n── the realm event board ranks the banner lane, and only its live window ──');
+    const EVX = await import('../src/events.js');
+    const lane = EVX.laneOf('banner');
+
+    const blank = await post('/api/realm', { token: ta });
+    ok('the board is reported at all', blank.status === 200 && blank.body.eventBoard,
+       blank.body && blank.body.eventBoard ? 'present' : 'MISSING');
+    ok('and it names which event it is ranking',
+       /\S/.test(String(blank.body.eventBoard.event || '')),
+       String(blank.body.eventBoard.event || '(unnamed)'));
+    ok('and when that window closes', blank.body.eventBoard.endsIn > 0
+       && blank.body.eventBoard.endsIn <= lane.ms,
+       Math.round((blank.body.eventBoard.endsIn || 0) / 3600000) + 'h left of ' + (lane.ms / 3600000) + 'h');
+
+    const scored = await post('/api/debug/score', { token: ta, lane:'banner', score: 4321 });
+    if(scored.status === 200){
+      const board = (await post('/api/realm', { token: ta })).body.eventBoard;
+      const me = board.rows.find(r => r.name === 'Aldis');
+      ok('a hold that has scored appears on it', !!me, me ? me.score + ' points' : 'ABSENT');
+      ok('with the banner lane score, not some other lane\'s', me && me.score === 4321,
+         me ? String(me.score) : '—');
+
+      /* And a score belonging to a window that has ended must not be shown. */
+      await post('/api/debug/score', { token: ta, lane:'banner', score: 999, window: -5 });
+      const stale = (await post('/api/realm', { token: ta })).body.eventBoard;
+      ok('a score from a finished window is not ranked',
+         !stale.rows.some(r => r.name === 'Aldis' && r.score === 999),
+         stale.rows.filter(r => r.name === 'Aldis').map(r => r.score).join(',') || 'not listed');
+    } else {
+      ok('the debug scoring hook exists', false, 'status ' + scored.status);
+    }
+  }
+
 } catch (e) {
   fail++;
   console.log('  ✗ the run threw — ' + e.message);

@@ -26,7 +26,7 @@ export function freshState(now, seed){
     res:{food:500,wood:500,stone:250,iron:0,steel:0,runestone:0,rations:0,isleore:0,electrum:0},
     achieved:{}, campsBurned:0, ruinsRaided:0, winStreak:0, bestStreakWon:0,
     valorDay:0, valorToday:0, rest:0,
-    research:{}, rq:null, allyBonus:null, ev:null, daily:null,
+    research:{}, rq:null, allyBonus:null, evs:{}, daily:null,
     valor:0,
     /* The Quarry opens at 1, like the Farm and the Lumberyard. It used to start at ZERO, so a new
        hold produced food and wood from the first second and no stone at all — and stone is what
@@ -258,7 +258,12 @@ export function migrate(s, now){
     if(s.research==null) s.research = {};
     if(s.rq===undefined) s.rq = null;
     if(s.allyBonus===undefined) s.allyBonus = null;
-    if(s.ev===undefined) s.ev = null;   // v1.10 events
+    /* v4.6 events: one slot became four lanes. The old `s.ev` cannot be carried over — it held an
+       index into a pool that no longer exists, and a score against a ladder that has changed — so
+       it is dropped rather than mistranslated. The cost is at most one part-finished window; the
+       alternative is a save that claims rungs it never reached. */
+    if(s.evs===undefined || s.evs===null || typeof s.evs!=='object') s.evs = {};
+    if(s.ev!==undefined) delete s.ev;
     if(s.daily===undefined) s.daily = null;  // v1.13 daily tasks
     // v1.2 the Arena
     if(s.laurels==null) s.laurels = 1000;

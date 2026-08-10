@@ -44,7 +44,20 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
      slate, so the two systems that hand out the most Valor in the game contributed exactly nothing to
      every balance figure this sim prints — and a change to either was unmeasurable. A player claims
      these the moment they light up, so the bot does too. */
-  const income = { events: 0, dailies: 0, milestones: 0, slates: 0 };
+  const income = { events: 0, dailies: 0, milestones: 0, slates: 0, rungs: {} };
+  /* ── how fast a lane actually scores ──
+     The end-of-run score cannot answer this: a window resets to zero mid-run, so what is left in the
+     slot is a fraction of one window and reads as a lane nobody plays. Sampling the rise every tick
+     gives points-per-hour, which is the ONLY number a milestone threshold can be set from. Without it
+     the four ladders were guesses, and the first guess was out by a factor of five. */
+  const laneGot = {}, lanePrev = {};
+  /* ── how often each deed actually happens ──
+     The reason one ladder per lane can be fair at all. Source values are points PER DEED, so an event
+     reading a deed that fires every ten seconds scores twenty times faster than one reading a deed
+     that fires twice an hour — and with a shared ladder that difference is the difference between
+     trivial and impossible. Measured here, off tallyDaily's own counters, so the point values can be
+     set to deed FREQUENCY instead of to how important the deed feels. */
+  const deedGot = {}, deedPrev = {};
   const mm = t => String(Math.floor(t/60)).padStart(3,' ')+':'+String(t%60).padStart(2,'0');
   const note = (t,txt) => ev.push(mm(t)+'  '+txt);
 
@@ -114,15 +127,31 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
     /* Claim what is owed. Measured BEFORE claiming, because claimEvent pays and clears in one call
        and there is no way to ask afterwards what it was worth. */
     {
-      const ready = EV.claimableMilestones(s, ms);
+      const ready = EV.allClaimable(s, ms);
       if(ready.length){
-        for(const m of ready){ income.events += (m.reward.valor || 0); income.milestones++; }
+        for(const { lane, m } of ready){
+          income.events += (m.reward.valor || 0);
+          income.milestones++;
+          income.rungs[lane.id] = (income.rungs[lane.id] || 0) + 1;
+        }
         L.claimEvent(s, ms);
       }
       const rows = DY.dailyProgress(s, ms).filter(r => r.done && !r.claimed);
       if(rows.length){
         const before = s.valor;
         if(L.claimDaily(s, ms)){ income.dailies += Math.max(0, s.valor - before); income.slates++; }
+      }
+      // only rises are counted, so a window rolling back to zero is not read as a loss
+      for(const lane of EV.LANES){
+        const st = (s.evs || {})[lane.id], have = st ? st.score : 0, was = lanePrev[lane.id] || 0;
+        if(have > was) laneGot[lane.id] = (laneGot[lane.id] || 0) + (have - was);
+        lanePrev[lane.id] = have;
+      }
+      const counts = (s.daily && s.daily.counts) || {};
+      for(const k of Object.keys(counts)){
+        const have = counts[k], was = deedPrev[k] || 0;
+        if(have > was) deedGot[k] = (deedGot[k] || 0) + (have - was);
+        deedPrev[k] = have;
       }
     }
     // stance: the skilled bot answers the scouted shape; the lazy bot never touches it
@@ -500,6 +529,22 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
   console.log('-- valor income: events '+Math.round(income.events)+' over '+income.milestones+' milestones'
     + ' | dailies '+Math.round(income.dailies)+' over '+income.slates+' slates'
     + ' = '+Math.round(income.events + income.dailies)+' from the two claimable systems');
+  /* ── are the four ladders reachable? ──
+     A milestone nobody reaches is the same dead reward as a task nobody can do, and the old tables
+     had two of them: thresholds of 6000 and 7000 against a cap of 4500 at TH6. Rungs are set per
+     LANE now, so one line per lane says whether that lane's ladder is pitched at the play the game
+     actually produces. A lane showing 0 of 4 for a whole run is a lane nobody will ever finish. */
+  console.log('-- event lanes: '+EV.LANES.map(lane => {
+    const got = laneGot[lane.id] || 0;
+    const perHour = got / (minutes / 60);
+    // what a whole window at this rate would reach, and which rung that is
+    const full = perHour * lane.ms / 3600000;
+    const rung = lane.ladder.filter(m => full >= m.at).length;
+    return lane.name+' '+Math.round(perHour)+'/h → '+Math.round(full)+' a window'
+      + ' = rung '+rung+'/'+lane.ladder.length+' (cap '+EV.laneCap(s, lane)+')';
+  }).join(' | '));
+  console.log('-- deeds per hour: ' + Object.keys(deedGot).sort((a,b) => deedGot[b] - deedGot[a])
+    .map(k => k+' '+(deedGot[k] / (minutes/60)).toFixed(1)).join(' | '));
   console.log('-- valor left '+Math.floor(s.valor)+' spent '+valorSpent+' | famine events (recent log) '+famines
     +' | build-idle '+Math.round(100*idleBuild/T)+'% | at-cap '+Math.round(100*cappedTime/T)+'%');
   const pc = n => Math.round(100*n/Math.max(1,probe.ticks))+'%';
@@ -556,7 +601,7 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
     +' | blocked by "Town Hall must lead" '+(probe.capped/Math.max(1,probe.ticks)).toFixed(1)+' per check'
     +' | Town Hall itself pace-blocked '+pc(probe.thPace));
   console.log('');
-  judge(minutes, label, s);
+  judge(minutes, label, s, income.events + income.dailies, valorSpent);
 }
 
 /* ── the floor ──
@@ -568,10 +613,27 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
    These are not balance targets — they are catastrophe detectors, set far below any healthy
    run, so they only fire when something is broken rather than merely different. */
 const FLOORS = { th: 6, army: 1500, waves: 60 };
+/* ── and a band on what the claimable systems pay ──
+   Two failures this catches, and the game has now shipped one of each. A FLOOR, because event Valor of
+   zero over a four-hour run is what the single-slot system did whenever the one live event did not read
+   what the player was doing — and it looked like a working game. A CEILING as a share of all Valor
+   spent, because the first draft of the four-lane ladders paid five to ten times the old system without
+   anything complaining: every suite stayed green and only a hand-comparison of two sim runs found it.
+   Events and dailies should be a real part of the economy, not most of it. */
+const CLAIM_BAND = { least: 200, mostOfSpend: 0.55 };
 const failures = [];
-function judge(minutes, label, s){
+function judge(minutes, label, s, claimed, spent){
   if(minutes < 240) return;               // a 90-minute run is legitimately small
   const th = s.b.townhall, army = L.armyPower(s);
+  if(claimed !== undefined){
+    if(claimed < CLAIM_BAND.least)
+      failures.push(label + ': only ' + Math.round(claimed) + ' Valor from events and dailies over '
+        + (minutes/60) + 'h < ' + CLAIM_BAND.least + ' — a lane is paying nothing');
+    const share = claimed / Math.max(1, claimed + spent);
+    if(share > CLAIM_BAND.mostOfSpend)
+      failures.push(label + ': events and dailies are ' + Math.round(100*share)
+        + '% of all Valor earned — ceiling is ' + Math.round(100*CLAIM_BAND.mostOfSpend) + '%');
+  }
   if(th < FLOORS.th) failures.push(label + ': Town Hall ' + th + ' < ' + FLOORS.th);
   if(army < FLOORS.army) failures.push(label + ': army ' + Math.round(army) + ' < ' + FLOORS.army);
   if(s.wavesWon < FLOORS.waves) failures.push(label + ': ' + s.wavesWon + ' waves won < ' + FLOORS.waves);
@@ -592,4 +654,5 @@ if(failures.length){
   process.exit(1);
 }
 console.log('== sim floors held: Town Hall \u2265' + FLOORS.th + ', army \u2265' + FLOORS.army
-  + ', waves \u2265' + FLOORS.waves + ' on the long runs ==');
+  + ', waves \u2265' + FLOORS.waves + ', claimed Valor \u2265' + CLAIM_BAND.least
+  + ' and under ' + Math.round(100*CLAIM_BAND.mostOfSpend) + '% of income, on the long runs ==');

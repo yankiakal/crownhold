@@ -24,7 +24,7 @@ import { tick, armyPower, armyBreakdown, tierPower, gainRes, masteryLvl, upkeepP
    NOWHERE, which made that task impossible — and the slate needs every line for its bonus. It has to
    be credited here rather than in the client, because helping happens on the server: the client that
    pressed the button never learns which builds it actually shortened. */
-import { scoreDeed } from '../src/events.js';
+import { scoreDeed, laneOf, windowNo, windowAt } from '../src/events.js';
 import { SEASON_MS as DEFAULT_SEASON_MS, SEASON_EPOCH, SEASON_ARCS,
          seasonNo as defSeasonNo, seasonEndsIn as defSeasonEndsIn,
          canAlly, allyBlockedWhy } from '../src/defs.js';
@@ -863,7 +863,7 @@ function checkSeasonRollover(now){
     if((u.state.arenaWins || 0) + (u.state.wavesWon || 0) < 5) continue;
     gainValor(u.state, 60);
     u.state.laurels = Math.round(1000 + ((u.state.laurels ?? START_LAURELS) - 1000) * 0.5);
-    u.state.ev = null;                       // event scores start clean
+    u.state.evs = {};                        // event scores start clean
   }
 
   db.season.history.push({
@@ -1507,6 +1507,20 @@ async function api(req, res, url){
      debug/kit, because the gate has to be testable on a hold that has had NOTHING else done to
      it — kit sets a Town Hall of 20 and a full muster, which would hide whether the gate works
      or whether the kit simply happened to satisfy it. */
+  /* Put a score straight into a lane's slot, optionally into a window that has already closed. There
+     is no other way to test that the realm board ignores a stale window: reaching one honestly means
+     waiting out two days of banner lane. ALLOW_DEBUG only, like its neighbours. */
+  if(ALLOW_DEBUG && path === '/api/debug/score'){
+    const lane = laneOf(String(body.lane || 'banner'));
+    if(!lane) return send(res, 400, { error:'No such lane.' });
+    const w = body.window === undefined ? windowNo(lane, now)
+                                        : windowNo(lane, now) + Number(body.window);
+    if(!u.state.evs || typeof u.state.evs !== 'object') u.state.evs = {};
+    u.state.evs[lane.id] = { w, id: windowAt(lane, w).event.id,
+                             score: Number(body.score) || 0, claimed: [], capped: false };
+    markDirty();
+    return send(res, 200, { ok:true, lane: lane.id, w, score: u.state.evs[lane.id].score });
+  }
   if(ALLOW_DEBUG && path === '/api/debug/embassy'){
     advance(u, now);
     u.state.b.embassy = Math.max(1, Number(body.level) || 1);
@@ -1803,9 +1817,15 @@ async function api(req, res, url){
 
   if(path === '/api/realm'){
     advance(u, now);
+    /* Ranked on the BANNER lane, not on the sum of all four. Four lanes end at four different times,
+       so a combined total would drop everyone's score four times a day and the board would never mean
+       anything for long. The 48h window is the one everybody is inside together. */
+    const bLane = laneOf('banner'), bWin = windowAt(bLane, windowNo(bLane, now));
+    const scoreIn = st => (st && st.evs && st.evs.banner && st.evs.banner.w === bWin.w)
+      ? st.evs.banner.score : 0;
     const board = Object.values(db.users).map(m => ({
       name: m.name,
-      score: (m.state.ev && m.state.ev.score) || 0,
+      score: scoreIn(m.state),
       townhall: m.state.b.townhall,
       alliance: m.alliance || null,
     })).filter(r => r.score > 0);
@@ -1829,6 +1849,8 @@ async function api(req, res, url){
       },
       eventBoard: {
         band: mine,
+        event: bWin.event.icon + ' ' + bWin.event.name,
+        endsIn: bWin.end - now,
         rows: board.filter(r => band(r.townhall) === mine)
           .sort((a,b) => b.score - a.score).slice(0, 20),
       },

@@ -936,8 +936,11 @@ footer button{font-size:.68rem;padding:.25rem .6rem}
   .tabbar button{
     display:flex;flex-direction:column;align-items:center;gap:.1rem;
     background:none;border:none;border-radius:0;
-    padding:.45rem .2rem;min-height:3rem;         /* a thumb needs ~44px */
-    font-size:.58rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim);
+    padding:.45rem .1rem;min-height:3rem;         /* a thumb needs ~44px */
+    /* Eight tabs online at 393px is 49px each, and "ALLIANCE" at the old .58rem/.06em did not fit
+       one. The label shrank rather than the bar gaining a scroll or a "more" button. */
+    font-size:.54rem;letter-spacing:.02em;text-transform:uppercase;color:var(--ink-dim);
+    white-space:nowrap;overflow:hidden;
   }
   .tabbar button span{font-size:1.15rem;line-height:1}
   .tabbar button.on{color:var(--gold);box-shadow:inset 0 2px 0 var(--gold)}
@@ -1216,7 +1219,60 @@ canvas{ touch-action:none; }
 .bpeek .bp-acts button{flex:1;min-height:2.4rem;white-space:nowrap}
 
 
-/* the one claim dot — gold, not red: it is an invitation, not an alarm */
+/* ── the four live events ──
+   Four cards have to fit a phone screen without becoming a scroll, which is why the ladder is a row
+   of four chips rather than four rows: the whole card is about six lines whatever the lane. */
+.evcard{
+  border:1px solid var(--edge);border-radius:4px;background:var(--panel-2);
+  padding:.45rem .5rem;margin:.4rem 0;font-family:var(--sans);
+}
+.evcard.ready{border-color:var(--gold-deep);box-shadow:0 0 0 1px rgba(217,164,65,.22)}
+.evtop{display:flex;align-items:baseline;gap:.4rem;font-size:.8rem;flex-wrap:wrap}
+.evtop b{color:var(--ink)}
+.evtop .spacer{flex:1}
+.evlane{font-size:.58rem;text-transform:uppercase;letter-spacing:.07em;color:var(--gold-deep)}
+.evends{font-size:.64rem;color:var(--ink-dim);font-variant-numeric:tabular-nums}
+.evsrc{font-size:.62rem;color:var(--ink-dim);margin-top:.15rem;line-height:1.35}
+.evsrc b{color:var(--gold);font-variant-numeric:tabular-nums}
+.evscore{display:flex;font-size:.62rem;color:var(--ink-dim);font-variant-numeric:tabular-nums}
+.evscore .spacer{flex:1}
+.evrungs{display:grid;grid-template-columns:repeat(4,1fr);gap:.25rem;margin-top:.35rem}
+.evrung{
+  position:relative;display:flex;flex-direction:column;align-items:center;gap:.05rem;
+  padding:.25rem .1rem;border:1px solid var(--edge);border-radius:3px;
+  font-size:.6rem;color:var(--ink-dim);opacity:.6;
+}
+.evrung.got{opacity:1;border-color:var(--gold-deep);color:var(--gold)}
+.evrung.can{opacity:1;border-color:var(--good);color:var(--ink)}
+.evat{font-variant-numeric:tabular-nums;font-weight:600}
+.evpay{font-size:.57rem;white-space:nowrap}
+.evtick{position:absolute;top:-5px;right:-3px;font-size:.55rem;color:var(--gold)}
+
+/* ── the week grid ──
+   A row per lane, a column per day. Seven columns fit 393px; the wrap scrolls sideways anyway so a
+   narrower phone degrades into a swipe rather than squeezing the icons to nothing. */
+.calwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.cal{width:100%;min-width:20rem;border-collapse:collapse;font-family:var(--sans);table-layout:fixed}
+.cal th,.cal td{border:1px solid var(--edge);padding:.2rem .1rem;text-align:center;vertical-align:middle}
+.cal thead th{background:var(--panel-2)}
+.cal .cdow{display:block;font-size:.52rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-dim)}
+.cal .cdom{display:block;font-size:.72rem;color:var(--ink);font-variant-numeric:tabular-nums}
+.cal .today .cdow,.cal .today .cdom{color:var(--gold)}
+.cal th.today,.cal td.today{background:rgba(217,164,65,.07)}
+.cal th.clane{width:3.2rem;background:var(--panel-2);text-align:left;padding-left:.3rem}
+.cal th.clane span{display:block}
+.cal .clname{font-size:.52rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-dim)}
+/* Windows not yet begun are drained of colour rather than hidden — the shape of the week is the
+   information, and a greyed icon still says "that lane has four of these tomorrow". */
+.cal .cev{display:inline-block;font-size:.72rem;line-height:1.15;opacity:.62;filter:grayscale(.45)}
+.cal .cev.live{opacity:1;filter:none;text-shadow:0 0 6px rgba(217,164,65,.65)}
+.callegend{font-family:var(--sans);font-size:.62rem;color:var(--ink-dim);margin-top:.45rem}
+.callegend b{color:var(--gold-deep)}
+.callegend > div{display:flex;flex-wrap:wrap;gap:.15rem .45rem;margin-top:.1rem}
+.cekey.live{color:var(--gold)}
+
+
+/* the claim dots — gold, not red: an invitation, not an alarm */
 .tabbar button span{position:relative}
 .claimdot{
   position:absolute;top:-2px;right:-8px;width:8px;height:8px;border-radius:50%;

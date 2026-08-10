@@ -3136,5 +3136,218 @@ console.log('\n── a decree shows what it costs, and lasts long enough to mat
   ok('and holds still across a day', a === b, a);
 }
 
+
+/* ── four events at once, and the numbers behind them ──
+   Everything below is a claim the v4.6 rework makes out loud, and every one of them was WRONG at some
+   point while it was being written. The ladders were out by a factor of ten, then by four; the source
+   values were pitched by how important a deed felt rather than how often it fires; a lane's window
+   number goes negative near the epoch and `-1 % 4` indexed off the end of its pool. None of that was
+   visible in a passing suite, because nothing here existed. */
+{
+  console.log('\n── four events run at once, and the ladders are reachable ──');
+
+  const now = 1770000000000;          // an arbitrary but fixed instant, well past the epoch
+  const live = EV.liveWindows(now);
+  ok('one event is live in every lane', live.length === EV.LANES.length
+     && live.every(w => w.event && w.event.lane === w.lane.id),
+     live.map(w => w.lane.name + ':' + w.event.id).join(' '));
+
+  /* The point of four lanes is four DIFFERENT clocks. If two lanes shared an end time they would
+     ripen together for ever and the calendar would show two columns of one thing. */
+  const ends = new Set(live.map(w => w.end));
+  ok('and they end at four different times', ends.size === EV.LANES.length,
+     live.map(w => Math.round(w.endsIn / 60000) + 'm').join(' / '));
+
+  /* Every lane's pool has to be full, or `w % pool.length` divides by zero and a lane goes blank. */
+  ok('every lane has a pool and every event names a real lane',
+     EV.LANES.every(l => EV.poolOf(l).length > 0)
+     && EV.EVENTS.every(e => EV.laneOf(e.lane)),
+     EV.LANES.map(l => l.name + '×' + EV.poolOf(l).length).join(' '));
+  ok('and no two events share an id', new Set(EV.EVENTS.map(e => e.id)).size === EV.EVENTS.length,
+     EV.EVENTS.length + ' events');
+
+  /* Windows before the epoch offset have negative numbers, and JavaScript's `%` keeps the sign. */
+  {
+    const lane = EV.laneOf('banner');
+    let bad = 0;
+    for(let w = -9; w <= 9; w++) if(!EV.windowAt(lane, w).event) bad++;
+    ok('a window before the epoch still names an event', bad === 0, '19 windows, ' + bad + ' blank');
+  }
+
+  /* ── the whole reason for the rework ── */
+  {
+    const s = freshState(now, 1);
+    s.b.townhall = 8;
+    // a deed every live lane reads: pick one from the intersection, whatever is running
+    const feeding = live.filter(w => w.event.sources.built);
+    const before = live.map(w => EV.eventState(s, w.lane, now).score);
+    EV.scoreDeed(s, 'built', 1, now);
+    const after = live.map(w => EV.eventState(s, w.lane, now).score);
+    const moved = after.filter((v, i) => v > before[i]).length;
+    ok('one deed credits EVERY live lane that reads it', moved === feeding.length && moved > 0,
+       moved + ' of ' + EV.LANES.length + ' lanes scored, ' + feeding.length + ' read `built`');
+    const deaf = live.filter(w => !w.event.sources.built).length;
+    ok('and no lane that does not read it', moved + deaf === EV.LANES.length,
+       deaf + ' lanes ignore it');
+  }
+
+  /* A lane rolling over must clear ITS OWN score and leave the other three standing — the single-slot
+     bug in reverse. */
+  {
+    const s = freshState(now, 1);
+    s.b.townhall = 8;
+    for(const lane of EV.LANES) EV.eventState(s, lane, now).score = 500;
+    const sprint = EV.laneOf('sprint');
+    const later = EV.windowAt(sprint, EV.windowNo(sprint, now) + 1).start + 1000;
+    ok('a lane rolling into its next window resets that lane',
+       EV.eventState(s, sprint, later).score === 0);
+    /* Asserted over WHICHEVER lanes are still inside their window rather than a named one: moving
+       forward six hours crosses the term boundary too at some instants, and a test that hardcodes
+       which lane survives is testing the chosen timestamp, not the code. */
+    const held = EV.LANES.filter(l => l.id !== 'sprint' && EV.windowNo(l, later) === EV.windowNo(l, now));
+    ok('and does not touch a lane still inside its window',
+       held.length > 0 && held.every(l => EV.eventState(s, l, later).score === 500),
+       held.map(l => l.name).join(', ') + ' still standing');
+  }
+
+  /* The cap is a ceiling on a runaway session, not on finishing the event. The OLD tables broke this
+     — thresholds of 6,000 and 7,000 against a cap of 4,500 at TH6, so the top rung of two events was
+     unreachable at every Town Hall a player would realistically have. */
+  {
+    const s = freshState(now, 1); s.b.townhall = 6;
+    const tight = EV.LANES.filter(l => EV.laneCap(s, l) <= l.ladder[l.ladder.length - 1].at);
+    ok('every lane\'s ceiling sits above its top rung', tight.length === 0,
+       tight.length ? 'UNREACHABLE TOP RUNG: ' + tight.map(l => l.name).join(', ')
+         : EV.LANES.map(l => l.name + ' ' + l.ladder[3].at + '<' + EV.laneCap(s, l)).join(' '));
+    const rising = EV.LANES.every(l => l.ladder.every((m, i) => i === 0 || m.at > l.ladder[i-1].at));
+    ok('and every ladder climbs', rising);
+  }
+
+  /* ── the calibration, made testable ──
+     These are the deed rates the sim measured for a mature hold at full attention. They live here
+     rather than in the game because they are an OBSERVATION, not a rule — but without them the source
+     values in events.js are unfalsifiable, which is exactly how `built:120` sat next to
+     `research:250` for a year while research fired thirteen times less often. */
+  const PER_HOUR = { trained:210, expedition:130, built:35, waveWon:28, beast:15, camp:14,
+                     gathered:7, warbandWon:6, ruin:5, longHaul:3, help:3, research:2.5,
+                     arenaWin:2, promoted:1 };
+  {
+    const missing = EV.EVENTS.flatMap(e => Object.keys(e.sources)).filter(k => !PER_HOUR[k]);
+    ok('every scoring source has a measured rate to price it against', missing.length === 0,
+       missing.length ? 'UNPRICED: ' + [...new Set(missing)].join(', ')
+                      : Object.keys(PER_HOUR).length + ' deeds measured');
+
+    const TARGET = 3000;   // points an hour, the figure every event is priced to
+    const rate = e => Object.entries(e.sources)
+      .reduce((t, [k, v]) => t + v * (PER_HOUR[k] || 0), 0);
+    const off = EV.EVENTS.map(e => ({ id:e.id, r: rate(e) }))
+      .filter(x => x.r < TARGET * 0.6 || x.r > TARGET * 1.6);
+    ok('and every event scores at about the same rate', off.length === 0,
+       off.length ? 'MISPRICED: ' + off.map(x => x.id + ' ' + Math.round(x.r) + '/h').join(', ')
+         : Math.round(Math.min(...EV.EVENTS.map(rate))) + '–'
+           + Math.round(Math.max(...EV.EVENTS.map(rate))) + '/h across '
+           + EV.EVENTS.length + ' events');
+
+    /* Rung 4 is meant to be about a third of the window at that rate. A lane whose top rung needs the
+       WHOLE window is a lane nobody finishes; one that needs a tenth of it is not a ladder. */
+    const bad = EV.LANES.filter(l => {
+      const window = TARGET * l.ms / 3600000;
+      const frac = l.ladder[l.ladder.length - 1].at / window;
+      return frac < 0.2 || frac > 0.5;
+    });
+    ok('and every top rung is about a third of its window', bad.length === 0,
+       bad.length ? 'BADLY PITCHED: ' + bad.map(l => l.name).join(', ')
+         : EV.LANES.map(l => l.name + ' '
+             + Math.round(100 * l.ladder[3].at / (TARGET * l.ms / 3600000)) + '%').join(' '));
+  }
+
+  /* The stated invariant: no lane is the one worth playing. Four lanes of different lengths paying
+     different Valor per hour would make the choice arithmetic instead of taste. */
+  {
+    const perHour = EV.LANES.map(l =>
+      l.ladder.reduce((t, m) => t + (m.reward.valor || 0), 0) / (l.ms / 3600000));
+    const spread = Math.max(...perHour) / Math.min(...perHour);
+    ok('Valor per hour is the same in every lane', spread <= 1.02,
+       perHour.map((v, i) => EV.LANES[i].name + ' ' + v.toFixed(1)).join(' / '));
+    ok('and the sprint lane hands out no Writs, coming round four times a day',
+       !EV.laneOf('sprint').ladder.some(m => m.reward.shield));
+  }
+
+  /* The panel renders these labels, so a source without one shows a raw deed key to the player. */
+  {
+    const unlabelled = [...new Set(EV.EVENTS.flatMap(e => Object.keys(e.sources)))]
+      .filter(k => !EV.DEED_LABEL[k]);
+    ok('every source reads as English in the panel', unlabelled.length === 0,
+       unlabelled.length ? 'NO LABEL: ' + unlabelled.join(', ') : 'all 14 labelled');
+  }
+
+  /* ── claiming ── */
+  {
+    const s = freshState(now, 1); s.b.townhall = 8;
+    for(const lane of EV.LANES) EV.eventState(s, lane, now).score = lane.ladder[0].at;
+    ok('every lane is owed its first rung', EV.allClaimable(s, now).length === EV.LANES.length);
+    const v0 = s.valor;
+    ok('claiming one lane pays only that lane', L.claimEvent(s, now, 'sprint')
+       && EV.allClaimable(s, now).length === EV.LANES.length - 1
+       && s.valor - v0 === EV.laneOf('sprint').ladder[0].reward.valor,
+       '+' + Math.round(s.valor - v0) + ' Valor');
+    ok('and claiming with no lane named pays the rest', L.claimEvent(s, now)
+       && EV.allClaimable(s, now).length === 0);
+    ok('and there is nothing left to claim twice', L.claimEvent(s, now) === false);
+  }
+
+  /* ── the save that predates lanes ──
+     Every hold in existence has a single `s.ev`. It cannot be translated: it holds an index into a
+     pool that no longer exists and a score against a ladder that has changed. */
+  {
+    const old = freshState(now, 1);
+    old.evs = undefined;
+    old.ev = { idx: 3, id: 'scholars', score: 2400, claimed: [400, 1100], capped: false };
+    ST.migrate(old, now);
+    ok('a save from before lanes loses its one slot', old.ev === undefined);
+    ok('and gains four empty ones it can score into', typeof old.evs === 'object' && old.evs !== null);
+    EV.scoreDeed(old, 'built', 1, now);
+    ok('and scoring works immediately after the migration',
+       Object.values(old.evs).some(st => st.score > 0));
+  }
+
+  /* ── the calendar ── */
+  {
+    const cal = EV.calendar(now, 7);
+    ok('the calendar is seven days wide with a row per lane',
+       cal.cols.length === 7 && cal.rows.length === EV.LANES.length);
+    ok('and today is the first column', cal.cols[0].today && !cal.cols.slice(1).some(c => c.today));
+    /* The grid is the deliverable: an empty cell anywhere means a lane with a gap in it, which is the
+       single-slot problem showing through. */
+    const empties = cal.rows.flatMap(r => r.cells.filter(c => c.length === 0));
+    ok('and no lane has an empty day', empties.length === 0, empties.length + ' empty cells');
+    /* A 6h lane must show four blocks a day and a 48h lane one every other day, or the grid is not
+       showing what the lanes actually do. */
+    const sprintRow = cal.rows.find(r => r.lane.id === 'sprint');
+    const bannerRow = cal.rows.find(r => r.lane.id === 'banner');
+    /* Four START on a full day; a fifth spills over from the evening before, which a calendar should
+       show — the window is genuinely running during that morning. */
+    const starts = (row, i) => row.cells[i].filter(w => w.start >= cal.cols[i].start).length;
+    ok('the sprint lane starts four windows on a full day',
+       starts(sprintRow, 3) === 4, starts(sprintRow, 3) + ' start, ' + sprintRow.cells[3].length + ' touch');
+    ok('and the banner lane spans days rather than repeating within one',
+       bannerRow.cells[3].length <= 2 && bannerRow.wins.length < sprintRow.wins.length,
+       bannerRow.wins.length + ' banner windows vs ' + sprintRow.wins.length + ' sprint in a week');
+    ok('exactly one window is live in each row',
+       cal.rows.every(r => r.wins.filter(w => w.live).length === 1));
+    /* ── the grid has to be worth looking at ──
+       A lane whose pool divides evenly into its windows-per-day repeats the identical row every single
+       day, which is what a pool of four sprint events did: four windows a day, four events, so the
+       calendar was seven copies of one column. Caught here, and the fix was a fifth sprint event. */
+    const flat = cal.rows.filter(r => {
+      const day = i => r.cells[i].map(w => w.event.id).join(',');
+      return r.cells.length > 1 && r.cells.every((_, i) => day(i) === day(0));
+    });
+    ok('and no lane shows the identical day seven times over', flat.length === 0,
+       flat.length ? 'A STATIC ROW: ' + flat.map(r => r.lane.name).join(', ')
+         : cal.rows.map(r => r.lane.name + '×' + EV.poolOf(r.lane).length).join(' '));
+  }
+}
+
 console.log('\n' + (fail ? '✗ ' + fail + ' FAILED, ' + pass + ' passed' : '✓ all ' + pass + ' passed') + '\n');
 process.exit(fail ? 1 : 0);

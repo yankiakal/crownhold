@@ -27,7 +27,8 @@ export const GAME_ACTIONS = {
   finishBuild:  (s,p,now)      => finishBuildNow(s, now, p.key),
   research:     (s,p,now)      => startResearch(s, p.key, now),
   finishResearch:(s,p,now)     => finishResearchNow(s, now),
-  claimEvent:   (s,p,now)      => claimEvent(s, now),
+  // no key means every lane at once — the "Claim all" button at the top of the Events tab
+  claimEvent:   (s,p,now)      => claimEvent(s, now, p.key || null),
   claimDaily:   (s,p,now)      => claimDaily(s, now),
   heal:         (s,p,now)      => startHealing(s, now),
   finishHeal:   (s,p,now)      => finishHealNow(s, now),

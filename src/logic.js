@@ -34,7 +34,8 @@ import { REGALIA, WARGEAR, GEAR_MAX, gearCost, gearTime, regaliaBonus, regaliaTi
 import { SKILLS, SKILL_SLOTS, COND_FX, slotsOpen, skillLegal, equipped } from './skills.js';
 import { COS_KINDS, itemDef, isOwned } from './shop.js';
 import { charted } from './isle.js';
-import { scoreDeed, eventState, currentEvent, claimableMilestones } from './events.js';
+import { scoreDeed, eventState, laneOf, eventOf, claimableMilestones,
+         allClaimable } from './events.js';
 import { dailyState, dailyProgress, DAILY_BONUS } from './daily.js';
 
 export { masteryLvl };
@@ -1495,19 +1496,27 @@ export function startTraining(s, key, count, now){
   pushLog(s, 'The '+BUILDINGS[d.at].name+' begins drilling '+count+' '+d.name+(count>1?'s':'')+'.');
   return true;
 }
-/* ── events ── */
-export function claimEvent(s, now){
+/* ── events ──
+   Four lanes run at once, so a claim names one — and naming none claims every rung owed across all
+   four, which is what the button at the top of the Events tab does and what a returning player
+   wants. One banner however many rungs paid: four lanes ripening together used to mean four
+   identical interruptions. */
+export function claimEvent(s, now, laneId){
   s.now = now;
-  const ready = claimableMilestones(s, now);
+  const lanes = laneId ? [laneOf(laneId)].filter(Boolean) : null;
+  const ready = lanes
+    ? lanes.flatMap(l => claimableMilestones(s, l, now).map(m => ({ lane: l, m })))
+    : allClaimable(s, now);
   if(!ready.length) return false;
-  const st = eventState(s, now);
-  for(const m of ready){
+  for(const { lane, m } of ready){
+    const st = eventState(s, lane, now);
     st.claimed.push(m.at);
     gainReward(s, m.reward);
     gainMastery(s, 20, now);
-    pushLog(s, '🏆 '+currentEvent(now).name+' — milestone '+fmt(m.at)+' claimed ('+m.txt+').', 'gold');
+    pushLog(s, '🏆 '+eventOf(st.id).name+' — '+fmt(m.at)+' points claimed ('+m.txt+').', 'gold');
   }
-  showBanner(s, '🏆 Event reward claimed', 'win', now);
+  showBanner(s, ready.length > 1 ? '🏆 '+ready.length+' event rewards claimed' : '🏆 Event reward claimed',
+             'win', now);
   return true;
 }
 

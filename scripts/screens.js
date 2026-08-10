@@ -31,7 +31,7 @@ spawnSync(CHROME, [...args, '--screenshot=shots/screens.png',
 
 /* Two readable halves at 2×, alongside the contact sheet. Six frames across at 1× proves the
    layout fits and says nothing about how it READS, which is the only reason to look at it. */
-for(const [name, tabs] of [['phone-a','hold,war,world'], ['phone-b','court,ledger']]){
+for(const [name, tabs] of [['phone-a','hold,war,world'], ['phone-b','court,events'], ['phone-c','build,ledger']]){
   spawnSync(CHROME, ['--headless=new','--disable-gpu','--hide-scrollbars',
     '--window-size=1290,960','--force-device-scale-factor=2','--virtual-time-budget=25000',
     '--screenshot=shots/' + name + '.png',

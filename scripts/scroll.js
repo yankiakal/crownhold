@@ -98,6 +98,12 @@ const badgeFaults = ['MISSING', 'OFF THE WALLS', 'NO TIME SHOWN', 'NO SHEET',
    the taps meant for the map it floats over. */
 const feedFaults = ['NO TOAST', 'EATS TAPS', 'OVER THE TABS'].filter(t => report.includes(t));
 
+/* The Events tab: four concurrent lanes and a seven-column grid inside a 393px sheet. A table is the
+   classic way to give a page a sideways scroll it was not supposed to be able to have, and an eighth
+   tab is the classic way to push a thumb target under 44px. */
+const eventFaults = ['NOT FOUR', 'NO GRID', 'px OVER', 'PAGE SLIDES', 'TOO NARROW', 'EMPTY DAYS',
+                     'UNDER THUMB SIZE', 'LABEL CLIPPED'].filter(t => report.includes(t));
+
 /* The frontier's own faults, kept separate so the message names the right camera. CLIPPED is the
    one that hid the map: a canvas never given width/height is 300×150, and drawMap paints an 840×504
    world into it. */
@@ -131,6 +137,14 @@ if(mapFaults.length){
 }
 if(feedFaults.length){
   console.log('  ✗ the event feed: ' + feedFaults.join(', '));
+  process.exit(1);
+}
+if(eventFaults.length){
+  console.log('  ✗ the Events tab: ' + eventFaults.join(', '));
+  process.exit(1);
+}
+if(!report.includes('FOUR LANES')){
+  console.log('  ✗ the Events tab was never measured — not a pass');
   process.exit(1);
 }
 if(!report.includes('WHOLE MAP')){

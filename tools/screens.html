@@ -26,6 +26,7 @@
 <pre id="out" style="padding:8px"></pre>
 <script type="module">
 import { freshState, SAVE_KEY } from '../src/state.js';
+import { LESSONS } from '../src/lessons.js';
 
 /* A hold partway through: buildings raised but not capped, four troop types, a court, some
    wounded, Valor banked, a few waves survived. The point is that every panel has something in
@@ -62,7 +63,7 @@ function played(){
 /* ?tabs=hold,war — a subset, so a rack of three can be shot at 2× and actually be readable.
    Six across at 1× is a contact sheet: it proves the layout fits and shows nothing about how it
    reads, which is the whole reason for looking. */
-const ALL = ['hold','war','world','court','ally','ledger'];
+const ALL = ['hold','build','war','world','court','ally','events','ledger'];
 const want = new URLSearchParams(location.search).get('tabs');
 const TABS = want ? want.split(',').filter(t => ALL.includes(t)) : ALL;
 const rack = document.getElementById('rack');
@@ -79,7 +80,12 @@ for(const t of TABS){
      it as "43% of the screen" against the 1400 rather than against a phone. Scroll depth is still
      measured via scrollHeight; it just is not all visible in one picture, which is exactly the
      player's situation too. */
-  f.width = 393; f.height = 852;
+  /* ?frameh=N — a taller frame for a one-tab shot, so a long panel can be seen in one picture.
+     Default stays a real phone's 852: the vh-based rules inside the game are sized against it, and
+     a capture frame that lies about the viewport made the harness grade the hold scene against a
+     screen no phone has. */
+  f.width = 393;
+  f.height = Number(new URLSearchParams(location.search).get('frameh')) || 852;
   box.append(h, f);
   rack.appendChild(box);
   frames.push({ t, f });
@@ -87,7 +93,18 @@ for(const t of TABS){
 
 /* Seed the save, then point each frame at the game. Each iframe gets its own document but
    shares the origin's localStorage, so one seed serves all six. */
-localStorage.setItem(SAVE_KEY, JSON.stringify(played()));
+/* ?nolesson=1 — every lesson marked taught. The lesson card is deliberately measured by default
+   (it is a full-width interruption and its size is a budget), but it also sits ON TOP of whatever
+   panel a one-tab shot was taken to look at, so there has to be a way to get it out of the frame. */
+{
+  const seed = played();
+  if(new URLSearchParams(location.search).get('nolesson')){
+    seed.taught = {};
+    for(const l of LESSONS) seed.taught[l.id] = 1;
+    seed.lesson = null;
+  }
+  localStorage.setItem(SAVE_KEY, JSON.stringify(seed));
+}
 for(const { f } of frames) f.src = '../index.html';
 
 const rows = [];
@@ -103,6 +120,10 @@ setTimeout(() => {
          is the one failure this file was built to stop. */
       if(!btn){ rows.push(t + ': not in the bar (offline) — its panels fold into the Ledger'); continue; }
       btn.click();
+      /* ?scroll=N — the sheet is a scrolling box, so a screenshot of it shows only its first
+         852px. Lets a one-frame shot look at a panel further down without a second harness. */
+      const scrollTo = Number(new URLSearchParams(location.search).get('scroll') || 0);
+      if(scrollTo){ const pane = d.querySelector('.tabpane.sheet.on'); if(pane) pane.scrollTop = scrollTo; }
       const doc = d.documentElement;
       /* How much of a phone screen is spent before any content: the header and the threat bar
          sit OUTSIDE the tabs, so whatever they cost is paid on all six. */
@@ -131,6 +152,34 @@ setTimeout(() => {
                : (r.width > w.innerWidth + 1 ? ' ✗ CLIPPED — wider than the screen and cannot pan'
                                              : ' fits')));
         }
+      }
+      if(t === 'events'){
+        /* ── the week grid at 393px ──
+           A seven-column table inside a 393px phone is the single most likely thing in this rework to
+           come out unreadable, and it is the one surface the stub-DOM suite cannot judge: it has no
+           layout, so "does the calendar overflow the phone" is not a question that can be asked
+           there. Measured here, along with the four event cards, because four stacked cards is also
+           how a panel quietly becomes six screens of scrolling. */
+        const cal = d.querySelector('table.cal'), wrap = d.querySelector('.calwrap');
+        if(!cal || !wrap){ rows.push('  ✗ NO CALENDAR GRID'); }
+        else {
+          const cr = cal.getBoundingClientRect();
+          rows.push('  the week grid ' + Math.round(cr.width) + '×' + Math.round(cr.height) + 'px in a '
+            + wrap.clientWidth + 'px window'
+            + (cal.scrollWidth > wrap.clientWidth + 1 ? ' ✗ SIDEWAYS SCROLL' : ' ✓ fits'));
+          const cells = [...cal.querySelectorAll('tbody td')];
+          const thin = cells.filter(c => c.getBoundingClientRect().width < 28);
+          rows.push('  day cells ' + Math.round(cells[0].getBoundingClientRect().width) + 'px'
+            + (thin.length ? ' ✗ ' + thin.length + ' NARROWER THAN AN ICON' : ' ✓ an icon fits'));
+          const lit = cal.querySelectorAll('.cev.live').length;
+          rows.push('  running now: ' + lit + ' lit' + (lit === 4 ? ' ✓' : ' ✗ NOT FOUR LIVE'));
+        }
+        const cards = [...d.querySelectorAll('.evcard')];
+        rows.push('  event cards ' + cards.length
+          + (cards.length ? ' · ' + Math.round(cards[0].getBoundingClientRect().height) + 'px each' : '')
+          + (cards.length === 4 ? ' ✓' : ' ✗ NOT ONE PER LANE'));
+        /* Four cards plus a slate plus a grid is a lot of panel. Anything past about four screens is
+           a page nobody reaches the bottom of. */
       }
       if(t === 'world'){
         /* #map-dock, not #mapwrap. The frontier became a camera in v3.9 and the old strip was left

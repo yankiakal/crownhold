@@ -602,6 +602,88 @@ try {
     ok('and a way back out', /data-act="isleClose"/.test(sheet));
   }
 
+  /* ── the Events tab ──
+     Four live events, a claim path for each, and a week grid. All of it was inside the Ledger behind
+     the mail until v4.6, and all of it is new markup — so what is asserted here is not "does it
+     render" but the two things that would silently gut it: a panel that shows ONE event again, and a
+     grid whose cells are empty. Either failure looks like a working page. */
+  {
+    const EV = await from('events.js');
+    ST.store.s = s;
+    UI.render();
+    const app = (nodes.app && nodes.app.innerHTML) || '';
+    const pane = (app.match(/data-pane="events"[\s\S]*?(?=<div class="tabpane)/) || [''])[0];
+    ok('there is an Events tab, and it is its own pane', pane.length > 0,
+       pane ? pane.length + ' chars' : 'NO EVENTS PANE');
+    ok('and a bar button that reaches it', /data-act="tab" data-key="events"/.test(app));
+
+    /* The single-slot bug, restated as a UI assertion: one card per lane, not one card. */
+    const cards = (pane.match(/class="evcard/g) || []).length;
+    ok('the panel shows a card for every live lane', cards === EV.LANES.length,
+       cards + ' cards for ' + EV.LANES.length + ' lanes');
+    for(const w of EV.liveWindows(Date.now()))
+      ok('  ' + w.lane.name + ' names its running event', pane.includes(w.event.name), w.event.name);
+    /* Four windows of four different lengths, so four different countdowns. If they collapsed to one
+       value the lanes would have silently resynchronised. */
+    const ends = new Set(pane.match(/class="evends">ends in [^<]*/g) || []);
+    ok('and four separate countdowns', ends.size === EV.LANES.length, [...ends].join(' · '));
+
+    /* Points per deed are the actionable content of the card — "a camp burned 75" is what decides
+       what a player does next, and it is the number the whole rework is calibrated on. */
+    ok('every card says what scores in it, in English and with its value',
+       (pane.match(/class="evsrc"/g) || []).length === EV.LANES.length
+       && /a wave held <b>|a job finished <b>|a camp burned <b>|each troop drilled <b>/.test(pane),
+       (pane.match(/class="evsrc">([^<]*<b>[^<]*<\/b>)/) || [,'(none)'])[1]);
+    ok('and shows all four rungs of its ladder',
+       (pane.match(/class="evrung[ "]/g) || []).length === EV.LANES.length * 4,
+       (pane.match(/class="evrung[ "]/g) || []).length + ' rungs');
+    ok('no "undefined" and no raw deed keys leak into the cards',
+       !/undefined/.test(pane) && !/warbandWon|arenaWin|longHaul/.test(pane));
+
+    /* ── the week grid ──
+       Seven day columns, a row per lane, and every cell carrying icons. An empty cell is the
+       single-slot problem showing through the calendar. */
+    ok('the calendar is a real grid', /<table class="cal">/.test(pane));
+    const heads = (pane.match(/<th[^>]*><span class="cdow">/g) || []).length;
+    ok('with seven day columns', heads === 7, heads + ' columns');
+    ok('and today marked', /class="today"><span class="cdow">today/.test(pane));
+    const rows = (pane.match(/<th class="clane"/g) || []).length;
+    ok('and a row per lane', rows === EV.LANES.length, rows + ' rows');
+    const cells = pane.match(/<td[^>]*>(?:(?!<\/td>).)*<\/td>/g) || [];
+    const empty = cells.filter(c => !/class="cev/.test(c));
+    ok('and not one empty day', cells.length === 7 * EV.LANES.length && empty.length === 0,
+       cells.length + ' cells, ' + empty.length + ' empty');
+    ok('exactly four windows are lit as running', (pane.match(/class="cev live"/g) || []).length === 4,
+       (pane.match(/class="cev live"/g) || []).length + ' lit');
+    /* Sixteen-plus icons is more than anyone memorises and a title attribute is unreachable on a
+       phone, so the legend is the only thing that makes the grid readable at all. */
+    ok('and a legend naming every event in every lane',
+       EV.EVENTS.every(e => pane.includes(e.icon + ' ' + e.name)),
+       EV.EVENTS.length + ' events named');
+
+    /* ── claiming ── */
+    {
+      const owed = ST.load ? s : s;   // same hold; put it just over the first rung in every lane
+      for(const lane of EV.LANES) EV.eventState(owed, lane, Date.now()).score = lane.ladder[0].at;
+      UI.render();
+      const p2 = ((nodes.app && nodes.app.innerHTML) || '')
+        .match(/data-pane="events"[\s\S]*?(?=<div class="tabpane)/)[0];
+      ok('a lane that is owed something offers a Claim for THAT lane',
+         EV.LANES.every(l => p2.includes('data-act="claimEvent" data-key="' + l.id + '"')),
+         (p2.match(/data-act="claimEvent" data-key="[a-z]+"/g) || []).join(' '));
+      ok('and one button claims the lot rather than four taps',
+         /data-act="claimEvent">🏆 Claim all 4 rewards/.test(p2),
+         (p2.match(/Claim all \d+ rewards/) || ['(absent)'])[0]);
+      const bar = ((nodes.app && nodes.app.innerHTML) || '').match(/<nav class="tabbar">[\s\S]*?<\/nav>/);
+      ok('and the claim dot moved to Events with the panels',
+         /data-key="events"[^>]*><span>🏆<i class="claimdot">/.test(bar ? bar[0] : ''),
+         bar ? bar[0].replace(/<button /g, '\n    <button ') : 'NO TAB BAR');
+      ok('and is no longer on the Ledger, which now only holds the mail',
+         !/data-key="ledger"><span>📜<i class="claimdot">/.test(p2));
+      for(const lane of EV.LANES) EV.eventState(owed, lane, Date.now()).score = 0;
+    }
+  }
+
   /* ── the phone shell: who you are, and what was said ──
      Two pieces of the Whiteout-Survival-shaped shell. The chip carries the Town Hall level where the
      wordmark used to sit, and the chat bubble carries the last line anyone said rather than the word

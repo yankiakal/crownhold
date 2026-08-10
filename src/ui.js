@@ -57,8 +57,8 @@ import {
   BRANCHES, branchKeys, branchProgress, techNeeds, treeRows,
 } from './research.js';
 import {
-  EVENTS, EVENT_MS, currentEvent, eventEndsIn, eventState, eventCap,
-  nextMilestone, claimableMilestones, schedule,
+  LANES, DEED_LABEL, poolOf, eventState, laneCap,
+  liveWindows, nextMilestone, claimableMilestones, allClaimable, calendar,
 } from './events.js';
 import { dailyProgress, dailyState, DAILY_BONUS } from './daily.js';
 import * as net from './net.js';
@@ -1425,24 +1425,60 @@ function renderSeasonCast(S, now){
   return h;
 }
 
+/* ── the week ahead ──
+   A real grid: a row per lane, a column per day, and the icons of whatever runs in that lane that
+   day. This is the page every kingdom builder has, and Crownhold could not have had one before v4.6
+   for a simple reason — with one event live at a time there was nothing to put in a grid, only a
+   list of what came next. Four lanes of different lengths is what makes it a calendar.
+
+   Seven columns fit 393px without scrolling. The sprint row holds four windows a day, so cells are
+   icons only and the name lives in the legend below — the grid answers "when", the cards above
+   answer "what". */
 function renderCalendar(S){
   const now = Date.now();
-  const rows = schedule(now, 5);
+  const cal = calendar(now, 7);
+  const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let h = '<section class="panel"><h2>The week ahead</h2>';
+  h += '<div class="calwrap"><table class="cal"><thead><tr><th></th>';
+  for(const c of cal.cols){
+    const d = new Date(c.start);
+    h += '<th'+(c.today ? ' class="today"' : '')+'>'
+      + '<span class="cdow">'+(c.today ? 'today' : DAY[d.getDay()])+'</span>'
+      + '<span class="cdom">'+d.getDate()+'</span></th>';
+  }
+  h += '</tr></thead><tbody>';
+  for(const row of cal.rows){
+    h += '<tr><th class="clane" title="'+esc(row.lane.note)+'">'
+      + '<span>'+row.lane.icon+'</span><span class="clname">'+row.lane.name+'</span></th>';
+    row.cells.forEach((wins, i) => {
+      h += '<td'+(cal.cols[i].today ? ' class="today"' : '')+'>';
+      for(const w of wins)
+        h += '<span class="cev'+(w.live ? ' live' : '')+'" title="'+esc(w.event.name)+'">'
+          + w.event.icon+'</span>';
+      h += '</td>';
+    });
+    h += '</tr>';
+  }
+  h += '</tbody></table></div>';
+  /* The legend is what makes the grid readable — sixteen icons is more than anyone memorises, and a
+     tooltip is not reachable on a phone at all. Grouped by lane so the row above has a key. */
+  for(const lane of LANES){
+    h += '<div class="callegend"><b>'+lane.icon+' '+lane.name+'</b> <span>'+lane.note+'</span><div>';
+    for(const ev of poolOf(lane))
+      h += '<span class="cekey'+(cal.live.some(w => w.event.id === ev.id) ? ' live' : '')+'">'
+        + ev.icon+' '+ev.name+'</span>';
+    h += '</div></div>';
+  }
+  h += '</section>';
+
   const realm = net.isOnline() ? net.realmData() : null;
-  let h = '<section class="panel"><h2>Calendar'
+  h += '<section class="panel"><h2>The Season'
     + (realm ? ' <span style="letter-spacing:.05em">Season '+realm.season.no
         + ' · day '+realm.season.realmDay+' of the realm</span>' : '')+'</h2>';
   if(realm)
     h += '<div class="stat-note">Season ends in <b>'+ftime(realm.season.endsIn)+'</b>'
       + ' — standings freeze, titles are named, and Laurels drift halfway back to 1000.</div>';
   h += renderSeasonCast(S, now);
-  for(const r of rows){
-    h += '<div class="trow'+(r.live?' mine':'')+'"><span>'+r.event.icon+'</span>'
-      + '<span class="tname">'+r.event.name+'</span>'
-      + '<span class="tmeta">'+(r.live ? 'running now' : 'starts in '+ftime(r.startsIn))+'</span>'
-      + '<span class="spacer"></span>'
-      + '<span class="tmeta">'+(r.live ? 'ends in '+ftime(r.endsIn) : 'lasts '+ftime(EVENT_MS))+'</span></div>';
-  }
   if(realm && realm.landmarks){
     const sleeping = realm.landmarks.filter(l => !l.awake).slice(0, 4);
     if(sleeping.length){
@@ -1491,7 +1527,14 @@ function renderRealm(S){
     h += '</div>';
   }
   if(d.eventBoard && d.eventBoard.rows.length){
-    h += '<div class="stat-note" style="margin-top:.6rem">Event standings — '+d.eventBoard.band+' bracket</div>';
+    /* Which event, and when it closes. The board ranks the BANNER lane alone — four lanes end at four
+       different times, so a combined total would drop everyone's score four times a day and a standing
+       would never mean anything for long. Without naming it, a player sees a number they cannot tie to
+       anything they are doing. */
+    h += '<div class="stat-note" style="margin-top:.6rem">'
+      + (d.eventBoard.event ? d.eventBoard.event+' standings' : 'Event standings')
+      + ' — '+d.eventBoard.band+' bracket'
+      + (d.eventBoard.endsIn ? ' · closes in '+ftime(d.eventBoard.endsIn) : '')+'</div>';
     const me = net.accountName();
     d.eventBoard.rows.slice(0,8).forEach((r,i) => {
       h += '<div class="trow'+(r.name===me?' mine':'')+'"><span class="tmeta">'+(i+1)+'</span>'
@@ -1514,33 +1557,62 @@ function renderRealm(S){
   return h;
 }
 
-function renderEvent(S){
+/* ── the four live events ──
+   One card per lane, in lane order — shortest window first, NOT soonest to end. Sorting by time left
+   would read better for a second and then reorder itself under the player's thumb every few hours,
+   and a card that moves is a card you mis-tap. Every card is the same shape: what it is, what scores
+   in it, how far along you are, and the four rungs. Compact on purpose — four of these have to fit a
+   phone without becoming a scroll, so the ladder is a row of chips rather than four rows each. */
+function renderEvents(S){
   const now = Date.now();
-  const ev = currentEvent(now), st = eventState(S, now);
-  const cap = eventCap(S), next = nextMilestone(S, now);
-  const ready = claimableMilestones(S, now);
-  const idx = EVENTS.indexOf(ev);
-  const then = EVENTS[(idx+1) % EVENTS.length];
-  let h = '<section class="panel"><h2>'+ev.icon+' '+ev.name
-    + ' <span style="letter-spacing:.05em">ends in '+ftime(eventEndsIn(now))+'</span></h2>';
-  h += '<p style="font-size:.85rem;color:var(--ink-dim);font-style:italic">'+ev.blurb+'</p>';
-  h += '<div class="stat-note">Your score <b>'+fmt(st.score)+'</b> / '+fmt(cap)+' today'
-    + (st.capped ? ' — <span style="color:var(--gold)">day\'s limit reached; the board resets with the window</span>' : '')+'</div>';
-  const pct = Math.min(100, 100*st.score/cap);
-  h += '<div class="xpbar" style="margin:.2rem 0 .5rem"><i style="width:'+pct+'%;background:var(--gold)"></i></div>';
-  for(const m of ev.milestones){
-    const got = st.claimed.includes(m.at);
-    const can = st.score >= m.at && !got;
-    h += '<div class="trow'+(can?' mine':'')+'"><span class="tname">'+fmt(m.at)+' points</span>'
-      + '<span class="tmeta">'+m.txt+'</span><span class="spacer"></span>'
-      + (got ? '<span class="tmeta" style="color:var(--gold)">claimed</span>'
-             : can ? '<button class="primary" data-act="claimEvent">Claim</button>'
-                   : '<span class="tmeta">'+fmt(Math.max(0,m.at-st.score))+' to go</span>')
-      + '</div>';
+  const live = liveWindows(now);
+  const owed = allClaimable(S, now);
+  let h = '<section class="panel"><h2>Running now'
+    + ' <span style="letter-spacing:.05em">'+live.length+' events</span></h2>';
+  h += '<p style="font-size:.85rem;color:var(--ink-dim);font-style:italic">Four windows of different '
+    + 'lengths run at once, and one deed counts in every one of them that reads it — the wave you just '
+    + 'held can score in three places.</p>';
+  if(owed.length > 1)
+    h += '<button class="primary" style="width:100%;margin:.35rem 0" data-act="claimEvent">'
+      + '🏆 Claim all '+owed.length+' rewards</button>';
+  for(const win of live){
+    const lane = win.lane, ev = win.event, st = eventState(S, lane, now);
+    const cap = laneCap(S, lane), next = nextMilestone(S, lane, now);
+    /* The bar measures the LADDER, not the ceiling. Scaled to the cap it read half-empty for a player
+       who had just claimed every rung — the ceiling is 1.5× the top rung, so finishing the event
+       looked like being two-thirds of the way through it. */
+    const top = lane.ladder[lane.ladder.length - 1].at;
+    const pct = Math.min(100, 100 * st.score / top);
+    h += '<div class="evcard'+(claimableMilestones(S, lane, now).length ? ' ready' : '')+'">';
+    h += '<div class="evtop"><b>'+ev.icon+' '+ev.name+'</b>'
+      + '<span class="evlane">'+lane.icon+' '+lane.name+'</span>'
+      + '<span class="spacer"></span><span class="evends">ends in '+ftime(win.endsIn)+'</span></div>';
+    h += '<div class="evsrc">'+Object.entries(ev.sources)
+      .map(([k, v]) => (DEED_LABEL[k] || k)+' <b>'+fmt(v)+'</b>').join(' · ')+'</div>';
+    h += '<div class="xpbar" style="margin:.25rem 0 .3rem"><i style="width:'+pct+'%;background:var(--gold)"></i></div>';
+    h += '<div class="evscore"><span>'+fmt(st.score)+' of '+fmt(top)+'</span>'
+      + '<span class="spacer"></span>'
+      + (st.capped ? '<span style="color:var(--gold)">ceiling reached — '+fmt(cap)+'</span>'
+         : next ? '<span>'+fmt(next.at - st.score)+' more for '+next.txt+'</span>'
+                : '<span style="color:var(--gold)">every rung taken · ceiling '+fmt(cap)+'</span>')+'</div>';
+    h += '<div class="evrungs">';
+    for(const m of lane.ladder){
+      const got = st.claimed.includes(m.at);
+      const can = st.score >= m.at && !got;
+      h += '<div class="evrung'+(got?' got':can?' can':'')+'">'
+        + '<span class="evat">'+fmt(m.at)+'</span>'
+        + '<span class="evpay">'+m.txt.replace(/\+/g,'').replace(' Valor','⚜').replace(', 1 Writ',' +🛡')+'</span>'
+        + (got ? '<span class="evtick">✓</span>' : '')+'</div>';
+    }
+    h += '</div>';
+    if(claimableMilestones(S, lane, now).length)
+      h += '<button class="primary" style="width:100%;margin-top:.3rem" data-act="claimEvent" data-key="'
+        + lane.id+'">Claim '+ev.name+'</button>';
+    h += '</div>';
   }
   h += '<p style="font-size:.68rem;font-family:var(--sans);color:var(--ink-dim);margin-top:.45rem">'
-    + 'Scored by deeds done inside the window — never by spending a stockpile, which is why there is a daily ceiling. '
-    + 'Milestones hold the rewards; the state board holds the glory. Next window: '+then.icon+' '+then.name+'.</p>';
+    + 'Scored by deeds done inside the window — never by spending a stockpile, which is why each window '
+    + 'has a ceiling. Milestones hold the rewards; the realm board holds the glory.</p>';
   h += '</section>';
   return h;
 }
@@ -3216,7 +3288,12 @@ const TABS = [
   { key:'war',     icon:'⚔️', name:'War' },
   { key:'world',   icon:'🗺️', name:'Frontier' },
   { key:'court',   icon:'👑', name:'Court' },
-  { key:'ally',    icon:'🤝', name:'Alliance', online: true },
+  { key:'ally',    icon:'🤝', name:'Ally', online: true },
+  /* Its own tab as of v4.6, and not a nicety. Four concurrent events plus a daily slate plus a week
+     grid is the single biggest source of "something to do right now" in the game, and it was the
+     third, fourth and fifth panel down inside the Ledger — behind the mail. The claim dot moved here
+     with it, which is also where a player would look for it. */
+  { key:'events',  icon:'🏆', name:'Events' },
   { key:'ledger',  icon:'📜', name:'Ledger' },
 ];
 /* The Alliance tab needs a server: offline it held one line telling you to sign in, which is a
@@ -3342,20 +3419,22 @@ function sizeMap(){
 }
 
 function renderTabBar(){
-  /* ── one quiet dot, only when something is genuinely claimable ──
-     WoS red-dots everything until the dots mean nothing. Here a single dot appears on LEDGER when
-     a finished Daily or event milestone is actually waiting — computed from the same two functions
-     the panels themselves use, so the dot cannot claim what the panel will not pay. */
+  /* ── two quiet dots, only when something is genuinely claimable ──
+     WoS red-dots everything until the dots mean nothing. Here a dot appears on EVENTS when a finished
+     Daily or an event milestone is actually waiting, and on LEDGER for unread mail — each computed
+     from the same function the panel itself uses, so a dot cannot claim what the panel will not pay.
+     Split in v4.6 with the tab: one dot covering both would have sent a player to the wrong screen. */
   const S = store.s, now = Date.now();
-  let owed = false;
+  let owed = false, post = false;
   try {
     owed = dailyProgress(S, now).some(t => t.done && !t.claimed)
-        || claimableMilestones(S, now).length > 0
-        || unreadMail(S) > 0;
-  } catch { owed = false; }
+        || allClaimable(S, now).length > 0;
+    post = unreadMail(S) > 0;
+  } catch { owed = false; post = false; }
+  const dot = k => (k === 'events' && owed) || (k === 'ledger' && post) ? '<i class="claimdot"></i>' : '';
   return '<nav class="tabbar">' + liveTabs().map(t =>
     '<button data-act="tab" data-key="'+t.key+'"'+(tab === t.key ? ' class="on"' : '')+'>'
-    + '<span>'+t.icon+(t.key === 'ledger' && owed ? '<i class="claimdot"></i>' : '')+'</span>'
+    + '<span>'+t.icon+dot(t.key)+'</span>'
     + t.name+'</button>').join('') + '</nav>';
 }
 
@@ -3384,7 +3463,8 @@ export function render(){
       + inTab('court',  renderHeroes(S) + renderPets(S) + renderRegalia(S) + renderRelics(S) + renderSpoils(S))
       + inTab('build',  renderHoldPanels(S) + renderDecrees(S) + renderResearch(S))
       + inTab(paneFor('ally'), renderAlliance(S) + renderMusterRoll(S) + renderRealm(S) + renderRift(S))
-      + inTab('ledger', renderHoldTools(S) + renderMail(S) + renderQuest(S) + renderDaily(S) + renderEvent(S) + renderCalendar(S)
+      + inTab('events', renderDaily(S) + renderEvents(S) + renderCalendar(S))
+      + inTab('ledger', renderHoldTools(S) + renderMail(S) + renderQuest(S)
                       + renderLeaderboard(S) + renderMastery(S) + renderAchievements(S)
                       + renderChronicle(S))
     + '</div>'
