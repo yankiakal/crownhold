@@ -17,6 +17,8 @@ import * as ST from '../src/state.js';
 import * as AR from '../src/arena.js';
 import * as R from '../src/research.js';
 import * as IS from '../src/isle.js';
+import * as DY from '../src/daily.js';
+import * as EV from '../src/events.js';
 import { freshState } from '../src/state.js';
 import { readFileSync } from 'node:fs';
 
@@ -3058,6 +3060,80 @@ console.log('\n── a decree shows what it costs, and lasts long enough to mat
   ok('and it does expire once its hour is up', !L.decreeOf(stale));
   ok('a decree lasts long enough that a day of Valor buys most of a day of it',
      D.DECREE_MS >= 30 * 60000, Math.round(D.DECREE_MS / 60000) + ' min');
+}
+
+/* ── every deed the game rewards must be a deed the game emits ──
+   Found by audit, not by play: `scoreDeed` is the only funnel that credits anything, and comparing
+   what it EMITS against what the daily slate and the events READ turned up three faults that had
+   shipped from the start.
+
+     · `expedition` — read by the "Run 3 expeditions" task and by Gathering Days, emitted NOWHERE. So
+       the task was impossible and the event source scored nothing.
+     · `help` — read by "Help an ally build", emitted nowhere. Helping happens on the server, and the
+       server never credited it.
+     · `beast` — EMITTED on every kill, read by nothing. The frontier's herds counted toward nothing.
+
+   The first two mattered more than a dead line suggests: the slate's bonus needs EVERY task, so a
+   single impossible line costs +60 Valor and a Writ. 58% of days drew one.
+
+   Checked in BOTH directions, because each direction is a different bug: a deed read but never
+   emitted is an unreachable reward, and a deed emitted but never read is a player's effort going
+   nowhere. */
+{
+  const files = ['../src/logic.js','../src/world.js','../src/arena.js','../src/raid.js',
+                 '../src/events.js','../src/isle.js','../server/server.js'];
+  const emitted = new Set();
+  for(const f of files){
+    let src = '';
+    try { src = readFileSync(new URL(f, import.meta.url), 'utf8'); } catch { continue; }
+    /* Whole call, then every string inside it — `scoreDeed(s, m.long ? 'longHaul' : 'gathered', ...)`
+       emits two deeds from one call, and a regex that only took the second argument missed one. */
+    for(const call of src.match(/scoreDeed\([^)]*\)/g) || [])
+      for(const lit of call.match(/'([a-zA-Z]+)'/g) || []) emitted.add(lit.slice(1, -1));
+  }
+  emitted.delete('source');
+  const read = new Set();
+  for(const t of DY.POOL) read.add(t.deed);
+  for(const e of EV.EVENTS) for(const k of Object.keys(e.sources)) read.add(k);
+
+  const unreachable = [...read].filter(d => !emitted.has(d));
+  ok('every deed a task or event pays for is one the game emits', unreachable.length === 0,
+     unreachable.length ? 'NEVER EMITTED: ' + unreachable.join(', ')
+                        : [...read].length + ' deeds read, all emitted');
+  const wasted = [...emitted].filter(d => !read.has(d));
+  ok('and every deed the game emits is worth something', wasted.length === 0,
+     wasted.length ? 'EMITTED BUT PAYS NOTHING: ' + wasted.join(', ')
+                   : [...emitted].length + ' deeds emitted, all read');
+
+  /* And the slate a SOLO hold is shown must be six tasks it can actually finish. The arena needs a
+     server and helping needs an alliance, so both are substituted rather than left to rot. */
+  let badDays = 0, shortDays = 0;
+  const solo = freshState(0, 1);
+  for(let d = 0; d < 90; d++){
+    const now = d * 86400000;
+    const tasks = DY.todaysTasks(now, solo);
+    if(tasks.length !== DY.DAILY_COUNT) shortDays++;
+    if(tasks.some(t => !DY.canDoDeed(solo, t.deed))) badDays++;
+  }
+  ok('a solo hold is never given a task it cannot do', badDays === 0,
+     badDays + ' of 90 days had an impossible line');
+  ok('and always gets a full slate', shortDays === 0,
+     shortDays + ' of 90 days were short of ' + DY.DAILY_COUNT);
+
+  /* An online hold in an alliance may be given them, or the two tasks would be unreachable for
+     everyone and the substitution would have quietly deleted content. */
+  const allied = freshState(0, 1);
+  allied.can = { online:true, alliance:true };
+  let sawGated = false;
+  for(let d = 0; d < 90; d++)
+    if(DY.todaysTasks(d * 86400000, allied).some(t => DY.DEED_NEEDS[t.deed])) sawGated = true;
+  ok('an allied hold still sees the arena and help lines', sawGated);
+
+  /* The slate must not drift within a day — it is claimed against, so a reshuffle would strand a
+     finished task. */
+  const a = DY.todaysTasks(5 * 86400000 + 1000, solo).map(t => t.id).join(',');
+  const b = DY.todaysTasks(5 * 86400000 + 8000000, solo).map(t => t.id).join(',');
+  ok('and holds still across a day', a === b, a);
 }
 
 console.log('\n' + (fail ? '✗ ' + fail + ' FAILED, ' + pass + ' passed' : '✓ all ' + pass + ' passed') + '\n');

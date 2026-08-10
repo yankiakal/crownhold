@@ -20,6 +20,11 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
 import { tick, armyPower, armyBreakdown, tierPower, gainRes, masteryLvl, upkeepPerSec, gainValor, gainMastery, pushLog,
          takeCasualties, capFor } from '../src/logic.js';
+/* The helper's own deed. `help` is read by the daily task "Help an ally build" and was emitted
+   NOWHERE, which made that task impossible — and the slate needs every line for its bonus. It has to
+   be credited here rather than in the client, because helping happens on the server: the client that
+   pressed the button never learns which builds it actually shortened. */
+import { scoreDeed } from '../src/events.js';
 import { SEASON_MS as DEFAULT_SEASON_MS, SEASON_EPOCH, SEASON_ARCS,
          seasonNo as defSeasonNo, seasonEndsIn as defSeasonEndsIn,
          canAlly, allyBlockedWhy } from '../src/defs.js';
@@ -1021,6 +1026,12 @@ function advance(u, now){
   s.allyBonus = {};
   for(const k of new Set([...Object.keys(techB), ...Object.keys(realmB)]))
     s.allyBonus[k] = (techB[k] || 0) + (realmB[k] || 0);
+  /* What this hold can actually DO, stamped by the only party that knows. The daily slate draws six
+     tasks from a pool that includes "win an arena battle" and "help an ally build" — neither of which
+     a solo hold can ever perform, and the slate's bonus needs EVERY line. Rather than thread a
+     capability argument through five call sites, the authority writes the fact onto the state and the
+     rules read it, exactly as alliance bonuses already reach a member. Absent means solo. */
+  s.can = { online: true, alliance: !!u.alliance };
   watchReturn(u, now);
   const away = Math.min(Math.max(now - (s.lastSeen || now), 0), 7200000);
   if(away > 60000){
@@ -1359,7 +1370,9 @@ async function api(req, res, url){
         helped++;
       }
     }
-    if(helped) markDirty();
+    /* Credited per BUILD shortened, which is what the task counts — "help an ally build", three
+       times. A tap that helped nobody scores nothing. */
+    if(helped){ scoreDeed(u.state, 'help', helped, now); markDirty(); }
     return send(res, 200, { helped, alliance: allianceView(u.alliance, now, u) });
   }
 

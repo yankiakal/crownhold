@@ -11,6 +11,8 @@ import * as D from '../src/defs.js';
 import * as L from '../src/logic.js';
 import * as W from '../src/world.js';
 import { freshState } from '../src/state.js';
+import * as EV from '../src/events.js';
+import * as DY from '../src/daily.js';
 
 // skilled=true reads the scouts and sets the counter-stance; false stays Balanced.
 // Both use hero orders — the delta isolates the value of paying attention.
@@ -38,6 +40,11 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
   const probe = { ticks:0, busy:0, couldBuild:0, onlyPoor:0, nothingLegal:0, capped:0, thPace:0, readySum:0, actSum:0, nothingToDo:0, crewFree:0, noPick:0, startFailed:{} };
   // when something a player would notice happened, in seconds from the start of the run
   const pace = { seen: 0, at: [], told: 0, lastBanner: '' };
+  /* Where Valor comes FROM. Until this existed the bot never claimed an event milestone or a daily
+     slate, so the two systems that hand out the most Valor in the game contributed exactly nothing to
+     every balance figure this sim prints — and a change to either was unmeasurable. A player claims
+     these the moment they light up, so the bot does too. */
+  const income = { events: 0, dailies: 0, milestones: 0, slates: 0 };
   const mm = t => String(Math.floor(t/60)).padStart(3,' ')+':'+String(t%60).padStart(2,'0');
   const note = (t,txt) => ev.push(mm(t)+'  '+txt);
 
@@ -104,6 +111,20 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
 
 
     /* ── bot decisions ── */
+    /* Claim what is owed. Measured BEFORE claiming, because claimEvent pays and clears in one call
+       and there is no way to ask afterwards what it was worth. */
+    {
+      const ready = EV.claimableMilestones(s, ms);
+      if(ready.length){
+        for(const m of ready){ income.events += (m.reward.valor || 0); income.milestones++; }
+        L.claimEvent(s, ms);
+      }
+      const rows = DY.dailyProgress(s, ms).filter(r => r.done && !r.claimed);
+      if(rows.length){
+        const before = s.valor;
+        if(L.claimDaily(s, ms)){ income.dailies += Math.max(0, s.valor - before); income.slates++; }
+      }
+    }
     // stance: the skilled bot answers the scouted shape; the lazy bot never touches it
     if(skilled && s.b.watchtower >= 1){
       const want = WAVE_TYPES[s.waveType]?.weakTo || 'balanced';
@@ -476,6 +497,9 @@ function simulate(minutes, enemyLuck, skilled, label, season = 1){
     +' | column capacity '+W.marchCapacity(s, W.bestLeaders(s, 3)));
   console.log('-- heroes: '+(Object.entries(s.heroes).map(([k,h])=>k+' L'+h.lvl+(h.stars?'+'+h.stars+'✦':'')+(h.deeds?'('+h.deeds+'d)':'')).join(', ')||'none')
     +' | spoils: '+(Object.entries(s.spoils).map(([k,n])=>k+(n>1?'×'+n:'')).join(', ')||'none'));
+  console.log('-- valor income: events '+Math.round(income.events)+' over '+income.milestones+' milestones'
+    + ' | dailies '+Math.round(income.dailies)+' over '+income.slates+' slates'
+    + ' = '+Math.round(income.events + income.dailies)+' from the two claimable systems');
   console.log('-- valor left '+Math.floor(s.valor)+' spent '+valorSpent+' | famine events (recent log) '+famines
     +' | build-idle '+Math.round(100*idleBuild/T)+'% | at-cap '+Math.round(100*cappedTime/T)+'%');
   const pc = n => Math.round(100*n/Math.max(1,probe.ticks))+'%';

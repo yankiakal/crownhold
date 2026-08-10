@@ -1637,6 +1637,14 @@ export function expedStep(s, now, rand=Math.random){
   if(!e || now < e.end) return false;
   s.exped = null;
   grantExpedition(s, e.route, now, rand, e.boost);
+  /* The deed nobody emitted. `expedition` is read in two places — the Gathering Days event scores it
+     and the daily task "Run 3 expeditions" needs three of them — and scoreDeed was never called with
+     it anywhere in the game. So the event source was worth nothing and the daily task was IMPOSSIBLE,
+     which matters more than it sounds: the slate is six tasks and the full-slate bonus needs every
+     one, so on the 58% of days that drew this task the +60 Valor and the Writ could not be had at
+     all. Emitted on RETURN rather than on dispatch, for the same reason the rewards are: sending a
+     party is not doing the thing. */
+  scoreDeed(s, 'expedition', 1, now);
   return true;
 }
 
