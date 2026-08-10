@@ -98,7 +98,8 @@ const badgeFaults = ['MISSING', 'OFF THE WALLS', 'NO TIME SHOWN', 'NO SHEET',
    one that hid the map: a canvas never given width/height is 300×150, and drawMap paints an 840×504
    world into it. */
 const mapFaults = ['NO MAP CANVAS', 'CLIPPED', 'BLURRY', 'TOO SMALL TO TAP',
-                   'CANNOT ZOOM OUT', 'VOID', 'BURIES THE MAP'].filter(t => report.includes(t));
+                   'CANNOT ZOOM OUT', 'VOID', 'BURIES THE MAP',
+                   'NOWHERE TO GO', 'STUCK', 'UNDER THE CARD'].filter(t => report.includes(t));
 
 const lost = (report.match(/LOST/g) || []).length;
 const kept = (report.match(/KEPT/g) || []).length;

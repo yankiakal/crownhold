@@ -3310,8 +3310,20 @@ function sizeMap(){
      clearance, so the loud version is the one that gets fixed. */
   const top = (bottom - furniture) >= box.height * 0.45 ? furniture : box.top;
   const room = Math.max(0, bottom - top);
-  mapCanvas.style.marginTop = Math.round(Math.max(0, (top - box.top) + (room - py) / 2)) + 'px';
-  mapCanvas.style.marginLeft = Math.round(Math.max(0, (box.width - px) / 2)) + 'px';
+  /* PADDING on the dock, not a margin on the canvas, and the furniture's own height is never traded
+     away against the centring. The first version added the two together — so zoomed in, where the
+     centring term goes negative, the map slid up UNDER the ribbon and the northern row could not be
+     scrolled out from behind it. Reported one axis over from the same bug: "scroll up and down
+     doesn't work."
+     Padding is inside the dock's border box, which is fixed to the viewport, so writing it here
+     cannot change what the next measurement reads. The bottom pad is the tab bar's height, so the
+     southern row can be scrolled clear of it too. */
+  const padTop = Math.max(0, top - box.top) + Math.max(0, (room - py) / 2);
+  const padBot = Math.max(0, box.bottom - bottom);
+  const padLeft = Math.max(0, (box.width - px) / 2);
+  mapCanvas.style.margin = '0';
+  mapDock.style.padding = Math.round(padTop) + 'px 0 ' + Math.round(padBot) + 'px '
+                        + Math.round(padLeft) + 'px';
 
   /* Opens on YOUR hold, not on the middle of the grid — every distance in the world is measured
      from that square, so it is the one cell the player needs to find first. Only when there is

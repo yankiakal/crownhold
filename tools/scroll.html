@@ -221,6 +221,53 @@ try {
         + ' — ' + Math.round(100 * furn / dr.height) + '% of the screen'
         + (furn <= dr.height * 0.30 ? '  FURNITURE' : '  BURIES THE MAP'));
 
+      /* ── up and down ──
+         Reported: "zoom out zoom in works, scroll left right works, scroll up and down doesn't."
+         At the opening zoom that is correct and not a fault — the map is 15×9, so fitting the width
+         puts all nine rows on screen and there is nothing above or below to reach. But it stops
+         being correct the moment you pinch IN, and this is where the fault would be: whether the
+         vertical axis gains a range at all, and whether the top of the map can be scrolled clear of
+         the ribbon rather than sliding underneath it. Driven through the same handlers a thumb goes
+         through, one finger, because reading the clamp would only prove the arithmetic. */
+      {
+        const mid0 = { x: dr.left + dr.width / 2, y: dr.top + dr.height / 2 };
+        const send0 = (type, id, x, y) => dock.dispatchEvent(new w.PointerEvent(type, {
+          bubbles:true, pointerId:id, isPrimary:id===1, clientX:x, clientY:y }));
+        // pinch IN: fingers apart
+        send0('pointerdown', 3, mid0.x - 20, mid0.y);
+        send0('pointerdown', 4, mid0.x + 20, mid0.y);
+        for(let step = 40; step <= 300; step += 40){
+          send0('pointermove', 3, mid0.x - step, mid0.y);
+          send0('pointermove', 4, mid0.x + step, mid0.y);
+        }
+        send0('pointerup', 3, mid0.x - 300, mid0.y);
+        send0('pointerup', 4, mid0.x + 300, mid0.y);
+        await wait(400);
+        const range = dock.scrollHeight - dock.clientHeight;
+        say('zoomed in'.padEnd(16) + 'map ' + Math.round(cv.getBoundingClientRect().height)
+          + 'px tall in ' + dock.clientHeight + ' · ' + range + 'px of vertical range'
+          + (range > 20 ? '  CAN GO DOWN' : '  NOWHERE TO GO'));
+
+        // and a one-finger drag has to actually move it
+        dock.scrollTop = Math.round(range / 2);
+        const was = dock.scrollTop;
+        send0('pointerdown', 5, mid0.x, mid0.y + 120);
+        for(let dy = 20; dy <= 100; dy += 20) send0('pointermove', 5, mid0.x, mid0.y + 120 - dy);
+        send0('pointerup', 5, mid0.x, mid0.y + 20);
+        await wait(300);
+        say('drag upward'.padEnd(16) + 'scrollTop ' + was + ' → ' + Math.round(dock.scrollTop)
+          + (dock.scrollTop > was + 10 ? '  PANS' : '  STUCK'));
+
+        /* The top row must be reachable from under the furniture. Scrolled fully up, the map's own
+           top edge should sit BELOW the ribbon — otherwise zooming in hides the northern row behind
+           a card, which is the bug this whole session has been about, one axis over. */
+        dock.scrollTop = 0;
+        await wait(250);
+        const rt = cv.getBoundingClientRect().top;
+        say('top row clear'.padEnd(16) + 'map top ' + Math.round(rt) + ' vs card bottom '
+          + Math.round(cb) + (rt >= cb - 2 ? '  CLEAR' : '  UNDER THE CARD'));
+      }
+
       /* ── and the other half: can you get OUT? ──
          "It's still fucked even when zoomed out" was the report, so the check drives the actual
          gesture rather than reading the clamp: two fingers, moved together, through wireCamera's own
