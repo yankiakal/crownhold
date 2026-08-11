@@ -1,6 +1,7 @@
 // Crownhold state: fresh-state shape, persistence, save migration.
 
 import { RES_META, BUILDINGS, FIRST_WAVE_MS, EXPEDITIONS, SUPPLY_RES } from './defs.js';
+import { repair } from './layout.js';
 import { prodPerSec, upkeepPerSec, supplyPerSec, storageCap, capFor, refineStep, expedStep, bankRest, pushLog, fmt,
          courtSeats, expedCdMs, caravanYields, CARAVAN_GRACE } from './logic.js';
 import { genWorld } from './world.js';
@@ -26,7 +27,7 @@ export function freshState(now, seed){
     res:{food:500,wood:500,stone:250,iron:0,steel:0,runestone:0,rations:0,isleore:0,electrum:0},
     achieved:{}, campsBurned:0, ruinsRaided:0, winStreak:0, bestStreakWon:0,
     valorDay:0, valorToday:0, rest:0,
-    research:{}, rq:null, allyBonus:null, evs:{}, daily:null,
+    research:{}, rq:null, allyBonus:null, evs:{}, daily:null, plots:{},
     valor:0,
     /* The Quarry opens at 1, like the Farm and the Lumberyard. It used to start at ZERO, so a new
        hold produced food and wood from the first second and no stone at all — and stone is what
@@ -258,6 +259,16 @@ export function migrate(s, now){
     if(s.research==null) s.research = {};
     if(s.rq===undefined) s.rq = null;
     if(s.allyBonus===undefined) s.allyBonus = null;
+    /* v5.0: the player's own arrangement of their hold. Building key → [x,y], and DELIBERATELY SPARSE —
+       a building absent from here stands on its default tile. A complete map cloned once here would
+       permanently lack any building added afterwards, and a building with no plot is drawn by nothing:
+       the v1.28 kitchen/crucible absence, reproduced per save, where no static test could see it.
+       NOT inside `cos` — cos is the shop's shelf and an arrangement is never sold.
+
+       repair() is the only thing that fixes a broken layout, and it runs here so it runs on the server
+       too. It must not read the clock: migrate is called with no `now` in places. */
+    if(!s.plots || typeof s.plots !== 'object' || Array.isArray(s.plots)) s.plots = {};
+    repair(s);
     /* v4.6 events: one slot became four lanes. The old `s.ev` cannot be carried over — it held an
        index into a pool that no longer exists, and a score against a ladder that has changed — so
        it is dropped rather than mistranslated. The cost is at most one part-finished window; the

@@ -59,6 +59,20 @@ const done = () => fetch('/report', { method:'POST', body: lines.join('\n') }).c
 /* Anything that throws still has to report, or the harness waits out its whole deadline and says
    "nothing measured" when what actually happened was a TypeError on line four. */
 window.addEventListener('error', (e) => { say('THREW: ' + e.message); done(); });
+/* ── a watchdog, so a hang says WHERE ──
+   Nothing is reported until done() posts, so an await that never settles produced three minutes of
+   silence and then "nothing measured" — which tells you the probe broke and nothing about where. This
+   posts whatever has been collected so far, which turns a mystery into a line number. */
+setTimeout(() => { say('WATCHDOG: the probe stopped here'); done(); }, 100000);
+/* And rejections. The probe is one long chain of awaits, so a throw inside it becomes an unhandled
+   REJECTION, which does not fire the 'error' event above — so the page simply stopped, never reported,
+   and the runner said "nothing measured within 180s". Three minutes of silence for a one-line mistake,
+   twice, before this listener existed. */
+window.addEventListener('unhandledrejection', (e) => {
+  const r = e.reason;
+  say('REJECTED: ' + ((r && (r.stack || r.message)) || String(r)));
+  done();
+});
 
 try {
   const save = played();
@@ -436,6 +450,119 @@ try {
       click('[data-act="peekClose"]');
       await wait(250);
       say('hold left clean'.padEnd(16) + (d.querySelector('.bpeek') ? ' POPUP STILL UP' : ' yes'));
+    }
+  }
+
+  /* ── rearranging the hold ──
+     The taps themselves can only be proved here: verify-ui has no canvas, so it cannot turn a pointer
+     into a tile at all. Two taps, not a drag — at this zoom the walls are 1312px inside a 393px window,
+     so a finger carrying a building cannot also pan to where it is going.
+
+     Verified by SWAPPING, which needs no knowledge of the camera's scale or origin: find two points that
+     lift two different buildings, swap them, and then check each point now names the other one. If the
+     lift, the placement, the state write and the redraw all work, the two names have exchanged; if any
+     one of them is broken, they have not. */
+  {
+    click('[data-act="tab"][data-key="hold"]');
+    await wait(400);
+    const cv3 = d.getElementById('holdscene');
+    const dock3 = d.getElementById('scene-dock');
+    if(!cv3 || !dock3){ say('arrange'.padEnd(16) + ' NO HOLD CANVAS'); }
+    else {
+      const tap = async (x, y) => {
+        for(const type of ['pointerdown', 'pointerup'])
+          dock3.dispatchEvent(new w.PointerEvent(type, { bubbles:true, pointerId: 21, isPrimary:true,
+                                                         clientX: x, clientY: y }));
+        await wait(300);
+      };
+      const pill = () => { const el = d.querySelector('.stat-note.arrangebar');
+                           return el ? el.textContent.replace(/\s+/g, ' ').trim() : null; };
+      const inHand = () => { const t = pill() || ''; const m = t.match(/^(.*?) in hand/); return m ? m[1] : null; };
+      const named = () => { const h = d.querySelector('.bpeek .bp-head span');
+                            return h ? h.textContent.trim() : null; };
+
+      say('arrange offered'.padEnd(16) + (d.querySelector('[data-act="arrange"]') ? 'yes' : 'NO ARRANGE BUTTON'));
+      click('[data-act="arrange"]');
+      await wait(400);
+      say('arrange entered'.padEnd(16) + (pill() ? '"' + pill().slice(0, 46) + '"' : 'NO ARRANGE PILL'));
+
+      /* Two points that lift two DIFFERENT buildings. Swept off the centre, because the Town Hall is
+         pinned — the road is a hardcoded L to its tile — so the middle deliberately lifts nothing. */
+      const r3 = cv3.getBoundingClientRect();
+      const cx3 = r3.left + r3.width / 2, cy3 = r3.top + r3.height / 2;
+      const found = [];
+      for(const [dx, dy] of [[-90,0],[90,0],[0,70],[0,-70],[-150,40],[150,40],[-60,-40],[60,-40]]){
+        if(inHand()) click('[data-act="arrangeDrop"]'), await wait(220);
+        await tap(cx3 + dx, cy3 + dy);
+        const got = inHand();
+        if(got && !found.some(f => f.name === got)) found.push({ name: got, x: cx3 + dx, y: cy3 + dy });
+        if(found.length >= 2) break;
+      }
+      say('lifts a building'.padEnd(16) + (found.length ? found.map(f => f.name).join(' + ')
+        : 'NOTHING LIFTED BY ANY TAP'));
+      /* The pinned hall must refuse to be lifted at all. */
+      if(inHand()) click('[data-act="arrangeDrop"]'), await wait(220);
+      await tap(cx3, cy3);
+      say('the hall is pinned'.padEnd(16) + (inHand() ? 'LIFTED THE TOWN HALL' : 'refused, correctly'));
+
+      if(found.length < 2){ say('arrange swap'.padEnd(16) + ' NOT ENOUGH LIFTED TO SWAP'); }
+      else {
+        const [A, B] = found;
+        /* ── and the SCENE has to redraw ──
+           The popup's name comes from state, so a swap that never reached the canvas would pass every
+           assertion above. The hold is drawn in two passes and the slow one is BAKED behind a cache key;
+           that key knew every building's level and not its position, so a moved building would have kept
+           being drawn where it used to stand until something unrelated happened to change. Sampled
+           pixels are the only witness to that. */
+        const shot = () => {
+          try {
+            const g = cv3.getContext('2d');
+            const px = g.getImageData(Math.round(cv3.width * 0.25), Math.round(cv3.height * 0.25),
+                                      Math.round(cv3.width * 0.5), Math.round(cv3.height * 0.5)).data;
+            let h = 0;
+            for(let i = 0; i < px.length; i += 97) h = (h * 31 + px[i]) | 0;
+            return h;
+          } catch(err){ return null; }
+        };
+        const before = shot();
+        if(inHand()) click('[data-act="arrangeDrop"]'), await wait(220);
+        await tap(A.x, A.y);
+        const held = inHand();
+        await tap(B.x, B.y);
+        const after = inHand();
+        say('sets it down'.padEnd(16) + 'held "' + held + '", then '
+          + (after ? 'STILL IN HAND: ' + after : 'hands empty'));
+        click('[data-act="arrangeDone"]');
+        await wait(600);
+        const pixelsAfter = shot();
+        say('the scene redrew'.padEnd(16) + (before === null ? 'COULD NOT SAMPLE THE CANVAS'
+          : before === pixelsAfter ? 'pixels identical after a swap  SCENE DID NOT REDRAW'
+          : 'pixels changed'));
+        /* And the proof: each point now names the other building. */
+        await tap(A.x, A.y);
+        const atA = named();
+        click('[data-act="peekClose"]'); await wait(200);
+        await tap(B.x, B.y);
+        const atB = named();
+        click('[data-act="peekClose"]'); await wait(200);
+        const swapped = atA && atB && atA.includes(B.name.replace(/^\S+\s/, ''))
+                                  && atB.includes(A.name.replace(/^\S+\s/, ''));
+        say('they swapped'.padEnd(16) + A.name + '@A + ' + B.name + '@B → ' + atA + '@A + ' + atB + '@B'
+          + (swapped ? '  SWAPPED' : '  DID NOT SWAP'));
+      }
+      /* Straighten up must put everything back where the masons drew it. */
+      click('[data-act="arrange"]'); await wait(300);
+      click('[data-act="straighten"]'); await wait(500);
+      click('[data-act="arrangeDone"]'); await wait(400);
+      if(found.length >= 2){
+        await tap(found[0].x, found[0].y);
+        const back = named();
+        say('straighten up'.padEnd(16) + 'point A names ' + back
+          + (back && back.includes(found[0].name.replace(/^\S+\s/, '')) ? '  BACK TO THE DRAWING'
+                                                                       : '  STRAIGHTEN DID NOT RESTORE'));
+        click('[data-act="peekClose"]'); await wait(200);
+      }
+      say('arrange left clean'.padEnd(16) + (d.querySelector('.stat-note.arrangebar') ? 'STILL ARRANGING' : 'yes'));
     }
   }
 

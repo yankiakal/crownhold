@@ -63,7 +63,10 @@ import {
 } from './events.js';
 import { dailyProgress, dailyState, DAILY_BONUS } from './daily.js';
 import * as net from './net.js';
-import { mountScene, sceneResize, pickBuilding, setSkinTint, setLabels, labelsShown } from './iso.js';
+import { mountScene, sceneResize, pickBuilding, setSkinTint, setLabels, labelsShown,
+         tileAt, plotTile, setArranging } from './iso.js';
+import { plotOf, legalTiles, movable, buildingAt, inBounds, FIXED,
+         LO, HI } from './layout.js';
 import { store, freshState, save } from './state.js';
 
 /* Vite replaces __BUILD__ at build time (see vite.config.js). The typeof guard is what
@@ -349,11 +352,43 @@ function renderScene(S){
      scrolling column of panels with the map as one item in the middle — a document, not a city.
      Everything that stood around the scene lives in the Build sheet; on a phone this panel's own
      chrome is stripped by CSS and the slot is fixed over the whole viewport. */
+  let note;
+  if(arranging){
+    /* ── the arranging pill ──
+       The same floating strip that normally says "tap a building to inspect it", which is the one piece
+       of hold chrome the phone CSS deliberately keeps: `.panel.scenewrap` is display:none under 820px and
+       the rule immediately after it lifts this `.stat-note` out as a fixed pill above the tab bar. So the
+       mode gets a place to speak without a new overlay in the 4Hz tree.
+
+       It NAMES what is in your hand. A lifted state you cannot see is the whole failure mode of a
+       two-tap interaction — the player taps, something invisible happens, and the next tap does something
+       they did not ask for. */
+    const held = lifted && BUILDINGS[lifted];
+    note = '<div class="stat-note arrangebar">'
+      + (held
+          ? '<b>' + held.icon + ' ' + esc(held.name) + '</b> in hand — tap a lit tile to set it down, '
+            + 'or another building to swap'
+          : 'Tap a building to pick it up. Pan and pinch as usual.')
+      + '<span class="abtn">'
+      + (held ? '<button data-act="arrangeDrop">Put it back</button>' : '')
+      + '<button data-act="straighten">Straighten up</button>'
+      + '<button class="primary" data-act="arrangeDone">Done</button></span></div>';
+  }else{
+    note = '<div class="stat-note"><span>Tap a building to inspect or raise it — '
+      + '<span style="color:var(--good)">↑</span> marks one you can afford.</span>'
+      + '<span class="abtn"><button data-act="arrange">✥ Arrange</button></span></div>';
+  }
+  /* ── the note lives OUTSIDE the panel, and that is a fix, not a preference ──
+     The phone hides `.panel.scenewrap` entirely (styles.css) because the hold is the camera and nothing
+     else. The rule immediately after it lifts this note out as a fixed pill above the tab bar — and never
+     worked, because `display:none` removes a whole subtree from layout and no descendant rule can undo
+     it. Measured: the panel computes to display:none and so does the note, box 0x0. So "Tap a building to
+     inspect or raise it" has been invisible on every phone since the camera landed, and Arrange would have
+     been invisible with it. A sibling of the panel renders on both. */
   return '<section class="panel scenewrap"><h2>The Hold</h2>'
     + '<div id="scene-slot"></div>'
-    + '<div class="stat-note">Tap a building to inspect or raise it. '
-    + '<span style="color:var(--good)">↑</span> marks one you can afford now.</div>'
-    + '</section>';
+    + '</section>'
+    + '<div class="holdbar">' + note + '</div>';
 }
 
 function renderHoldPanels(S){
@@ -1785,6 +1820,60 @@ function renderLevyCard(S, win, levy){
     h += '<button class="primary" style="width:100%;margin-top:.3rem" data-act="levyClaim">'
       + 'Claim the Levy</button>';
   return h + '</div>';
+}
+
+/* ── Arrange mode ──
+   Two taps, not a drag, and that was the panel's decisive finding rather than a preference. At the zoom
+   the hold opens at, the walls are 1312px wide inside a 393px window — three and a third screens. A
+   finger carrying a building cannot also pan, so a drag can only ever rearrange within the third of the
+   hold already on screen. Taking the finger off the glass between the two taps is not a compromise for
+   testability; it is the only construction that lets the player reach the far corner at all.
+
+   `arranging` and `lifted` are view state, not hold state — the same argument as arenaStance and
+   researchBranch below. Nothing is written to the hold until the second tap, so a mis-grab costs one tap
+   and no round trip, and closing the tab or reloading mid-lift simply puts the building back down. */
+let arranging = false, lifted = null;
+
+/* ── what a tap means while arranging ──
+   One function, called by BOTH tap paths — the phone camera's release handler and the desktop's
+   pointerdown. They already diverge in how they find the coordinate, and letting them each decide what
+   the coordinate MEANS is how a mode comes to work on one and not the other. Returns true when it has
+   consumed the tap, so the caller knows not to also open a popup.
+
+   Nothing in hand: a tap on a movable building lifts it. Something in hand: a legal tile sets it down, a
+   building swaps the two, anything else is ignored — deliberately NOT a cancel, because a mistimed tap on
+   the wall should not silently drop what you were carrying. */
+function arrangeTap(clientX, clientY){
+  if(!arranging) return false;
+  const S = store.s;
+  const t = tileAt(clientX, clientY);
+  const key = pickBuilding(clientX, clientY);
+  if(!lifted){
+    if(key && movable(key)){ lifted = key; syncArrange(); render(); }
+    return true;
+  }
+  const onto = buildingAt(S, t.x, t.y) || (key && movable(key) ? key : null);
+  if(onto === lifted){ lifted = null; syncArrange(); render(); return true; }   // put it back
+  if(onto && movable(onto)){
+    dispatch('place', { key: lifted, x: plotOf(S, onto)[0], y: plotOf(S, onto)[1] });
+    lifted = null; syncArrange(); render(); return true;
+  }
+  if(inBounds(t.x, t.y)){
+    dispatch('place', { key: lifted, x: t.x, y: t.y });
+    lifted = null; syncArrange(); render(); return true;
+  }
+  return true;
+}
+/* The lit tiles and the raised socket are drawn by the canvas, which needs telling. Called after every
+   change to what is in hand — never from inside a render, because setArranging invalidates the static
+   bake and a render that invalidated its own bake would rebake on every frame. */
+function syncArrange(){
+  setArranging(arranging, arranging && lifted ? legalTiles(store.s, lifted) : [], lifted);
+}
+
+function stopArranging(){
+  arranging = false; lifted = null;
+  setArranging(false);
 }
 
 /* Which branch the Research panel is showing. A view preference, not hold state —
@@ -3615,6 +3704,10 @@ export function render(){
   const S = store.s;
   // signing out while standing on the Alliance tab would leave no pane visible at all
   if(!liveTabs().some(t => t.key === tab)) tab = 'hold';
+  /* Arranging is a thing you do TO the hold, so leaving the hold leaves the mode. Without this the lit
+     tiles stay baked into a scene nobody is looking at, and coming back finds a building still in hand
+     from a session the player has forgotten. */
+  if(arranging && tab !== 'hold') stopArranging();
   /* One call, before anything is drawn: sound.watch diffs the state it was last shown
      and fires at most one cue. Here rather than in the tick loop because this is the
      single funnel every change passes through — a local action, a server pull and an
@@ -4013,6 +4106,12 @@ const VIEW_ACTIONS = {
       .catch(e => { acctMsg = e.message; acctOpen = true; renderAccount(); });
   },
   landmarkHelp: b => { net.landmarkHelp(b.dataset.key).then(render).catch(()=>{}); },
+  /* Arrange mode. A VIEW action, not a game one: entering it writes nothing to the hold — only the two
+     taps that follow do. So a player can look at the lit tiles, change their mind, and have cost the
+     server nothing. */
+  arrange:  () => { arranging = true;  lifted = null; peek = null; syncArrange(); },
+  arrangeDone: () => { stopArranging(); },
+  arrangeDrop: () => { lifted = null; syncArrange(); },
   /* Its own call, not the generic claimEvent action: the Levy's threshold is the alliance's total and
      only the server can compute it, so the shared lane pays nothing through the generic path. */
   levyClaim: () => {
@@ -4121,7 +4220,15 @@ function runAction(btn){
   const act = btn.dataset.act;
   if(VIEW_ACTIONS[act]){ sound.cue('tap'); VIEW_ACTIONS[act](btn); render(); return; }
   if(!isGameAction(act)) return;
-  const params = paramsOf(btn);
+  dispatch(act, paramsOf(btn));
+}
+
+/* ── dispatch a game action with no button behind it ──
+   Extracted from runAction so Arrange mode can place a building from a tap on bare canvas. Everything
+   below used to be reachable only by having a DOM element to read data-act off, which would have meant
+   either a hidden button per tile or a second copy of the online/offline branch — and a second copy is
+   how the sound, the optimism and the refusal path come to disagree with themselves. */
+function dispatch(act, params){
   if(act === 'march' || act === 'hunt' || act === 'voyage'){ detail = null; marchParty = []; marchWant = {}; }
   if(act === 'skill') skillSlotOpen = null;   // a choice made folds the menu away
   if(net.isOnline()){
@@ -4348,6 +4455,8 @@ const camEnd = e => {
   const btn = el && el.closest && el.closest('button[data-act]');
   if(btn && sceneDock.contains(btn)){ cam.acted = Date.now(); runAction(btn); return; }
   if(el && el.id === 'holdscene'){
+    // Arrange mode owns the tap when it is on: lift, set down, or swap. See arrangeTap.
+    if(arrangeTap(e.clientX, e.clientY)) return;
     /* WoS's grammar: a tap raises the POPUP on the building — name, level, the one or two actions
        that matter — and the full sheet hides behind its ⓘ. Tapping empty ground puts it away. */
     const key = pickBuilding(e.clientX, e.clientY);
@@ -4531,6 +4640,7 @@ export function wire(){
     if(e.target && e.target.id === 'holdscene'){
       // the phone camera handles its own taps (see the sceneDock gestures); desktop keeps this path
       if(e.target.parentElement === sceneDock) return;
+      if(arrangeTap(e.clientX, e.clientY)) return;      // the same function the phone path calls
       const key = pickBuilding(e.clientX, e.clientY);
       if(key){ detail = {type:'building', key}; render(); }
       return;

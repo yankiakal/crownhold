@@ -113,7 +113,13 @@ appendFileSync(join(dir, 'src', 'ui.js'),
      blocks in this suite have already called render(), the high-water mark is set, and the test
      passes whether the guard is there or not — which it did, on the first run, until the guard was
      deleted on purpose and the test stayed green. */
-  '\nexport function _resetFeed(){ feedMark = 0; }\n');
+  '\nexport function _resetFeed(){ feedMark = 0; }' +
+  /* Arrange mode's two flags are view state, not hold state — the same argument as arenaStance. So the
+     only way to render the mode in a stub DOM is to set them, and the only way to check the mode was left
+     properly is to read them back. */
+  '\nexport function _setArrange(on, key){ arranging = on; lifted = key || null; syncArrange(); }' +
+  '\nexport function _arrangeState(){ return { arranging, lifted }; }' +
+  '\nexport function _setTab(k){ tab = k; }\n');
 /* Same seam for net.js: the session is module-local, and the App Store's account-deletion control
    only exists when signed in — so without a way to fake a session there is nothing to assert, and
    the requirement would be untested until a reviewer found it missing. */
@@ -709,6 +715,82 @@ try {
          !/data-key="ledger"><span>📜<i class="claimdot">/.test(p2));
       for(const lane of EV.LANES) EV.eventState(owed, lane, Date.now()).score = 0;
     }
+  }
+
+  /* ── Arrange mode ──
+     The player can rearrange their hold. Two taps, not a drag: at the zoom the hold opens at the walls
+     are 1312px wide inside a 393px window, so a finger carrying a building cannot also pan to where it is
+     going. The taps themselves need a real canvas and are proved by npm run scroll; what is proved here is
+     the part a stub DOM can see — that the mode is reachable, that it SAYS what is in your hand, and that
+     it cannot be left behind. */
+  {
+    /* ── the baked scene has to know a building moved ──
+       The hold is drawn in two passes and the slow one is cached behind a key. That key listed every
+       building's level and not its position, so a moved building kept being drawn where it used to stand.
+       Rearranging your own hold happens to invalidate the cache for other reasons, so this would only
+       have shown when a layout arrived from the SERVER — a second device, another session — where no
+       level and no mode changes. Untestable by screenshot: the pixels are only wrong until the next
+       unrelated rebake. So the invalidation CONTRACT is asserted instead. */
+    {
+      const LAY2 = await import('../src/layout.js');
+      const a = ISO.buildingsKey(s);
+      const moved = JSON.parse(JSON.stringify(s));
+      LAY2.setPlot(moved, 'granary', 4, 6);
+      ok('the baked scene is invalidated when a building moves',
+         ISO.buildingsKey(moved) !== a, 'the key changed with the granary');
+      const levelled = JSON.parse(JSON.stringify(s));
+      levelled.b.granary = (levelled.b.granary || 0) + 1;
+      ok('and still when one is raised, as it always was', ISO.buildingsKey(levelled) !== a);
+      ok('and not when nothing changed at all',
+         ISO.buildingsKey(JSON.parse(JSON.stringify(s))) === a,
+         'or the slow pass would re-bake on every frame');
+    }
+
+    ST.store.s = s;
+    UI._setArrange(false, null);
+    UI.render();
+    let p = (nodes.app && nodes.app.innerHTML) || '';
+    ok('the hold offers a way to rearrange it', /data-act="arrange"/.test(p),
+       (p.match(/<button data-act="arrange">[^<]*/) || ['(absent)'])[0]);
+    ok('and says nothing about arranging until you ask', !/in hand/.test(p)
+       && !/data-act="arrangeDone"/.test(p));
+
+    UI._setArrange(true, null);
+    UI.render();
+    p = (nodes.app && nodes.app.innerHTML) || '';
+    ok('in the mode, it says what to do', /Tap a building to pick it up/.test(p));
+    ok('and offers a way out, and a way back to the masons\' drawing',
+       /data-act="arrangeDone"/.test(p) && /data-act="straighten"/.test(p));
+    ok('and the Arrange button is gone while arranging', !/data-act="arrange"[^D]/.test(p.replace(/data-act="arrangeD\w+"/g, '')));
+
+    /* A lifted state you cannot see is the whole failure mode of a two-tap interaction: you tap,
+       something invisible happens, and the next tap does something you did not ask for. */
+    UI._setArrange(true, 'granary');
+    UI.render();
+    p = (nodes.app && nodes.app.innerHTML) || '';
+    ok('with something in hand it NAMES it', /in hand/.test(p) && /Granary/.test(p),
+       (p.match(/<b>[^<]*<\/b> in hand/) || ['(unnamed)'])[0]);
+    ok('and offers to put it back down where it was', /data-act="arrangeDrop"/.test(p));
+    ok('and tells you a swap is possible, since tapping a building does that',
+       /swap/.test(p));
+
+    /* Leaving the hold must leave the mode, or the lit tiles stay baked into a scene nobody is looking
+       at and coming back finds a building still in hand from a session the player has forgotten. */
+    /* Leaving the hold must leave the mode, or the lit tiles stay baked into a scene nobody is looking
+       at and coming back finds a building still in hand from a session the player has forgotten. Driven
+       by moving the visible pane and rendering, because render() is where that guard lives — asserting it
+       any other way would test a different line. */
+    UI._setArrange(true, 'granary');
+    UI._setTab('build');
+    UI.render();
+    ok('the mode does not outlive looking at the hold',
+       UI._arrangeState().arranging === false && UI._arrangeState().lifted === null,
+       'after moving to the Build pane: ' + JSON.stringify(UI._arrangeState()));
+    UI._setTab('hold');
+    UI._setArrange(false, null);
+    UI.render();
+    ok('and once left, nothing is in hand', UI._arrangeState().lifted === null
+       && UI._arrangeState().arranging === false);
   }
 
   /* ── the appointment strip ──

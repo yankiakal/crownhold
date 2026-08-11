@@ -3313,6 +3313,227 @@ console.log('\n── a decree shows what it costs, and lasts long enough to mat
     ok('and there is nothing left to claim twice', L.claimEvent(s, now) === false);
   }
 
+  /* ── the player's own arrangement ──
+     Purely cosmetic by decision: no rule in this game reads a position, and the two functions below are
+     the only things that write one. Confirmed with the author before a line was written, for two reasons
+     — nothing in this game's combat is spatial, so position-as-power would have to be invented whole; and
+     the moment layout affects strength there is an optimal layout, which turns a toy into homework.
+
+     All of it is pure and takes the hold as an argument, so all of it is provable here. */
+  {
+    console.log('\n── a hold can be rearranged, and it changes nothing but the view ──');
+    const LAY = await import('../src/layout.js');
+    const D2 = await import('../src/defs.js');
+    const hold = () => { const h = freshState(1770000000000, 7); h.b.townhall = 12; return h; };
+
+    /* ── the default table itself ── */
+    ok('the default arrangement is what absence means',
+       Object.keys(D2.DEFAULT_PLOTS).length >= 20 && LAY.plotOf(hold(), 'granary')[0] === 7,
+       Object.keys(D2.DEFAULT_PLOTS).length + ' plots on the table');
+    {
+      const bad = Object.entries(D2.DEFAULT_PLOTS)
+        .filter(([k, p]) => p && !LAY.inBounds(p[0], p[1]));
+      ok('and every default tile is one a player could also choose', bad.length === 0,
+         bad.length ? 'OUT OF BOUNDS: ' + bad.map(e => e[0]).join(', ')
+           : 'all inside 1..' + LAY.HI + ' and no deeper than ' + LAY.GATE_DEPTH);
+      const seen = new Set(), dup = [];
+      for(const [k, p] of Object.entries(D2.DEFAULT_PLOTS)){
+        if(!p) continue;
+        const at = p.join(',');
+        if(seen.has(at)) dup.push(k); else seen.add(at);
+      }
+      ok('and no two defaults share a tile', dup.length === 0, dup.join(', ') || 'all distinct');
+    }
+
+    /* ── the trap that would have killed a hold's scene for ever ──
+       BUILDINGS['constructor'] is the Object constructor and perfectly truthy, so a key of "constructor"
+       passes any truthiness gate, persists to the server, and then throws on `const [x,y] = plot` inside
+       the render loop. actions.js guards its own dispatch with Object.hasOwn for exactly this reason. */
+    ok('a prototype key is not a building', !LAY.isBuilding('constructor')
+       && !LAY.hasPlot('constructor') && !LAY.movable('constructor'),
+       'BUILDINGS.constructor is truthy: ' + !!D2.BUILDINGS['constructor']);
+    ok('and cannot be placed', LAY.setPlot(hold(), 'constructor', 3, 3) === false);
+    ok('nor can something that is not a building at all',
+       LAY.setPlot(hold(), 'not_a_building', 3, 3) === false
+       && LAY.setPlot(hold(), '__proto__', 3, 3) === false);
+
+    /* ── bounds ── */
+    ok('the wall keeps the perimeter', !LAY.inBounds(0, 4) && !LAY.inBounds(4, 0)
+       && !LAY.inBounds(8, 4) && LAY.inBounds(1, 1) && LAY.inBounds(7, 1));
+    /* Three tiles of forty-nine, excluded because the gatehouse is painted AFTER the depth sort at its
+       own depth of 12, so anything deeper is drawn over by it. The shipped defaults already obey this,
+       which is why nobody has seen the artifact — and asserting it over them keeps the comment honest. */
+    ok('and the three tiles the gatehouse would paint over are not offered',
+       !LAY.inBounds(6, 7) && !LAY.inBounds(7, 6) && !LAY.inBounds(7, 7) && LAY.inBounds(5, 7),
+       'depth ' + LAY.GATE_DEPTH + ' is the gate\'s own');
+    ok('non-integers are refused, so a fractional tile cannot be stored',
+       !LAY.inBounds(3.5, 3) && !LAY.inBounds(3, NaN) && !LAY.inBounds('3', 3));
+
+    /* ── the Town Hall stays put ──
+       The road is a hardcoded L from the gate to [4,4], so a hall that moved would leave its own road
+       behind pointing at nothing. */
+    ok('the Town Hall cannot be moved, because the road runs to it',
+       LAY.FIXED.includes('townhall') && !LAY.movable('townhall')
+       && LAY.setPlot(hold(), 'townhall', 2, 2) === false);
+    ok('but everything else with a plot can be', 
+       Object.keys(D2.DEFAULT_PLOTS).filter(k => LAY.movable(k)).length >= 20,
+       Object.keys(D2.DEFAULT_PLOTS).filter(k => LAY.movable(k)).length + ' movable');
+    /* Level 0 included, deliberately and on the author's instruction: an unbuilt building is drawn as a
+       dashed plot, and being able to place it before raising it is how a player plans a quarter. */
+    ok('and an unbuilt one can be placed too, so a hold can be planned before it is built',
+       (() => { const h = hold(); h.b.forge = 0; return LAY.movable('forge')
+                 && LAY.setPlot(h, 'forge', 5, 1) && LAY.plotOf(h, 'forge')[0] === 5; })());
+
+    /* ── moving ── */
+    {
+      const h = hold();
+      const before = LAY.plotOf(h, 'granary').join(',');
+      ok('a building moves to an empty legal tile', LAY.setPlot(h, 'granary', 3, 3)
+         && LAY.plotOf(h, 'granary').join(',') === '3,3', before + ' → 3,3');
+      ok('and the tile it left is empty', LAY.buildingAt(h, 7, 4) === null);
+      ok('and no two end up on one tile',
+         new Set([...LAY.occupancy(h).keys()]).size === LAY.occupancy(h).size);
+      /* Sparse: back on its own default tile is an ABSENCE, not an override that happens to match.
+         Otherwise a hold accumulates a complete map and stops tracking future changes to the table. */
+      ok('putting it back on its default clears the override, not records it',
+         LAY.setPlot(h, 'granary', 7, 4) && !Object.hasOwn(h.plots, 'granary'),
+         JSON.stringify(h.plots));
+      ok('an occupied tile is refused rather than overwritten',
+         LAY.setPlot(h, 'granary', ...LAY.plotOf(h, 'kitchen')) === false);
+    }
+
+    /* ── swapping ──
+       A transposition, and transpositions compose into permutations — so "no two on one tile" holds by
+       algebra rather than by a validator and a refusal path. */
+    {
+      const h = hold();
+      const a = LAY.plotOf(h, 'forge').join(','), b = LAY.plotOf(h, 'library').join(',');
+      ok('two buildings swap', LAY.swapPlots(h, 'forge', 'library')
+         && LAY.plotOf(h, 'forge').join(',') === b && LAY.plotOf(h, 'library').join(',') === a,
+         a + ' ⇄ ' + b);
+      ok('and swapping back is the identity', LAY.swapPlots(h, 'forge', 'library')
+         && LAY.plotOf(h, 'forge').join(',') === a && Object.keys(h.plots).length === 0,
+         'no overrides left: ' + JSON.stringify(h.plots));
+      ok('a swap with the fixed hall is refused', LAY.swapPlots(hold(), 'forge', 'townhall') === false);
+      ok('and a swap with itself is not a move', LAY.swapPlots(hold(), 'forge', 'forge') === false);
+      /* Many random swaps must never break the invariant, because that is the claim algebra makes. */
+      const h2 = hold();
+      const keys = Object.keys(D2.DEFAULT_PLOTS).filter(k => LAY.movable(k));
+      let rng = 12345;
+      const rand = () => (rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+      for(let i = 0; i < 500; i++)
+        LAY.swapPlots(h2, keys[Math.floor(rand() * keys.length)], keys[Math.floor(rand() * keys.length)]);
+      const occ = LAY.occupancy(h2);
+      const off = [...occ.entries()].filter(([at]) => {
+        const [x, y] = at.split(',').map(Number); return !LAY.inBounds(x, y);
+      });
+      ok('500 random swaps leave every building on its own legal tile',
+         occ.size === keys.length + 1 && off.length === 0,
+         occ.size + ' tiles occupied by ' + (keys.length + 1) + ' buildings, ' + off.length + ' off-limits');
+    }
+
+    /* ── one tap, one meaning ── */
+    {
+      const h = hold();
+      const kitchen = LAY.plotOf(h, 'kitchen').slice();
+      ok('placing onto an occupied tile swaps, because that is what the player meant',
+         LAY.placeAt(h, 'granary', kitchen[0], kitchen[1])
+         && LAY.plotOf(h, 'granary').join(',') === kitchen.join(','),
+         'granary took the kitchen\'s tile and the kitchen took the granary\'s');
+      ok('and placing onto empty ground moves',
+         LAY.placeAt(h, 'granary', 4, 6) && LAY.plotOf(h, 'granary').join(',') === '4,6');
+    }
+
+    /* ── the legal tiles a panel lights up ── */
+    {
+      const h = hold();
+      const lit = LAY.legalTiles(h, 'granary');
+      ok('the lit tiles are exactly the empty legal ones, plus where it already stands',
+         lit.every(([x, y]) => LAY.inBounds(x, y))
+         && lit.every(([x, y]) => { const w = LAY.buildingAt(h, x, y); return !w || w === 'granary'; })
+         && lit.some(([x, y]) => x === 7 && y === 4),
+         lit.length + ' of 46 legal tiles are free');
+      ok('and the fixed hall is offered none', LAY.legalTiles(h, 'townhall').length === 0);
+      /* 46 legal tiles, 22 movable buildings: a free tile always exists, which is what makes repair
+         terminate. */
+      ok('there are always more tiles than buildings',
+         lit.length > 0 && 46 - Object.keys(D2.DEFAULT_PLOTS).filter(k => LAY.hasPlot(k)).length > 0);
+    }
+
+    /* ── repair: the only thing that fixes a broken arrangement, and it runs on the server too ── */
+    {
+      ok('a sound hold is left completely alone', LAY.repair(hold()) === 0,
+         'zero fixes — anything else would rearrange somebody\'s hold on update day');
+      const junk = hold();
+      junk.plots = { granary:[3,3], townhall:[1,1], constructor:[2,2], forge:'nope',
+                     library:[99,99], stable:[3.5,2], nosuch:[2,2], kitchen:[6,7] };
+      const fixed = LAY.repair(junk);
+      ok('and every kind of rubbish is thrown out', fixed >= 7
+         && !Object.hasOwn(junk.plots, 'townhall') && !Object.hasOwn(junk.plots, 'constructor')
+         && !Object.hasOwn(junk.plots, 'forge') && !Object.hasOwn(junk.plots, 'library')
+         && !Object.hasOwn(junk.plots, 'stable') && !Object.hasOwn(junk.plots, 'nosuch')
+         && !Object.hasOwn(junk.plots, 'kitchen'),
+         fixed + ' entries fixed, kept: ' + JSON.stringify(junk.plots));
+      ok('while the one good override survives', junk.plots.granary
+         && junk.plots.granary.join(',') === '3,3');
+      /* A collision is the one that matters: two buildings on one tile means one of them is invisible. */
+      const clash = hold();
+      clash.plots = { granary:[1,3], forge:[1,3] };      // forge's own default is [1,3]
+      ok('a collision is resolved, not left', LAY.repair(clash) > 0
+         && LAY.occupancy(clash).size === Object.keys(D2.DEFAULT_PLOTS).filter(k => LAY.hasPlot(k)).length,
+         'every building on its own tile again');
+      ok('and repair never leaves anything off-limits',
+         [...LAY.occupancy(clash).keys()].every(at => {
+           const [x, y] = at.split(',').map(Number);
+           return LAY.inBounds(x, y) || (x === 4 && y === 4);
+         }));
+      ok('a plots field that is not even an object is replaced',
+         (() => { const h = hold(); h.plots = 'wat'; LAY.repair(h);
+                  return h.plots && typeof h.plots === 'object' && !Array.isArray(h.plots); })());
+    }
+
+    /* ── migration ── */
+    {
+      const old = freshState(1770000000000, 3);
+      delete old.plots;
+      ST.migrate(old, 1770000000000);
+      ok('a save from before arranging gains an empty arrangement',
+         old.plots && typeof old.plots === 'object' && Object.keys(old.plots).length === 0);
+      ok('and every building still stands where it always did',
+         Object.keys(D2.DEFAULT_PLOTS).filter(k => LAY.hasPlot(k))
+           .every(k => LAY.plotOf(old, k).join(',') === D2.DEFAULT_PLOTS[k].join(',')),
+         'nobody\'s hold is rearranged for them');
+      /* migrate is called with no clock in places, so repair must not read one. */
+      const noClock = freshState(1770000000000, 3);
+      noClock.plots = { granary:[3,3] };
+      ok('and migrating without a clock does not throw',
+         (() => { try { ST.migrate(noClock); return true; } catch { return false; } })());
+    }
+
+    /* ── and it is COSMETIC ──
+       The claim the whole design rests on. Rearranging a hold must not move a single number. */
+    {
+      const flat = hold(), moved = hold();
+      const keys = Object.keys(D2.DEFAULT_PLOTS).filter(k => LAY.movable(k));
+      let rng = 999;
+      const rand = () => (rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+      for(let i = 0; i < 200; i++)
+        LAY.swapPlots(moved, keys[Math.floor(rand() * keys.length)], keys[Math.floor(rand() * keys.length)]);
+      ok('the arrangement changed', Object.keys(moved.plots).length > 5,
+         Object.keys(moved.plots).length + ' buildings moved');
+      const numbers = h => {
+        const t = 1770000000000;
+        return JSON.stringify({
+          prod: Object.fromEntries(Object.keys(D2.RES_META).map(r => [r, L.prodPerSec(h, r)])),
+          upkeep: L.upkeepPerSec(h), army: L.armyPower(h), wave: L.wavePower(h.wave),
+          def: L.defenceOf ? 0 : 0, cap: L.storageCap(h), build: L.buildTime(h, 'granary'),
+        });
+      };
+      ok('and not one number in the hold moved with it', numbers(flat) === numbers(moved),
+         'production, upkeep, army power, storage and build time all identical');
+    }
+  }
+
   /* ── appointments: the things that happen at a TIME ──
      The Hunt has opened every four hours since long before this game had a calendar, and until v4.8 the
      only place it was ever mentioned was inside the War tab, online, during the window. A scheduled

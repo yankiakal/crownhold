@@ -135,6 +135,45 @@ setTimeout(() => {
         + (hd ? Math.round(hd.getBoundingClientRect().height) : 0) + ' header + '
         + (th ? Math.round(th.getBoundingClientRect().height) : 0) + ' threat');
       if(t === 'hold'){
+        /* Arrange mode's pill is the only tappable furniture on the hold besides the buildings, and it
+           rides the .stat-note the phone CSS lifts out of the hidden panel — so its buttons have to clear
+           44px in the place they actually land, not in the desktop panel where they are easy. */
+        /* The hold's hint has to be VISIBLE. It lived inside a display:none panel for months while the
+           CSS that was meant to float it above the tab bar quietly did nothing, so "Tap a building to
+           inspect or raise it" was never shown to anyone on a phone. A box of 0x0 is the symptom. */
+        {
+          const note = d.querySelector('.holdbar .stat-note');
+          const nr = note && note.getBoundingClientRect();
+          rows.push('  the hold\'s hint ' + (nr ? Math.round(nr.width) + '×' + Math.round(nr.height)
+              + 'px at ' + Math.round(nr.top) : 'MISSING')
+            + (nr && nr.width > 40 && nr.height > 10 ? ' ✓ on screen' : ' ✗ HOLD HINT INVISIBLE'));
+        }
+        const arrBtn = d.querySelector('[data-act="arrange"]');
+        if(!arrBtn){ rows.push('  ✗ NO ARRANGE BUTTON on the hold'); }
+        else {
+          const ar = arrBtn.getBoundingClientRect();
+          rows.push('  arrange button ' + Math.round(ar.width) + '×' + Math.round(ar.height)
+            + (ar.width >= 44 && ar.height >= 44 ? ' ✓ thumb-sized' : ' ✗ ARRANGE BUTTON TOO SMALL'));
+          arrBtn.click();
+          const bar = d.querySelector('.stat-note.arrangebar');
+          if(!bar){ rows.push('  ✗ NO ARRANGE PILL'); }
+          else {
+            const br = bar.getBoundingClientRect();
+            const btns = [...bar.querySelectorAll('button')];
+            const small = btns.filter(b => { const q = b.getBoundingClientRect();
+                                             return q.width < 44 || q.height < 44; });
+            rows.push('  the arrange pill ' + Math.round(br.width) + '×' + Math.round(br.height)
+              + 'px at ' + Math.round(br.top) + ', ' + btns.length + ' buttons'
+              + (small.length ? ' ✗ ' + small.length + ' UNDER THUMB SIZE' : ' ✓ all thumb-sized')
+              + (br.width <= w.innerWidth ? ' ✓ fits' : ' ✗ ARRANGE PILL TOO WIDE'));
+            const tb = d.querySelector('.tabbar');
+            const tbTop = tb ? tb.getBoundingClientRect().top : w.innerHeight;
+            rows.push('  pill vs tab bar ' + Math.round(br.bottom) + ' vs ' + Math.round(tbTop)
+              + (br.bottom <= tbTop + 2 ? ' ✓ above it' : ' ✗ ARRANGE PILL OVER THE TABS'));
+          }
+          const done = d.querySelector('[data-act="arrangeDone"]');
+          if(done) done.click();
+        }
         /* How big the walls actually are. They were 255px tall at 393px wide — a third of the
            screen, an illustration rather than the subject the tab is named after. */
         const cv = d.getElementById('holdscene'),
@@ -171,8 +210,13 @@ setTimeout(() => {
           const thin = cells.filter(c => c.getBoundingClientRect().width < 28);
           rows.push('  day cells ' + Math.round(cells[0].getBoundingClientRect().width) + 'px'
             + (thin.length ? ' ✗ ' + thin.length + ' NARROWER THAN AN ICON' : ' ✓ an icon fits'));
-          const lit = cal.querySelectorAll('.cev.live').length;
-          rows.push('  running now: ' + lit + ' lit' + (lit === 4 ? ' ✓' : ' ✗ NOT FOUR LIVE'));
+          /* Per ROW, not in total: a 24h or 48h window straddles midnight and is correctly drawn in both
+             day cells it touches, so the total is not the number of live windows. Asserting four broke
+             the moment a fifth lane made one straddle. */
+          const bodyRows = [...cal.querySelectorAll('tbody tr')];
+          const per = bodyRows.map(tr => tr.querySelectorAll('.cev.live').length);
+          rows.push('  running now: ' + per.join(',') + ' lit per lane'
+            + (per.length >= 4 && per.every(n => n >= 1 && n <= 3) ? ' ✓' : ' ✗ A LANE IS NOT RUNNING'));
         }
         const cards = [...d.querySelectorAll('.evcard')];
         const levy = d.querySelector('.evcard.levy');

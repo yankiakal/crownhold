@@ -1202,3 +1202,42 @@ export const REST_PER_MS_AWAY = 0.5;             // an hour away banks half an h
 export const REST_CAP_MS = 48*3600*1000;         // and it stops banking after two days
 export const REST_PROD_BONUS = 0.5;              // +50% production while Rested
 export const REST_QUOTA_BONUS = 1.0;             // and double the daily Valor quota
+
+/* ── the hold's ground ──
+   Moved here from iso.js in v5.0, when the player was given the ability to rearrange it. The renderer
+   used to own this table because nothing else needed it; now the layout rules, the migration and the
+   server all read it, and a table that lives inside the drawing code is a table the server imports a
+   canvas to reach. GRID includes the perimeter: the wall owns row and column 0 and GRID-1, so the
+   buildable interior is 1..GRID-2. */
+export const GRID = 9;
+
+// where each building stands by default. Town Hall holds the centre; the wall rings the edge.
+export const DEFAULT_PLOTS = {
+  townhall:   [4, 4],
+  barracks:   [2, 3],
+  academy:    [2, 5],
+  wall:       null,                 // drawn as the perimeter
+  watchtower: [6, 2],
+  farm:       [6, 5],
+  granary:    [7, 4],
+  lumberyard: [3, 1],
+  quarry:     [1, 4],
+  ironmine:   [1, 6],
+  tavern:     [4, 2],
+  hospital:   [5, 6],
+  warehouse:  [3, 6],
+  library:    [6, 1],
+  range:      [2, 1],
+  stable:     [7, 3],
+  siegeyard:  [5, 7],
+  embassy:    [3, 4],
+  command:    [5, 3],
+  forge:      [1, 3],
+  runeworks:  [7, 1],
+  // v1.28's two buildings had no plot and no look, so drawBuilding() returned
+  // early and they were INVISIBLE in the hold — buildable, productive, and not
+  // there. Exactly the failure this project keeps hitting: no error, no log line,
+  // just an absence. verify-ui.mjs now fails if any building lacks a plot.
+  kitchen:    [7, 5],               // beside the farm and granary — the food quarter
+  crucible:   [1, 2],               // beside the forge, in the ore quarter
+};

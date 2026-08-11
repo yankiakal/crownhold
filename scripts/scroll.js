@@ -12,17 +12,43 @@
 // chain of awaits, and under virtual time that combination never reliably reached the dump. So the
 // page POSTs its report to this server instead and the script waits for the POST, on real time,
 // with a hard ceiling. Nothing here can stall a `npm run check`.
-import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, cpSync, copyFileSync, rmSync, mkdirSync, readFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, cpSync, copyFileSync, rmSync, mkdirSync, readFileSync,
+         writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, normalize } from 'node:path';
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT = 8923;
-const DEADLINE_MS = 60000;
+/* Raised from 60s as the probe grew: it now drives the codex, the gather sheet, six frontier-camera
+   measurements, the scene badges, the feed, a 21-tap sweep up the keep, the Events tab and a full
+   arrange-and-swap, each with real waits for the 250ms render loop. A ceiling that the suite outgrows
+   reports "nothing measured" — which is honest, and useless. */
+const DEADLINE_MS = 180000;
 if(!existsSync(CHROME)){ console.log('Chrome not found — skipping.'); process.exit(0); }
 if(!existsSync('dist/index.html')){ console.log('run `npm run build` first'); process.exit(1); }
+
+/* ── check the probe's own syntax before spending three minutes on Chrome ──
+   A syntax error inside tools/scroll.html's module means the module never executes: no listeners, no
+   watchdog, no report — three minutes of silence and then "nothing measured", which says the probe broke
+   and nothing about where. Twice in one sitting, for a duplicate `const`. Extract the inline module and
+   let node parse it; a parse error here names the line. */
+{
+  const html = readFileSync('tools/scroll.html', 'utf8');
+  const a = html.indexOf('<script type="module">'), b = html.lastIndexOf('</script>');
+  if(a < 0 || b < 0){ console.log('  ✗ tools/scroll.html has no module to run'); process.exit(1); }
+  const body = html.slice(a + '<script type="module">'.length, b);
+  const tmp = join(tmpdir(), 'crownhold-probe-' + process.pid + '.mjs');
+  writeFileSync(tmp, body);
+  const chk = spawnSync(process.execPath, ['--check', tmp], { encoding: 'utf8' });
+  rmSync(tmp, { force: true });
+  if(chk.status !== 0){
+    console.log('  ✗ the probe itself does not parse — it would have run nothing and said nothing:\n');
+    console.log((chk.stderr || '').split('\n').slice(0, 6).map(l => '    ' + l).join('\n'));
+    process.exit(1);
+  }
+}
 
 const dir = mkdtempSync(join(tmpdir(), 'crownhold-scroll-'));
 cpSync('dist', dir, { recursive: true });
@@ -107,6 +133,14 @@ const tapFaults = ['NO HOLD CANVAS', 'KEEP UNTAPPABLE', 'TAP HITS THE NEIGHBOUR'
                    'NO POPUP FROM ANY TAP', 'POPUP STILL UP', 'KEEP LOST PARTWAY UP',
                    'MEASURED MID-RENDER'].filter(t => report.includes(t));
 
+/* Rearranging the hold. Distinct tokens, none a substring of another — scroll.js matches across the whole
+   report, so an overlapping token reports the wrong subsystem's fault. */
+const arrangeFaults = ['NO ARRANGE BUTTON', 'NO ARRANGE PILL', 'NOTHING LIFTED BY ANY TAP',
+                       'LIFTED THE TOWN HALL', 'NOT ENOUGH LIFTED TO SWAP', 'STILL IN HAND',
+                       'DID NOT SWAP', 'STRAIGHTEN DID NOT RESTORE', 'STILL ARRANGING',
+                       'SCENE DID NOT REDRAW', 'COULD NOT SAMPLE THE CANVAS']
+  .filter(t => report.includes(t));
+
 const eventFaults = ['NOT FIVE', 'NO GRID', 'px OVER', 'PAGE SLIDES', 'TOO NARROW', 'EMPTY DAYS',
                      'UNDER THUMB SIZE', 'LABEL CLIPPED', 'NO EXPLANATION',
                      'the levy card MISSING'].filter(t => report.includes(t));
@@ -150,12 +184,20 @@ if(tapFaults.length){
   console.log('  ✗ tapping a building in the hold: ' + tapFaults.join(', '));
   process.exit(1);
 }
+if(arrangeFaults.length){
+  console.log('  ✗ rearranging the hold: ' + arrangeFaults.join(', '));
+  process.exit(1);
+}
 if(eventFaults.length){
   console.log('  ✗ the Events tab: ' + eventFaults.join(', '));
   process.exit(1);
 }
 if(!report.includes('answers "Town Hall" from its base up')){
   console.log('  ✗ the hold\'s tap was never measured — not a pass');
+  process.exit(1);
+}
+if(!report.includes('SWAPPED')){
+  console.log('  ✗ rearranging the hold was never measured — not a pass');
   process.exit(1);
 }
 if(!report.includes('FIVE LANES')){

@@ -7,6 +7,7 @@ import {
   expedition, setCaravan, setStance, setDefStance, setCaptain, seatHero, useOrder, raiseShield,
   chooseOption, rerollChoice, promote, saveFormation, deleteFormation, setArenaTeam,
   startGear, finishGearNow, setPetOut, setSkill, equipCos, announceDecree, finishPromoteNow, closeLesson, collectTroops, cancelUpgrade, burnRelic, readMail } from './logic.js';
+import { placeAt, resetPlots } from './layout.js';
 import { startMarch, startHunt, startVoyage } from './world.js';
 import { TROOPS } from './defs.js';
 
@@ -30,6 +31,12 @@ export const GAME_ACTIONS = {
   // no key means every lane at once — the "Claim all" button at the top of the Events tab
   claimEvent:   (s,p,now)      => claimEvent(s, now, p.key || null),
   claimDaily:   (s,p,now)      => claimDaily(s, now),
+  /* The arrangement. A GAME_ACTION like any other, so it goes through the same dispatch, the same server
+     validation and the same save — the layout is per-hold state, not a browser preference, because "my
+     hold looks like this" should follow the player to another device. Purely cosmetic: nothing in the
+     rules reads a position, and these are the only two things that write one. */
+  place:        (s,p)          => placeAt(s, String(p.key||''), Number(p.x), Number(p.y)),
+  straighten:   (s)            => resetPlots(s),
   heal:         (s,p,now)      => startHealing(s, now),
   finishHeal:   (s,p,now)      => finishHealNow(s, now),
   collect:      (s,p,now)      => collectTroops(s, p.key, now) > 0,

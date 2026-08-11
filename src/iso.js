@@ -24,12 +24,15 @@
 // the static layer is drawn perhaps once every few minutes and can carry as much
 // detail as it likes. That is where the visual budget went.
 
-import { BUILDINGS } from './defs.js';
+import { BUILDINGS, GRID, DEFAULT_PLOTS} from './defs.js';
+import { plotOf, LO, HI, inBounds, legalTiles, movable } from './layout.js';
 import { buildCost, canAfford, freeSlot, QUEUE_KEYS } from './logic.js';
 import { spriteFor, loadArt, artLoaded } from './sprites.js';
 
 const TW = 64, TH = 32;            // tile width/height (2:1 isometric)
-const GRID = 9;
+/* The DEFAULT arrangement — the drawing the masons made. A player's own overrides live on their hold in
+   `s.plots` and are read through plotOf(); this table is what absence means. */
+const PLOTS = DEFAULT_PLOTS;
 
 /* One light, from the upper left, obeyed by every surface in the scene. Consistent
    lighting is most of what separates a drawn building from a coloured box — the
@@ -37,36 +40,7 @@ const GRID = 9;
 const LIT = { top:1.38, left:0.92, right:0.62 };
 const SHADOW_X = 0.62, SHADOW_Y = 0.30;   // ground-shadow offset per unit of height
 
-// where each building stands. Town Hall holds the centre; the wall rings the edge.
-const PLOTS = {
-  townhall:   [4, 4],
-  barracks:   [2, 3],
-  academy:    [2, 5],
-  wall:       null,                 // drawn as the perimeter
-  watchtower: [6, 2],
-  farm:       [6, 5],
-  granary:    [7, 4],
-  lumberyard: [3, 1],
-  quarry:     [1, 4],
-  ironmine:   [1, 6],
-  tavern:     [4, 2],
-  hospital:   [5, 6],
-  warehouse:  [3, 6],
-  library:    [6, 1],
-  range:      [2, 1],
-  stable:     [7, 3],
-  siegeyard:  [5, 7],
-  embassy:    [3, 4],
-  command:    [5, 3],
-  forge:      [1, 3],
-  runeworks:  [7, 1],
-  // v1.28's two buildings had no plot and no look, so drawBuilding() returned
-  // early and they were INVISIBLE in the hold — buildable, productive, and not
-  // there. Exactly the failure this project keeps hitting: no error, no log line,
-  // just an absence. verify-ui.mjs now fails if any building lacks a plot.
-  kitchen:    [7, 5],               // beside the farm and granary — the food quarter
-  crucible:   [1, 2],               // beside the forge, in the ore quarter
-};
+
 
 /* Per-building look. `mat` and `rmat` pick the wall and roof material, which is
    what makes a stable read as a stable and not as the same box in a new colour. */
@@ -416,7 +390,7 @@ const isRoad = (x, y) => (x===4 && y>4) || (y===4 && x>4);
    spreads as the hold is built rather than being there from the first minute. */
 function yardsOf(S){
   const set = new Set();
-  for(const [k, p] of Object.entries(PLOTS))
+  for(const [k, p] of Object.entries(PLOTS).map(([k]) => [k, plotOf(S, k)]))
     if(p && (S.b[k] || 0) > 0) set.add(p[0]+','+p[1]);
   return set;
 }
@@ -534,7 +508,7 @@ function groundShadow(ctx, sx, sy, w, d, h){
 /* ── a building ── */
 
 function drawBuilding(ctx, key, lvl, opts){
-  const plot = PLOTS[key], base = LOOK[key];
+  const plot = plotOf(store && store.s, key), base = LOOK[key];
   if(!base || (!plot && !opts.at)) return;
   const look = skinTint ? { ...base, roof: tinted(base.roof), body: tinted(base.body) } : base;
   const { sx, sy } = opts.at || iso(plot[0], plot[1]);
@@ -863,7 +837,7 @@ let ctxWallLvl = 0;      // set each frame, so the badge floats at the gatehouse
 export const wallAnchor = () => [...GATE_PLOT];
 
 function drawBadge(ctx, key, kind, t){
-  const plot = PLOTS[key] || (key === 'wall' ? GATE_PLOT : null);
+  const plot = plotOf(store && store.s, key) || (key === 'wall' ? GATE_PLOT : null);
   if(!plot) return;
   const { sx, sy } = iso(plot[0], plot[1]);
   const look = LOOK[key];
@@ -1005,9 +979,27 @@ export function setLabels(on){
   staticKey = null;                  // rebake now, not whenever something else changes
 }
 
+/* ── what the baked scene depends on, from the hold ──
+   Every building's LEVEL and its POSITION. Exported because it is the invalidation contract for the slow
+   drawing pass and nothing else can witness it: the pixels are only wrong until the next unrelated
+   rebake, so a screenshot taken a moment later looks fine.
+
+   It knew only the levels. Entering and leaving Arrange mode happens to invalidate the bake anyway, so a
+   player rearranging their own hold would never have seen it — but a layout arriving from the SERVER,
+   which is how a second device or another session reaches you, changes no level and no mode, and the
+   scene would have kept drawing everything where it used to stand. */
+export function buildingsKey(S){
+  let k = '';
+  for(const b of Object.keys(PLOTS)){
+    k += '|' + (S.b[b] || 0);
+    const p = plotOf(S, b);
+    if(p) k += '@' + p[0] + ',' + p[1];
+  }
+  return k;
+}
 function keyOf(S, threat){
-  let k = (artLoaded()?'a':'p') + '|' + (labelsOn?'L':'-') + '|' + (S.b.wall||0) + '|' + (threat?1:0) + '|' + (skinTint ? skinTint.h+','+skinTint.s+','+skinTint.l : '-');
-  for(const b of Object.keys(PLOTS)) k += '|' + (S.b[b] || 0);
+  let k = (artLoaded()?'a':'p') + '|' + arrangeKey + '|' + (labelsOn?'L':'-') + '|' + (S.b.wall||0) + '|' + (threat?1:0) + '|' + (skinTint ? skinTint.h+','+skinTint.s+','+skinTint.l : '-');
+  k += buildingsKey(S);
   for(const q of QUEUE_KEYS) k += '|' + (S[q] ? S[q].key : '');
   return k + '|' + cv.width + 'x' + cv.height;
 }
@@ -1026,6 +1018,30 @@ function renderStatic(S, threat){
 
   drawGround(c, S);
 
+  /* ── the lit tiles, while arranging ──
+     Painted on the ground and BEFORE the depth-sorted structures, so a building stands on its highlight
+     rather than under it. The lifted building's own socket is drawn as a dashed outline, which is the
+     same language an unbuilt building already speaks in this scene — one visual idea, two uses. */
+  if(arrangeOn){
+    for(const [x, y] of arrangeLit){
+      const g = iso(x, y);
+      const quad = [[g.sx, g.sy], [g.sx+TW/2, g.sy+TH/2], [g.sx, g.sy+TH], [g.sx-TW/2, g.sy+TH/2]];
+      c.fillStyle = 'rgba(217,164,65,.13)';
+      path(c, quad); c.fill();
+      c.strokeStyle = 'rgba(217,164,65,.34)'; c.lineWidth = 1;
+      path(c, quad); c.stroke();
+    }
+    if(arrangeLift){
+      const p = plotOf(S, arrangeLift);
+      if(p){
+        const g = iso(p[0], p[1]);
+        c.strokeStyle = 'rgba(217,164,65,.85)'; c.lineWidth = 2; c.setLineDash([4,3]);
+        path(c, [[g.sx, g.sy], [g.sx+TW/2, g.sy+TH/2], [g.sx, g.sy+TH], [g.sx-TW/2, g.sy+TH/2]]);
+        c.stroke(); c.setLineDash([]);
+      }
+    }
+  }
+
   const wallLvl = S.b.wall || 0;
   ctxWallLvl = wallLvl;                    // for the gatehouse badge's height
   const wallBody = tinted(threat ? '#6e5347' : '#5d5449');
@@ -1033,7 +1049,7 @@ function renderStatic(S, threat){
   /* Every shadow before any structure, so no shadow lands on a building behind
      it. This is the whole reason the scene is drawn in two passes. */
   for(const key of Object.keys(PLOTS)){
-    const plot = PLOTS[key], look = LOOK[key];
+    const plot = plotOf(S, key), look = LOOK[key];
     const lvl = S.b[key] || 0;
     if(!plot || !look || lvl <= 0) continue;
     const { sx, sy } = iso(plot[0], plot[1]);
@@ -1054,8 +1070,9 @@ function renderStatic(S, threat){
      everything, which read as a moat. */
   const items = treesOn(S);
   for(const key of Object.keys(PLOTS)){
-    if(!PLOTS[key]) continue;
-    const [x, y] = PLOTS[key];
+    const _p = plotOf(S, key);
+    if(!_p) continue;
+    const [x, y] = _p;
     const underway = QUEUE_KEYS.some(q => S[q] && S[q].key === key);
     const def = BUILDINGS[key];
     const locked = !!(def && def.th && (S.b.townhall || 0) < def.th);
@@ -1117,7 +1134,7 @@ const PLATE_FONT = '600 8px ui-monospace, monospace';
 function drawLabels(ctx, S){
   const plates = [];
   for(const key of Object.keys(PLOTS)){
-    const plot = PLOTS[key], look = LOOK[key], def = BUILDINGS[key];
+    const plot = plotOf(S, key), look = LOOK[key], def = BUILDINGS[key];
     if(!plot || !look || !def) continue;
     const lvl = S.b[key] || 0;
     const underway = QUEUE_KEYS.some(q => S[q] && S[q].key === key);
@@ -1217,7 +1234,7 @@ function frame(now){
 
   /* ── everything that moves ── */
   for(const key of Object.keys(PLOTS)){
-    const plot = PLOTS[key], look = LOOK[key];
+    const plot = plotOf(S, key), look = LOOK[key];
     const lvl = S.b[key] || 0;
     if(!plot || !look) continue;
     const underway = QUEUE_KEYS.some(q => S[q] && S[q].key === key);
@@ -1319,7 +1336,7 @@ function frame(now){
   // attention badges: affordable upgrades
   for(const key of Object.keys(PLOTS)){
     // the Wall is allowed through without a plot: drawBadge hangs it over the gatehouse
-    if(!PLOTS[key] && key !== 'wall') continue;
+    if(!plotOf(S, key) && key !== 'wall') continue;
     const d = BUILDINGS[key];
     const lvl = S.b[key] || 0;
     if(!d) continue;
@@ -1353,6 +1370,21 @@ export function tileAt(clientX, clientY){
   const f = tileAtF(clientX, clientY);
   return { x: Math.round(f.x), y: Math.round(f.y) };
 }
+
+/* ── Arrange mode's ground layer ──
+   Set from ui.js. Held here rather than passed through every draw call because the static bake's cache
+   key has to include it: the lit tiles are painted into the same pass as the ground, so entering the
+   mode has to invalidate the bake or the highlights appear only when something else happens to change.
+   Modelled exactly on setLabels, which learned this first. */
+let arrangeOn = false, arrangeLit = [], arrangeLift = null;
+export function setArranging(on, lit, lift){
+  const key = (on ? '1' : '0') + '|' + (lift || '') + '|' + (lit || []).map(t => t.join(',')).join(';');
+  if(key === arrangeKey) return;
+  arrangeKey = key;
+  arrangeOn = !!on; arrangeLit = lit || []; arrangeLift = lift || null;
+  staticKey = null;                    // rebake: the lit tiles live in the static pass
+}
+let arrangeKey = '';
 
 /* ── how tall a building is drawn ──
    Extracted from drawBuilding so picking and drawing cannot drift. They must agree exactly: the pick
@@ -1404,12 +1436,13 @@ export function bodyHeight(key, lvl){
    ignores each building's drawn WIDTH, so the hit area is a little narrower than the picture: missing
    falls through to the old ground-tile rule, which is the safe direction to be wrong in. */
 const SEAM = 1e-9;      // a window this thin is floating-point noise, not a tile
-export function pickBody(fx, fy, heights){
+export function pickBody(fx, fy, heights, s){
+  const at = k => plotOf(s, k);
   const keys = Object.keys(heights || {})
-    .filter(k => PLOTS[k] && heights[k] > 0)
-    .sort((a, b) => (PLOTS[b][0] + PLOTS[b][1]) - (PLOTS[a][0] + PLOTS[a][1]));
+    .filter(k => at(k) && heights[k] > 0)
+    .sort((a, b) => (at(b)[0] + at(b)[1]) - (at(a)[0] + at(a)[1]));
   for(const k of keys){
-    const bx = PLOTS[k][0], by = PLOTS[k][1], hh = heights[k] / TH;
+    const bx = at(k)[0], by = at(k)[1], hh = heights[k] / TH;
     const lo = Math.max(0, bx - fx - 0.5, by - fy - 0.5);
     const hi = Math.min(hh, bx - fx + 0.5, by - fy + 0.5);
     if(hi - lo > SEAM) return k;
@@ -1422,7 +1455,7 @@ export function bodyHeights(s){
   const out = {};
   if(!s || !s.b) return out;
   for(const k of Object.keys(PLOTS)){
-    if(!PLOTS[k]) continue;                  // the wall is the perimeter, not a plot
+    if(!plotOf(s, k)) continue;              // the wall is the perimeter, not a plot
     const h = bodyHeight(k, s.b[k] || 0);
     if(h > 0) out[k] = h;
   }
@@ -1440,7 +1473,7 @@ export function bodyHeights(s){
    before layout, and a badge at NaN,NaN is a badge in the top-left corner of the screen. */
 export function plotScreen(key){
   if(!cv) return null;
-  const plot = PLOTS[key] || (key === 'wall' ? wallAnchor() : null);
+  const plot = plotOf(store && store.s, key) || (key === 'wall' ? wallAnchor() : null);
   if(!plot) return null;
   const r = cv.getBoundingClientRect();
   if(!r.width) return null;
@@ -1463,9 +1496,9 @@ export function pickFrom(fx, fy, s){
   /* The BODY first — see pickBody. This is what makes a tap on the Town Hall's roof answer "Town Hall"
      rather than "Embassy". Only then the ground rule, which still answers for the dashed plot of an
      unbuilt building, for bare earth, and for the wall. */
-  const body = pickBody(fx, fy, bodyHeights(s));
+  const body = pickBody(fx, fy, bodyHeights(s), s);
   if(body) return body;
-  return pickTile(Math.round(fx), Math.round(fy));
+  return pickTile(Math.round(fx), Math.round(fy), s);
 }
 export function pickBuilding(clientX, clientY){
   if(!cv) return null;
@@ -1475,7 +1508,7 @@ export function pickBuilding(clientX, clientY){
 
 /* Where a building stands, as a tile. Exported because the pick tests have to know it to aim at a
    building's body, and reaching into the PLOTS table from a test would be a second copy of the map. */
-export const plotTile = key => (PLOTS[key] ? PLOTS[key].slice() : null);
+export const plotTile = (key, s) => { const p = plotOf(s || (store && store.s), key); return p ? p.slice() : null; };
 
 /* The tile→building rule on its own, so it can be tested without a canvas, and the fallback for
    everything that has no body to hit: an unbuilt building's dashed plot, bare earth, and the wall.
@@ -1493,8 +1526,9 @@ export const plotTile = key => (PLOTS[key] ? PLOTS[key].slice() : null);
    The one-tile slop DOWN-RIGHT is what made the old pick wrong: it is the right correction for a fat
    finger on flat ground and the wrong one for a tall building, whose body is drawn up-screen of its own
    tile. pickBody handles the bodies now and this handles the ground. */
-export function pickTile(x, y){
-  const at = (tx, ty) => Object.keys(PLOTS).find(k => PLOTS[k] && PLOTS[k][0] === tx && PLOTS[k][1] === ty);
+export function pickTile(x, y, s){
+  const at = (tx, ty) => Object.keys(PLOTS)
+    .find(k => { const p = plotOf(s, k); return p && p[0] === tx && p[1] === ty; });
   const hit = at(x, y) || at(x+1, y) || at(x, y+1) || at(x+1, y+1);
   if(hit) return hit;
   const onEdge = (x === 0 || y === 0 || x === GRID - 1 || y === GRID - 1)

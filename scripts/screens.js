@@ -57,6 +57,22 @@ if(chrome && Number(chrome[1]) > 45){
   console.error('    The header and threat bar are outside the tabs, so this is paid six times.');
   process.exit(1);
 }
+/* Arrange mode's furniture, measured where it actually lands: the phone lifts the hold's .stat-note out
+   of a display:none panel and fixes it above the tab bar, so its buttons are easy in the desktop panel and
+   the only ones that matter are the fixed ones. */
+const arrangeBad = ['NO ARRANGE BUTTON', 'ARRANGE BUTTON TOO SMALL', 'NO ARRANGE PILL',
+                    'UNDER THUMB SIZE', 'ARRANGE PILL TOO WIDE', 'ARRANGE PILL OVER THE TABS',
+                    'HOLD HINT INVISIBLE', 'A LANE IS NOT RUNNING']
+  .filter(t => body.includes(t));
+if(arrangeBad.length){
+  console.error('\n  ✗ arranging the hold: ' + arrangeBad.join(', '));
+  process.exit(1);
+}
+if(!body.includes('the arrange pill')){
+  console.error('\n  ✗ the arrange pill was never measured — not a pass');
+  process.exit(1);
+}
+
 /* Tap targets. The frontier was 26px per cell on a phone — you could not reliably hit a tile,
    and you certainly could not read what garrison it held, which is the entire point of scouting
    one. 44px is the floor every mobile guideline agrees on. */
