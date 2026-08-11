@@ -101,6 +101,12 @@ const feedFaults = ['NO TOAST', 'EATS TAPS', 'OVER THE TABS'].filter(t => report
 /* The Events tab: four concurrent lanes and a seven-column grid inside a 393px sheet. A table is the
    classic way to give a page a sideways scroll it was not supposed to be able to have, and an eighth
    tab is the classic way to push a thumb target under 44px. */
+/* The hold's tap. Distinct tokens: scroll.js matches substrings across the whole report, so a token that
+   is a substring of another mis-reports as the wrong subsystem's fault. */
+const tapFaults = ['NO HOLD CANVAS', 'KEEP UNTAPPABLE', 'TAP HITS THE NEIGHBOUR',
+                   'NO POPUP FROM ANY TAP', 'POPUP STILL UP', 'KEEP LOST PARTWAY UP',
+                   'MEASURED MID-RENDER'].filter(t => report.includes(t));
+
 const eventFaults = ['NOT FIVE', 'NO GRID', 'px OVER', 'PAGE SLIDES', 'TOO NARROW', 'EMPTY DAYS',
                      'UNDER THUMB SIZE', 'LABEL CLIPPED', 'NO EXPLANATION',
                      'the levy card MISSING'].filter(t => report.includes(t));
@@ -140,8 +146,16 @@ if(feedFaults.length){
   console.log('  ✗ the event feed: ' + feedFaults.join(', '));
   process.exit(1);
 }
+if(tapFaults.length){
+  console.log('  ✗ tapping a building in the hold: ' + tapFaults.join(', '));
+  process.exit(1);
+}
 if(eventFaults.length){
   console.log('  ✗ the Events tab: ' + eventFaults.join(', '));
+  process.exit(1);
+}
+if(!report.includes('answers "Town Hall" from its base up')){
+  console.log('  ✗ the hold\'s tap was never measured — not a pass');
   process.exit(1);
 }
 if(!report.includes('FIVE LANES')){

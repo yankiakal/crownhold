@@ -568,7 +568,7 @@ function drawBuilding(ctx, key, lvl, opts){
 
   // height and footprint grow with level, tapering so level 20 is not a skyscraper
   const grow = Math.pow(Math.max(lvl,1), 0.42);
-  const h = look.h * (0.62 + 0.62*grow/1.9);
+  const h = bodyHeight(key, lvl);
   const w = look.w * (0.60 + 0.14*grow/1.9);
   const nw = Math.max(1, Math.min(4, Math.round(1 + lvl/5)));   // windows per side
 
@@ -1336,14 +1336,97 @@ function frame(now){
    than by overlapping bounding boxes means no structure can ever swallow its
    neighbour's taps. A tap on a tall roof lands on the tile behind it, so we also
    check the three tiles nearer the viewer — which is where that roof came from. */
-export function tileAt(clientX, clientY){
+/* Fractional tile coordinates for a client point. `tileAt` rounds these to the nearest diamond;
+   picking a building's BODY needs them unrounded, because it has to push the point down by that
+   building's height BEFORE rounding — and rounding first throws away exactly the fraction that
+   decides which tile the answer lands in. */
+function tileAtF(clientX, clientY){
   const r = cv.getBoundingClientRect();
   const px = (clientX - r.left) / scale - originX;
   const py = (clientY - r.top) / scale - originY - TH/2;
   return {
-    x: Math.round((px/(TW/2) + py/(TH/2)) / 2),
-    y: Math.round((py/(TH/2) - px/(TW/2)) / 2),
+    x: (px/(TW/2) + py/(TH/2)) / 2,
+    y: (py/(TH/2) - px/(TW/2)) / 2,
   };
+}
+export function tileAt(clientX, clientY){
+  const f = tileAtF(clientX, clientY);
+  return { x: Math.round(f.x), y: Math.round(f.y) };
+}
+
+/* ── how tall a building is drawn ──
+   Extracted from drawBuilding so picking and drawing cannot drift. They must agree exactly: the pick
+   below decides which building a finger is on by asking which building's body could reach that point,
+   and a height that disagreed with the drawing by a few pixels would mis-answer along every roofline.
+   One funnel, for the same reason scoreDeed is one funnel. */
+export function bodyHeight(key, lvl){
+  const look = LOOK[key];
+  if(!look || !(lvl > 0)) return 0;          // an unbuilt building has no body, only a dashed plot
+  return look.h * (0.62 + 0.62 * Math.pow(Math.max(lvl,1), 0.42) / 1.9);
+}
+
+/* ── which building's BODY is under this point ──
+   The bug this exists to fix, measured before it was written: a tap anywhere up a building's drawn
+   body was resolved by looking up the GROUND tile under the finger and then fudging one tile
+   down-right. In a 2:1 projection a tall building is drawn ABOVE its own ground tile, so a tap on its
+   body lands on a tile behind it and the fudge then answers with the neighbour in front. Sampled over
+   every building's body at every level: 83% right at level 1, and 60% at level 20, because buildings
+   grow as they rise. The Town Hall — the most tapped thing in the game — was wrong across 71% of its
+   own body, and always answered "Embassy". The Watchtower answered "Library", then "wall".
+
+   The rule instead. Moving a point DOWN the screen by d pixels adds d/TH to BOTH fractional tile
+   coordinates — down-screen is down-grid on both axes in this projection. So the body of a building at
+   [bx,by] of height h is exactly the set of points that land on [bx,by] after being pushed down by
+   SOME amount between 0 and h/TH: the tile's column, extended upward by the building's height.
+
+   Written as an interval rather than a loop over sample heights, because a loop either misses thin
+   slices or costs a hundred rounds per tap. round(fx+t) === bx holds for t in [bx-fx-0.5, bx-fx+0.5);
+   the same for y; intersect both with [0, h/TH] and a non-empty result is a hit. Exact, and four
+   comparisons.
+
+   The intervals are HALF-OPEN, so the overlap test is strict. Written as `lo <= hi` first, and the two
+   intervals that merely touch were read as an overlap: the Town Hall's column then claimed the
+   Barracks' own base tile three tiles away, because t had to be about 2 for the x axis and about 1 for
+   the y axis and 1.5 sat on both boundaries at once. Caught by the test below, which is the only reason
+   this comment can be specific.
+
+   And the overlap has to be a REAL one, not one wide enough only for floating point. `lo < hi` alone
+   still answered "Kitchen" for a point on the Granary because two endpoints that are the same number
+   arrived 1e-16 apart — the point sat exactly on the seam between two tiles, and which building you had
+   tapped was being decided by rounding error. SEAM is far below a pixel at any zoom, so requiring a
+   window wider than that costs nothing and makes the answer stable. Found by cross-checking this
+   against a densely-sampled implementation of the same rule: 22 of 462 taps disagreed, all of them
+   exactly on a seam.
+
+   Nearest to the viewer first, because that is the one drawn on top.
+
+   Pure, so it is testable with no canvas — `heights` is a plain key→pixels map. It deliberately
+   ignores each building's drawn WIDTH, so the hit area is a little narrower than the picture: missing
+   falls through to the old ground-tile rule, which is the safe direction to be wrong in. */
+const SEAM = 1e-9;      // a window this thin is floating-point noise, not a tile
+export function pickBody(fx, fy, heights){
+  const keys = Object.keys(heights || {})
+    .filter(k => PLOTS[k] && heights[k] > 0)
+    .sort((a, b) => (PLOTS[b][0] + PLOTS[b][1]) - (PLOTS[a][0] + PLOTS[a][1]));
+  for(const k of keys){
+    const bx = PLOTS[k][0], by = PLOTS[k][1], hh = heights[k] / TH;
+    const lo = Math.max(0, bx - fx - 0.5, by - fy - 0.5);
+    const hi = Math.min(hh, bx - fx + 0.5, by - fy + 0.5);
+    if(hi - lo > SEAM) return k;
+  }
+  return null;
+}
+/* Every built building's drawn height, for pickBody. Levels come from the hold, so this is the one
+   part that needs state. */
+export function bodyHeights(s){
+  const out = {};
+  if(!s || !s.b) return out;
+  for(const k of Object.keys(PLOTS)){
+    if(!PLOTS[k]) continue;                  // the wall is the perimeter, not a plot
+    const h = bodyHeight(k, s.b[k] || 0);
+    if(h > 0) out[k] = h;
+  }
+  return out;
 }
 /* ── the inverse of tileAt, so something in the DOM can sit on a building ──
    Asked for: a shell like Whiteout Survival's, where a build timer floats over the thing being
@@ -1369,26 +1452,47 @@ export function plotScreen(key){
     scale,
   };
 }
+/* ── the whole decision, with no canvas in it ──
+   Split out from pickBuilding for one reason, learned the hard way an hour after the body pass was
+   written: the tests covered pickBody directly, so deleting the CALL to it from pickBuilding left every
+   assertion green. A perfect rule that nothing consults is this project's signature failure — the
+   invisible buildings, the dead deeds, the canvas with no backing store. Everything that decides which
+   building a point is on now lives here, where a stub DOM can reach it, and pickBuilding is left with
+   nothing but the coordinate conversion that genuinely needs a canvas. */
+export function pickFrom(fx, fy, s){
+  /* The BODY first — see pickBody. This is what makes a tap on the Town Hall's roof answer "Town Hall"
+     rather than "Embassy". Only then the ground rule, which still answers for the dashed plot of an
+     unbuilt building, for bare earth, and for the wall. */
+  const body = pickBody(fx, fy, bodyHeights(s));
+  if(body) return body;
+  return pickTile(Math.round(fx), Math.round(fy));
+}
 export function pickBuilding(clientX, clientY){
   if(!cv) return null;
-  const { x, y } = tileAt(clientX, clientY);
-  const at = (tx, ty) => Object.keys(PLOTS).find(k => PLOTS[k] && PLOTS[k][0] === tx && PLOTS[k][1] === ty);
-  const hit = at(x, y) || at(x+1, y) || at(x, y+1) || at(x+1, y+1);
-  if(hit) return hit;
-  /* THE WALL. Third and last thing `PLOTS.wall = null` quietly broke: this lookup walks PLOTS too,
-     so every tap on the perimeter resolved to nothing. Badge and name were fixed first, which made
-     it worse rather than better — the game now pointed at something and then ignored you when you
-     pressed it. Reported in exactly that order: "I can see that wall needs to be built but I can't
-     click it in scene mode."
-
-     Any perimeter tile answers, not just the gatehouse. The wall IS the perimeter, so a tap
-     anywhere along it is unambiguous — nothing else stands there — and asking the player to find
-     one specific tile of twenty-eight would be a worse bug than the one being fixed. */
-  return pickTile(x, y);
+  const f = tileAtF(clientX, clientY);
+  return pickFrom(f.x, f.y, store && store.s);
 }
 
-/* The tile→building rule on its own, so it can be tested without a canvas. pickBuilding is the
-   same thing with a coordinate conversion in front of it. */
+/* Where a building stands, as a tile. Exported because the pick tests have to know it to aim at a
+   building's body, and reaching into the PLOTS table from a test would be a second copy of the map. */
+export const plotTile = key => (PLOTS[key] ? PLOTS[key].slice() : null);
+
+/* The tile→building rule on its own, so it can be tested without a canvas, and the fallback for
+   everything that has no body to hit: an unbuilt building's dashed plot, bare earth, and the wall.
+
+   THE WALL. Third and last thing `PLOTS.wall = null` quietly broke: this lookup walks PLOTS too, so
+   every tap on the perimeter resolved to nothing. Badge and name were fixed first, which made it worse
+   rather than better — the game now pointed at something and then ignored you when you pressed it.
+   Reported in exactly that order: "I can see that wall needs to be built but I can't click it in scene
+   mode."
+
+   Any perimeter tile answers, not just the gatehouse. The wall IS the perimeter, so a tap anywhere
+   along it is unambiguous — nothing else stands there — and asking the player to find one specific tile
+   of twenty-eight would be a worse bug than the one being fixed.
+
+   The one-tile slop DOWN-RIGHT is what made the old pick wrong: it is the right correction for a fat
+   finger on flat ground and the wrong one for a tall building, whose body is drawn up-screen of its own
+   tile. pickBody handles the bodies now and this handles the ground. */
 export function pickTile(x, y){
   const at = (tx, ty) => Object.keys(PLOTS).find(k => PLOTS[k] && PLOTS[k][0] === tx && PLOTS[k][1] === ty);
   const hit = at(x, y) || at(x+1, y) || at(x, y+1) || at(x+1, y+1);

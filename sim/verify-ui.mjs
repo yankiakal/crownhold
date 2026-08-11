@@ -1057,6 +1057,135 @@ try {
          + ', inside ' + (ISO.pickTile(3,7) || 'nothing')
        : 'pickTile MISSING');
 
+  /* ── a tap lands on the building you can see ──
+     The game's most-used gesture, and it was wrong more the longer you played. A tap was resolved by
+     looking up the GROUND tile under the finger and then fudging one tile down-right for touch slop.
+     But in a 2:1 isometric projection a building is DRAWN ABOVE its own ground tile, by more the taller
+     it is — so a tap on a body landed on a tile behind the building and the fudge answered with the
+     neighbour in front of it.
+
+     Measured over every building's whole body at every level before the fix: 83% correct at level 1,
+     60% at level 20, because buildings grow as they rise. The Town Hall was wrong across 71% of its own
+     body and always answered "Embassy"; the Watchtower answered "Library". Nothing failed, nothing
+     logged — the game just opened the wrong panel, which is this project's whole failure mode.
+
+     Tested through the pure pickBody, so no canvas is needed: fractional tile coordinates in, key out. */
+  {
+    console.log('\n── a tap lands on the building you can see, not its neighbour ──');
+    const TH = 32;
+    /* Every building at level 20, not whatever this fixture happens to have raised. The rule is pure,
+       the worst case is a full hold at max height (measured: 60% correct before the fix), and a test
+       that only covers the twelve buildings one fixture built would have missed the Watchtower — the
+       second-worst offender of the lot. */
+    const heights = {};
+    for(const k of Object.keys(s.b)) if(ISO.plotTile(k)) heights[k] = ISO.bodyHeight(k, 20);
+    const built = ISO.bodyHeights(s);
+    ok('the whole roster has a drawn height, so the full hold can be tested',
+       Object.keys(heights).length >= 20, Object.keys(heights).length + ' buildings at level 20');
+    ok('and only BUILT ones are offered to the pick, so an empty plot is not solid',
+       Object.keys(built).length === Object.keys(s.b).filter(k =>
+         (s.b[k] || 0) > 0 && ISO.plotTile(k)).length,
+       Object.keys(built).length + ' with a body, of '
+       + Object.keys(s.b).filter(k => (s.b[k] || 0) > 0).length + ' built');
+    ok('and an unbuilt one has none, so its dashed plot still answers by ground',
+       ISO.bodyHeight('forge', 0) === 0 && ISO.bodyHeight('forge', 5) > 0);
+    /* Height must come from the same place the drawing gets it. If these drift, the pick mis-answers
+       along every roofline and only a screenshot would ever show it. */
+    ok('height grows with level and tapers',
+       ISO.bodyHeight('townhall', 20) > ISO.bodyHeight('townhall', 1)
+       && ISO.bodyHeight('townhall', 20) < ISO.bodyHeight('townhall', 1) * 3,
+       'L1 ' + Math.round(ISO.bodyHeight('townhall', 1)) + 'px → L20 '
+       + Math.round(ISO.bodyHeight('townhall', 20)) + 'px');
+
+    /* Walk up every building's body and ask who is there. The answer is NOT always that building, and
+       that is the point: a nearer, taller neighbour genuinely covers part of what is behind it — the
+       Tavern's roof really does stand in front of the Lumberyard's base. Asserting "always itself"
+       failed on thirteen buildings and every one of them was correct occlusion.
+
+       The invariant that actually distinguishes right from wrong is DIRECTIONAL. The old bug always
+       answered with a building drawn BEHIND the one tapped (the Town Hall answering "Embassy"), because
+       it fudged down-right in tile space, which is up-screen in depth. Occlusion only ever answers with
+       something NEARER. So: never farther, and never nothing. */
+    const depth = k => ISO.plotTile(k)[0] + ISO.plotTile(k)[1];
+    let self = 0, total = 0;
+    const farther = [], missed = [];
+    for(const key of Object.keys(heights)){
+      const plot = ISO.plotTile(key);
+      for(let i = 0; i <= 20; i++){
+        const d = (heights[key] * (i / 20)) / TH;
+        const got = ISO.pickBody(plot[0] - d, plot[1] - d, heights);
+        total++;
+        if(got === key) self++;
+        else if(!got) missed.push(key + '@' + (i * 5) + '%');
+        else if(depth(got) < depth(key)) farther.push(key + '@' + (i * 5) + '%→' + got);
+      }
+    }
+    ok('a tap up a building never answers with one drawn BEHIND it', farther.length === 0,
+       farther.length ? 'THE OLD BUG: ' + farther.slice(0, 6).join(' ')
+         : total + ' taps across a full hold at level 20, none answered backwards');
+    ok('and never answers with nothing at all', missed.length === 0,
+       missed.length ? missed.slice(0, 6).join(' ') : 'every tap on a body hit something');
+    ok('and mostly answers with the building itself, the rest being real occlusion',
+       self / total > 0.75, self + '/' + total + ' itself, ' + (total - self) + ' covered by a nearer one');
+
+    /* ── an independent implementation of the same rule ──
+       pickBody intersects intervals. This samples t densely instead — a different construction of "is
+       there a height at which this point lands on that tile" — and the two must agree everywhere. This
+       is what caught the seam bug: they disagreed on 22 of 462 taps, all of them points sitting exactly
+       on the boundary between two tiles, where an interval width of 1e-16 was deciding which building
+       you had tapped. */
+    {
+      const sampled = (fx, fy) => {
+        for(const k of Object.keys(heights).sort((a, b) => depth(b) - depth(a))){
+          const p = ISO.plotTile(k), hh = heights[k] / TH, n = 2000;
+          for(let i = 0; i <= n; i++){
+            const t = hh * i / n;
+            if(Math.round(fx + t) === p[0] && Math.round(fy + t) === p[1]) return k;
+          }
+        }
+        return null;
+      };
+      let dis = 0;
+      for(const key of Object.keys(heights)){
+        const plot = ISO.plotTile(key);
+        for(let i = 0; i <= 20; i++){
+          const d = (heights[key] * (i / 20)) / TH;
+          if(ISO.pickBody(plot[0] - d, plot[1] - d, heights) !== sampled(plot[0] - d, plot[1] - d)) dis++;
+        }
+      }
+      ok('the interval rule agrees with a densely-sampled one everywhere', dis === 0,
+         dis + ' disagreements of ' + total);
+    }
+
+    /* ── the wiring, not just the rule ──
+       The reason this block exists in this shape. The assertions above all called pickBody directly, so
+       deleting the call to it from the real pick left every one of them green — a perfect rule that
+       nothing consults, which is this project's signature failure. pickFrom is what pickBuilding calls
+       once it has turned a pointer into tile coordinates, and it is the thing under test from here on. */
+    {
+      const th = ISO.plotTile('townhall');
+      const hh = built.townhall / TH;
+      const roof = ISO.pickFrom(th[0] - hh * 0.7, th[1] - hh * 0.7, s);
+      ok('the real pick consults the body pass, not only the ground', roof === 'townhall',
+         'a tap 70% up the keep answers ' + (roof || 'nothing'));
+      ok('and still answers the wall from the perimeter, which has no body',
+         ISO.pickFrom(0, 0, s) === 'wall' && ISO.pickFrom(4, 8, s) === 'wall');
+      ok('and still answers an unbuilt building from its dashed plot',
+         (() => { const bare = Object.keys(s.b).find(k => !(s.b[k] > 0) && ISO.plotTile(k));
+                  if(!bare) return true;
+                  const p = ISO.plotTile(bare);
+                  return ISO.pickFrom(p[0], p[1], s) === bare; })(),
+         'by ground, since a level-0 building is drawn as a dashed outline only');
+      ok('and answers nothing off the grid entirely',
+         ISO.pickFrom(-3, -3, s) === null && ISO.pickFrom(20, 20, s) === null);
+    }
+
+    /* Bare earth is still bare earth: the body pass must not invent a hit. */
+    ok('empty ground answers nothing, so the ground rule can have its turn',
+       ISO.pickBody(4, 1, heights) === null,
+       'pickBody at an empty tile: ' + (ISO.pickBody(4, 1, heights) || 'nothing'));
+  }
+
   // two buildings must never share a tile, or one silently hides the other
   const seen = new Map(), clashes = [];
   for(const [k, p] of Object.entries(ISO.PLOTS)){

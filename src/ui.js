@@ -4304,7 +4304,12 @@ function wireCamera(dock, opts){
 
 const cam = { pts: new Map(), d0: 0, moved: false };
 sceneDock.addEventListener('pointerdown', e => {
-  sceneDock.setPointerCapture && sceneDock.setPointerCapture(e.pointerId);
+  /* try/catch, not a truthiness check — the same lesson wireCamera records twenty lines below, and the
+     hold's hand-written camera never got it: setPointerCapture THROWS on an id it does not know, and a
+     throw here kills the gesture before cam.pts has even heard of the finger. A real thumb never trips
+     it, which is why it sat here; a pointer released between dispatch and handler does, and so does
+     every scripted tap, which is why the hold's tap had no real-browser test until this line changed. */
+  try { sceneDock.setPointerCapture(e.pointerId); } catch {}
   cam.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if(cam.pts.size === 1) cam.moved = false;
   if(cam.pts.size === 2){

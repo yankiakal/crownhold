@@ -382,6 +382,63 @@ try {
     }
   }
 
+  /* ── a tap lands on the building you can SEE ──
+     The game's most-used gesture, and the one thing verify-ui cannot witness: pickBuilding needs a real
+     canvas with a real bounding rect to turn a pointer into tile coordinates, and the stub DOM has
+     neither. So the rule is tested there and the WIRE is tested here.
+
+     The bug: a tap was resolved from the ground tile under the finger plus one tile of slop down-right,
+     and a building is drawn ABOVE its own tile by more the taller it is — so a tap on a body answered
+     with the neighbour in front. Measured over every building at every level: 83% right at level 1, 60%
+     at level 20. The Town Hall was wrong across 71% of its own body and always answered "Embassy".
+
+     Aimed without needing the camera's internals. The Town Hall stands at [4,4], the centre of a 9x9
+     grid, so its base is the centre of the drawn map; the Embassy at [3,4] is off that centre line
+     entirely. Sweeping straight up the middle therefore must name the Town Hall and must never name the
+     Embassy — which is exactly what it did before, for most of the keep. */
+  {
+    click('[data-act="tab"][data-key="hold"]');
+    await wait(500);
+    const cv2 = d.getElementById('holdscene');
+    const dock = d.getElementById('scene-dock');
+    if(!cv2 || !dock){ say('hold tap'.padEnd(16) + ' NO HOLD CANVAS'); }
+    else {
+      const r = cv2.getBoundingClientRect();
+      const cx = r.left + r.width / 2, base = r.top + r.height / 2;
+      /* Through the dock, as a thumb does: the phone camera owns these taps and resolves them on
+         RELEASE, so a lone pointerdown opens nothing — the same lesson the frontier probe records. */
+      const tapAt = async (x, y) => {
+        for(const type of ['pointerdown', 'pointerup'])
+          dock.dispatchEvent(new w.PointerEvent(type, { bubbles:true, pointerId: 11, isPrimary:true,
+                                                        clientX: x, clientY: y }));
+        await wait(320);
+        const head = d.querySelector('.bpeek .bp-head span');
+        return head ? head.textContent.trim() : null;
+      };
+      /* Far enough up to leave the keep's roof. 64px was not: at this camera's scale that is only the
+         lower half of the body, which the OLD code got right — so the probe passed with the bug put
+         back, which is the worst possible outcome for a test. */
+      const seen = [];
+      for(let up = 0; up <= 200; up += 10) seen.push((await tapAt(cx, base - up)) || '—');
+      say('hold tap sweep'.padEnd(16) + seen.map(t => t.replace(/^\S+\s/, '')).join('/'));
+      /* The keep's CONTIGUOUS run from its own base. That is the number the bug moved: the old rule lost
+         the keep partway up its body and started answering with the Embassy behind it. Above the roof
+         either rule answers with whatever is further back, so only the run from the base is meaningful. */
+      let run = 0;
+      while(run < seen.length && /Town Hall/.test(seen[run])) run++;
+      say('keep run'.padEnd(16) + (run * 10) + 'px of the keep answers "Town Hall" from its base up'
+        + (run * 10 < 100 ? '  KEEP LOST PARTWAY UP' : ''));
+      const named = seen.filter(t => t !== '—');
+      const hall = named.filter(t => /Town Hall/.test(t)).length;
+      say('tap the keep'.padEnd(16) + hall + ' of ' + seen.length + ' taps up the keep named it'
+        + (hall === 0 ? '  KEEP UNTAPPABLE' : ''));
+      if(!named.length) say('hold tap'.padEnd(16) + ' NO POPUP FROM ANY TAP — the scene took no taps at all');
+      click('[data-act="peekClose"]');
+      await wait(250);
+      say('hold left clean'.padEnd(16) + (d.querySelector('.bpeek') ? ' POPUP STILL UP' : ' yes'));
+    }
+  }
+
   /* ── the Events tab, in a real browser ──
      Two things a stub DOM cannot judge, and both of them are how this rework would fail quietly.
 
@@ -433,36 +490,52 @@ try {
       await probe('events sheet', async () => true, () =>
         d.querySelector('.tabpane.sheet.on[data-pane="events"]'));
     }
-    const bar = d.querySelector('.tabbar');
-    if(bar){
-      const btns = [...bar.querySelectorAll('button')];
-      const small = btns.filter(b => { const r = b.getBoundingClientRect();
-                                       return r.width < 44 || r.height < 44; });
-      say('tab bar'.padEnd(16) + btns.length + ' tabs at '
-        + Math.round(btns[0].getBoundingClientRect().width) + '×'
-        + Math.round(btns[0].getBoundingClientRect().height)
+    /* ── the tab bar ──
+       Re-queried immediately before every measurement, never held across a wait. render() replaces this
+       whole subtree four times a second, so a node grabbed and then measured after any delay is a
+       DETACHED node and reports 0x0 — which reads as "a button too small to press" and is nothing of the
+       kind. The first version of this probe measured straight after querying and was right by luck; the
+       "hardening" that added a settle wait before measuring broke it, and reported every tab as 0px. */
+    const barNow = () => d.querySelector('.tabbar');
+    const measure = () => {
+      const b = barNow();
+      if(!b) return null;
+      const btns = [...b.querySelectorAll('button')];
+      return { bar: b, btns, rects: btns.map(x => x.getBoundingClientRect()) };
+    };
+    let m = measure();
+    if(m && m.rects.some(r => r.width === 0)){ await wait(300); m = measure(); }
+    if(!m){ say('tab bar'.padEnd(16) + ' NO TAB BAR'); }
+    else if(m.rects.some(r => r.width === 0)){
+      say('tab bar'.padEnd(16) + ' MEASURED MID-RENDER — harness fault, not a game one');
+    }
+    else {
+      const small = m.rects.filter(r => r.width < 44 || r.height < 44);
+      say('tab bar'.padEnd(16) + m.btns.length + ' tabs at '
+        + Math.round(m.rects[0].width) + '×' + Math.round(m.rects[0].height)
         + (small.length ? '  ' + small.length + ' UNDER THUMB SIZE' : '  ALL THUMB-SIZED'));
       /* A label that overflows its button is not a smaller tap target, it is an unreadable one — and
-         `overflow:hidden` means it truncates silently rather than showing anything is wrong. */
-      const clipped = btns.filter(b => b.scrollWidth > b.clientWidth + 1);
+         overflow:hidden means it truncates silently rather than showing anything is wrong. */
+      const clipped = m.btns.filter(b => b.scrollWidth > b.clientWidth + 1);
       say('tab labels'.padEnd(16) + (clipped.length
         ? clipped.map(b => b.textContent.trim()).join(',') + '  LABEL CLIPPED'
-        : 'all ' + btns.length + ' fit'));
+        : 'all ' + m.btns.length + ' fit'));
+
       /* ── and the same bar with EIGHT ──
          The Alliance tab only exists once you are online, so this probe runs a seven-tab bar and the
          widest case in the game goes unmeasured. Rather than reason about it, the grid is forced to
          eight columns and CSS does the arithmetic: 393/8 is 49px against a 44px thumb minimum and a
-         label that was already at the width where "ALLIANCE" had to become "ALLY". */
-      const was = bar.style.gridTemplateColumns;
-      bar.style.gridTemplateColumns = 'repeat(8, 1fr)';
-      await wait(60);
-      const w8 = btns[0].getBoundingClientRect().width;
-      const clip8 = btns.filter(b => b.scrollWidth > b.clientWidth + 1);
+         label that was already at the width where "ALLIANCE" had to become "ALLY". Measured on a
+         freshly-queried node for the reason above. */
+      const was = m.bar.style.gridTemplateColumns;
+      m.bar.style.gridTemplateColumns = 'repeat(8, 1fr)';
+      const w8 = m.btns[0].getBoundingClientRect().width;
+      const clip8 = m.btns.filter(b => b.scrollWidth > b.clientWidth + 1);
       say('tab bar at 8'.padEnd(16) + Math.round(w8) + 'px each'
-        + (w8 < 44 ? '  UNDER THUMB SIZE' : '  THUMB-SIZED')
+        + (w8 > 0 && w8 < 44 ? '  UNDER THUMB SIZE' : '  THUMB-SIZED')
         + (clip8.length ? ' · ' + clip8.map(b => b.textContent.trim()).join(',') + '  LABEL CLIPPED'
                         : ' · all labels fit'));
-      bar.style.gridTemplateColumns = was;
+      m.bar.style.gridTemplateColumns = was;
     }
     click('[data-act="tab"][data-key="hold"]');
     await wait(300);
