@@ -460,6 +460,62 @@ export function canDo(s, lane){
   return !!((s && s.can) || {})[lane.needs];
 }
 
+/* ── appointments: the things that happen at a TIME ──
+   Every lane above is "whenever you happen to play". The alliance boss is not — it comes out of the fog
+   for forty-five minutes every four hours, damage-ranked, with a payout shared by every hand that
+   struck it. It has worked since long before this file had lanes in it. Nobody could see it coming.
+
+   That was the whole defect: `renderBoss` lives inside the War tab, only renders when online, and
+   nothing anywhere else counted down to it or said a word when it opened. A forty-five minute window
+   you have to already be looking at is not an appointment, it is a coincidence.
+
+   The cadence lives HERE rather than on the server, and that is the point of moving it: derived from
+   the clock alone, so the game can tell you the Hunt opens in twelve minutes without asking anybody —
+   offline, signed out, or in no alliance. The server still owns the beast's HP and who hit it; it just
+   no longer owns the timetable on its own. It overrides these from the environment for testing, which
+   is why `appointmentAt` takes the period rather than reading the constant twice.
+
+   Not on the week grid, deliberately: six windows a day is thirty-six icons across a row, and "6×" in
+   a day cell is not information. What a player needs from an appointment is the NEXT one in their own
+   clock — "20:00 tonight" — so appointments get their own strip and the grid stays about lanes. */
+export const APPOINTMENTS = [
+  {
+    id:'hunt', name:'The Great Hunt', icon:'🐗',
+    every: 4 * 3600 * 1000, window: 45 * 60 * 1000, off: 0,
+    needs: 'alliance',
+    where: 'war',
+    blurb:'A beast comes out of the fog, and its strength is drawn from your whole alliance. '
+        + 'Every hand that strikes it shares the kill.',
+    note:'45 minutes, every 4 hours',
+  },
+];
+export const appointmentOf = id => APPOINTMENTS.find(a => a.id === id) || null;
+
+/* Where an appointment is right now. `every` and `window` are arguments so the server can pass its own
+   overridden values through the same function the client uses — one implementation of "is it open",
+   rather than the two that would otherwise drift. */
+export function appointmentAt(app, now, every = app.every, window = app.window){
+  const cycle = Math.floor((now - app.off) / every);
+  const start = cycle * every + app.off;
+  const end = start + window;
+  const open = now < end;
+  const nextStart = open ? start : start + every;
+  return { app, cycle, start, end, open,
+           opensIn: open ? 0 : nextStart - now,
+           closesIn: open ? end - now : 0,
+           nextStart, nextEnd: nextStart + window };
+}
+/* The next few, for a panel that wants to say "then 16:00, then 20:00". */
+export function nextAppointments(app, now, count = 3, every = app.every, window = app.window){
+  const at = appointmentAt(app, now, every, window);
+  const out = [];
+  for(let i = 0; i < count; i++){
+    const start = at.nextStart + i * every;
+    out.push({ start, end: start + window, live: i === 0 && at.open });
+  }
+  return out;
+}
+
 /* ── the calendar ──
    Rows are lanes, columns are days, and a cell holds every window of that lane touching that day.
    Local midnights, because a calendar that disagrees with the player's own date is worse than none.

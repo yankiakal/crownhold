@@ -3313,6 +3313,88 @@ console.log('\n── a decree shows what it costs, and lasts long enough to mat
     ok('and there is nothing left to claim twice', L.claimEvent(s, now) === false);
   }
 
+  /* ── appointments: the things that happen at a TIME ──
+     The Hunt has opened every four hours since long before this game had a calendar, and until v4.8 the
+     only place it was ever mentioned was inside the War tab, online, during the window. A scheduled
+     event nobody can see coming is not a scheduled event.
+
+     What is checked here is the timetable, because it is now derived from the clock in shared code and
+     two things depend on it agreeing with itself: a countdown that runs offline, and a server that
+     decides whether a strike is allowed. */
+  {
+    console.log('\n── an appointment can be planned around ──');
+    const app = EV.APPOINTMENTS[0];
+    ok('there is at least one appointment, and it names where it happens',
+       EV.APPOINTMENTS.length >= 1 && app.where && app.icon && app.note,
+       app.icon + ' ' + app.name + ' → ' + app.where);
+    ok('and it is gated on the thing it actually needs', app.needs === 'alliance');
+    /* A window has to be a small part of its period, or it is not an appointment but an opening hour. */
+    ok('the window is a fraction of the period', app.window > 0 && app.window < app.every / 2,
+       Math.round(app.window / 60000) + 'm every ' + Math.round(app.every / 3600000) + 'h');
+
+    const H = 3600000;
+    /* Mid-window, and well outside it. Fixed instants: an appointment tested at "now" passes or fails
+       depending on the hour the suite is run, which is the definition of a flaky check. */
+    const inside = Date.parse('2026-08-11T12:10:00Z');
+    const outside = Date.parse('2026-08-11T13:20:00Z');
+    const A = EV.appointmentAt(app, inside), B = EV.appointmentAt(app, outside);
+    ok('inside the window it reads open, with time left', A.open && A.closesIn > 0 && A.opensIn === 0,
+       L.ftime(A.closesIn) + ' left');
+    ok('outside it, it counts down to the next one', !B.open && B.opensIn > 0 && B.closesIn === 0,
+       L.ftime(B.opensIn));
+    ok('and the next one is a whole period after the last', B.nextStart === A.start + app.every,
+       new Date(B.nextStart).toISOString().slice(11, 16) + 'Z');
+    ok('the countdown never exceeds the period', B.opensIn <= app.every);
+    /* Sampled across a full period: exactly the window's worth of it should read open. Catches an
+       off-by-one at either edge, which is the bug that makes a button dead for the first minute. */
+    {
+      const step = 60000;
+      let openMin = 0;
+      for(let t = 0; t < app.every; t += step)
+        if(EV.appointmentAt(app, A.start + t).open) openMin++;
+      ok('exactly the window\'s length reads open across a whole period',
+         openMin === Math.round(app.window / step), openMin + ' of '
+         + Math.round(app.every / 60000) + ' minutes');
+    }
+    ok('the first instant of a window is open', EV.appointmentAt(app, A.start).open);
+    ok('and the instant it ends is not', !EV.appointmentAt(app, A.start + app.window).open);
+
+    /* The list a panel prints. Local clock times are what make it an appointment — "20:00" is something
+       a person plans around and "in 6h 40m" is not. */
+    const soon = EV.nextAppointments(app, outside, 4);
+    ok('the next few are a period apart, in order',
+       soon.length === 4 && soon.every((w, i) => i === 0 || w.start - soon[i-1].start === app.every),
+       soon.map(w => new Date(w.start).toISOString().slice(11, 16)).join(' '));
+    ok('and during a window the first of them IS that window',
+       EV.nextAppointments(app, inside, 2)[0].live === true
+       && EV.nextAppointments(app, inside, 2)[0].start === A.start);
+
+    /* ── the one that matters ──
+       The server used to own this timetable with its own arithmetic: `(now % BOSS_EVERY) < BOSS_WINDOW`.
+       The client now counts down to it. Two implementations of "has it opened" is how a countdown comes
+       to disagree with the button it is counting down to, so the server calls this same function with
+       its own period — and this checks the old arithmetic and the new agree at every minute of a period,
+       which is what makes replacing it safe. */
+    {
+      let disagree = 0;
+      for(let t = 0; t < app.every; t += 60000){
+        const now3 = app.off + t;
+        const wasOpen = ((now3 - app.off) % app.every) < app.window;
+        if(EV.appointmentAt(app, now3).open !== wasOpen) disagree++;
+      }
+      ok('the shared timetable agrees with the arithmetic it replaced', disagree === 0,
+         disagree + ' minutes differed');
+    }
+    /* And it honours an overridden period, which is the only way a server test can reach a window
+       without waiting four hours. */
+    {
+      const short = EV.appointmentAt(app, 61000, 120000, 30000);
+      ok('an overridden period is honoured, so a test need not wait four hours',
+         !short.open && short.opensIn === 59000,
+         '2m period, 30s window, at 1m01s: opens in ' + L.ftime(short.opensIn));
+    }
+  }
+
   /* ── how long is left, in words a person uses ──
      `ftime` is the funnel every countdown in the game goes through — build timers, march clocks, event
      windows — and nothing asserted a single one of its outputs. It stopped at minutes, which was

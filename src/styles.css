@@ -1248,6 +1248,28 @@ canvas{ touch-action:none; }
 .evpay{font-size:.57rem;white-space:nowrap}
 .evtick{position:absolute;top:-5px;right:-3px;font-size:.55rem;color:var(--gold)}
 
+/* the appointment strip — a time and a place, so it looks unlike the ladders around it */
+/* Quiet while it is hours away — it sits above five cards that may have rewards waiting, and "opens in
+   3h 6m" must not outshout one of those. The gold is spent on the open state below, where it belongs. */
+.appt{
+  border:1px solid var(--edge);border-left:2px solid var(--gold-deep);border-radius:4px;
+  background:var(--panel-2);padding:.45rem .5rem;margin:.4rem 0;font-family:var(--sans);
+}
+/* Open is the one state worth shouting about: forty-five minutes, and then it is gone for four hours. */
+.appt.on{border-color:var(--gold-deep);border-width:2px;background:rgba(217,164,65,.12);
+  box-shadow:0 0 0 1px rgba(217,164,65,.25)}
+.apptrow{display:flex;align-items:baseline;gap:.4rem;font-size:.82rem}
+.apptrow b{color:var(--ink)}
+.apptrow .spacer{flex:1}
+.apptwhen{font-size:.66rem;color:var(--ink-dim);font-variant-numeric:tabular-nums;white-space:nowrap}
+.appt.on .apptwhen{color:var(--gold);font-weight:600;letter-spacing:.04em}
+.apptnote{font-size:.63rem;line-height:1.35;color:var(--ink-dim);margin-top:.15rem}
+.apptnext{
+  margin-top:.3rem;font-size:.62rem;color:var(--ink-dim);
+  font-variant-numeric:tabular-nums;letter-spacing:.03em;
+}
+
+
 /* the Levy — the shared card, marked as a different kind of thing without being a different shape */
 .evcard.levy{border-left:2px solid var(--gold-deep);background:rgba(217,164,65,.045)}
 .levylock{font-size:.66rem;line-height:1.4;color:var(--ink-dim);margin-top:.2rem}

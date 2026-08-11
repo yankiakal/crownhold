@@ -25,7 +25,7 @@ import { tick, armyPower, armyBreakdown, tierPower, gainRes, masteryLvl, upkeepP
    be credited here rather than in the client, because helping happens on the server: the client that
    pressed the button never learns which builds it actually shortened. */
 import { scoreDeed, laneOf, windowNo, windowAt, ladderOf, capOf,
-         levyHolds } from '../src/events.js';
+         levyHolds, appointmentOf, appointmentAt } from '../src/events.js';
 import { SEASON_MS as DEFAULT_SEASON_MS, SEASON_EPOCH, SEASON_ARCS,
          seasonNo as defSeasonNo, seasonEndsIn as defSeasonEndsIn,
          canAlly, allyBlockedWhy } from '../src/defs.js';
@@ -149,6 +149,31 @@ function allyHelpCap(a, m){
   // Embassy lifts only theirs — which is what an embassy is for
   return HELP_CAP + 2 * allyTechLvl(a,'wideRoads') + 2 * ((m && m.state.b.embassy) || 0);
 }
+/* ── saying so when the fog lifts ──
+   The one thing the boss never did. It opened, ran three quarters of an hour and closed, and unless you
+   happened to be standing in the War tab you never knew. One line into every member's log the first time
+   any of them touches the server inside a window — which the client's event feed then toasts, so a
+   player already in the game is told without looking anywhere.
+
+   Keyed on the CYCLE, so it fires once per window however many members log in during it. Same shape as
+   the Levy Banner's record and for the same reason: nothing here runs on a schedule, so state that
+   would need clearing is stored as the thing it happened in and derived on read. */
+function huntCall(u, now){
+  const a = db.alliances[u.alliance];
+  if(!a) return;
+  const when = appointmentAt(HUNT, now, BOSS_EVERY, BOSS_WINDOW);
+  if(!when.open || a.huntTold === when.cycle) return;
+  a.huntTold = when.cycle;
+  const b = bossFor(u.alliance, now);
+  for(const n of a.members){
+    const m = db.users[n.toLowerCase()];
+    if(!m) continue;
+    pushLog(m.state, (b ? b.icon + ' ' + b.name : '🐗 The Great Hunt')
+      + ' is out of the fog — ' + Math.round(BOSS_WINDOW / 60000) + ' minutes to strike it.', 'gold');
+  }
+  markDirty();
+}
+
 /* ── the Levy ──
    The one event scored by a whole alliance. Every solo lane lives entirely on the member's own state;
    this one cannot, because the ladder is measured against the SUM of what everybody did. So the sum is
@@ -553,8 +578,13 @@ function realmView(now, realm, withRift){
    EVERY member who lands a blow shares the kill. It is cooperative by
    construction — you cannot buy a bigger hit, and one whale cannot solo it away
    from the group, because its health scales with the alliance that faces it. */
-const BOSS_EVERY = Number(process.env.BOSS_EVERY) || 4 * 3600 * 1000;
-const BOSS_WINDOW = Number(process.env.BOSS_WINDOW) || 45 * 60 * 1000;
+/* The timetable comes from src/events.js now, not from here. It was server-only, which meant the client
+   could not count down to the Hunt without asking — so it never did, and a forty-five minute window
+   nobody could see coming was a window nobody attended. The environment still overrides both, for tests
+   that cannot wait four hours. */
+const HUNT = appointmentOf('hunt');
+const BOSS_EVERY = Number(process.env.BOSS_EVERY) || HUNT.every;
+const BOSS_WINDOW = Number(process.env.BOSS_WINDOW) || HUNT.window;
 const BOSS_CD = Number(process.env.BOSS_CD) || 3 * 60 * 1000;
 const BOSS_NAMES = [
   { name:'The Hollow King', icon:'💀' },
@@ -568,8 +598,10 @@ function bossFor(tag, now){
   const a = db.alliances[tag];
   if(!a) return null;
   db.boss ||= {};
-  const cycle = Math.floor(now / BOSS_EVERY);
-  const open = (now % BOSS_EVERY) < BOSS_WINDOW;
+  /* Through the same function the client uses, with this server's own period — two copies of "has the
+     window opened" is how a countdown comes to disagree with the button it is counting down to. */
+  const when = appointmentAt(HUNT, now, BOSS_EVERY, BOSS_WINDOW);
+  const cycle = when.cycle, open = when.open;
   let b = db.boss[tag];
   if(!b || b.cycle !== cycle){
     const power = a.members.reduce((t,n) => {
@@ -587,8 +619,8 @@ function bossFor(tag, now){
     };
     markDirty();
   }
-  return { ...b, open, opensIn: open ? 0 : BOSS_EVERY - (now % BOSS_EVERY),
-           closesIn: open ? BOSS_WINDOW - (now % BOSS_EVERY) : 0 };
+  return { ...b, open, opensIn: when.opensIn, closesIn: when.closesIn,
+           every: BOSS_EVERY, window: BOSS_WINDOW, nextStart: when.nextStart };
 }
 
 /* ── the Rift: realm against realm ──
@@ -1160,6 +1192,7 @@ function advance(u, now){
   /* Any request at all can be the one that tips the alliance over a rung, so the check rides on the
      single function every request already calls rather than on the handful that happen to score. */
   levyCheck(u, now);
+  huntCall(u, now);
   markDirty();
 }
 

@@ -25,7 +25,13 @@ const ok = (name, cond, note='') => { cond ? pass++ : fail++;
 
 const dir = mkdtempSync(join(tmpdir(), 'crownhold-srv-'));
 const srv = spawn(process.execPath, ['server/server.js'], {
-  env: { ...process.env, PORT: String(PORT), DATA_DIR: dir, ALLOW_DEBUG: '1' },
+  /* An eight-second Hunt cycle with a three-second window. The real one is forty-five minutes every
+     four hours, which is untestable — and untested is exactly what it was: the game's only scheduled
+     event, with its largest shared payout, had no server test at all. A short period makes both states
+     reachable by waiting a moment, and the timetable arithmetic itself is checked in verify-skills
+     against the whole period. BOSS_CD=0 so a strike is not refused for catching its breath. */
+  env: { ...process.env, PORT: String(PORT), DATA_DIR: dir, ALLOW_DEBUG: '1',
+         BOSS_EVERY: '8000', BOSS_WINDOW: '3000', BOSS_CD: '0' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let srvErr = '';
@@ -655,6 +661,139 @@ try {
     ok('and how many builds are waiting for one', view && typeof view.helpAvailable === 'number',
        view ? String(view.helpAvailable) : '—');
   }
+  /* ── the Great Hunt: the only thing in the game that happens at a TIME ──
+     Forty-five minutes every four hours, damage-ranked, and the payout shared by every hand that struck
+     it. All of that worked before this block existed and none of it was tested — and worse, nothing
+     anywhere told a player it was coming. The timetable moved into src/events.js in v4.8 so the client
+     could count down to it, which makes "do the two agree" the thing worth checking here. */
+  {
+    console.log('\n── the Hunt opens at a time, and says so ──');
+    const EVH = await import('../src/events.js');
+    const app = EVH.appointmentOf('hunt');
+    const bossOf = async tok => (await post('/api/realm', { token: tok })).body.boss;
+
+    /* Wait for a given state rather than assuming one: with an eight-second cycle both come round
+       quickly, and a test that assumes it is mid-window passes or fails on timing. */
+    const waitFor = async (tok, want) => {
+      for(let i = 0; i < 60; i++){
+        const b = await bossOf(tok);
+        if(b && b.open === want) return b;
+        await new Promise(r => setTimeout(r, 400));
+      }
+      return null;
+    };
+
+    const open = await waitFor(ta, true);
+    ok('a window comes round and the server says it is open', !!open,
+       open ? open.icon + ' ' + open.name : 'never opened');
+    ok('and carries its own cadence, so a client can count down without guessing',
+       open && open.every === 8000 && open.window === 3000,
+       open ? open.every + 'ms every, ' + open.window + 'ms window' : '—');
+    ok('and how long is left of it', open && open.closesIn > 0 && open.closesIn <= 3000
+       && open.opensIn === 0, open ? open.closesIn + 'ms left' : '—');
+    /* Its strength comes from the alliance, which is what makes it a thing you cannot do alone. */
+    ok('the beast is scaled to the alliance, not to one hold', open && open.maxHp > 0,
+       open ? 'hp ' + open.hp + '/' + open.maxHp : '—');
+
+    /* ── the countdown and the button must agree ──
+       The reason the timetable moved into shared code, and the assertion this block was missing: the
+       first version checked that a window came round and that a strike inside it landed, both of which
+       stayed true when the server was given back its OWN arithmetic with a different window length. A
+       client counting down from the cadence the server reports would then have been wrong about when the
+       button works — which is worse than no countdown.
+
+       Sampled across a whole period, comparing the server's own `open` flag against what the shared
+       function says using the cadence the server itself sent. Edges are skipped: the two clocks are the
+       same machine but not the same instant, and a legitimate few milliseconds either side of an opening
+       is not a disagreement. */
+    {
+      let checked = 0, differed = 0;
+      const deadline = Date.now() + 9000;
+      while(Date.now() < deadline){
+        const b = await bossOf(ta);
+        const t = Date.now();
+        if(b && b.every && b.window){
+          const mine = EVH.appointmentAt(app, t, b.every, b.window);
+          const intoWindow = (t - app.off) % b.every;
+          const nearEdge = intoWindow < 200 || Math.abs(intoWindow - b.window) < 200;
+          if(!nearEdge){ checked++; if(mine.open !== b.open) differed++; }
+        }
+        await new Promise(r => setTimeout(r, 250));
+      }
+      ok('a client counting down from the reported cadence agrees with the server',
+         checked > 12 && differed === 0,
+         checked + ' samples across a period, ' + differed + ' disagreed');
+    }
+
+    /* ── it is announced ──
+       One line into EVERY member's log the first time any of them touches the server inside a window,
+       which the client's feed then toasts. Before this, a window opened and closed in silence unless you
+       happened to be standing in the War tab. */
+    const logHas = async tok => {
+      const st = (await post('/api/state', { token: tok })).body.state;
+      return (st.log || []).some(e => /out of the fog/.test(e.txt || ''));
+    };
+    ok('the hold that touched the server is told the fog has lifted', await logHas(ta));
+    ok('and so is a member who did nothing at all', await logHas(tb),
+       'Brenna was told without making a request of her own');
+
+    /* Once per window, however many members log in during it. */
+    {
+      const count = async tok => {
+        const st = (await post('/api/state', { token: tok })).body.state;
+        return (st.log || []).filter(e => /out of the fog/.test(e.txt || '')).length;
+      };
+      const before = await count(ta);
+      for(let i = 0; i < 4; i++) await post('/api/state', { token: ta });
+      await post('/api/state', { token: tb });
+      ok('and said exactly once, however many times anyone checks',
+         (await count(ta)) === before, before + ' before, ' + (await count(ta)) + ' after five more calls');
+
+      /* And again next window — a marker that never cleared would silence it for ever. */
+      await waitFor(ta, false);
+      const nextOpen = await waitFor(ta, true);
+      ok('a new window is announced again', nextOpen && (await count(ta)) > before,
+         before + ' → ' + (await count(ta)));
+    }
+
+    /* ── the window is the point ──
+       A scheduled event whose button works outside its window is not scheduled. */
+    {
+      await waitFor(ta, false);
+      const shut = await post('/api/boss/strike', { token: ta });
+      ok('striking outside the window is refused', shut.status === 400,
+         shut.body && shut.body.error ? shut.body.error : String(shut.status));
+      ok('and the refusal says why, rather than being a dead button',
+         /fog/.test((shut.body && shut.body.error) || ''), (shut.body || {}).error);
+
+      const live = await waitFor(ta, true);
+      const hpBefore = live.hp;
+      const hit = await post('/api/boss/strike', { token: ta });
+      ok('striking inside it lands', hit.status === 200,
+         hit.body && hit.body.error ? hit.body.error : 'ok');
+      const after = await bossOf(ta);
+      /* Same cycle only: an eight-second period can roll over mid-assertion, which would reset the HP
+         and read as a strike that did nothing. */
+      if(after && after.cycle === live.cycle)
+        ok('and takes the beast down by the weight of your army',
+           after.hp < hpBefore, hpBefore + ' → ' + after.hp);
+      else
+        ok('and takes the beast down by the weight of your army',
+           hit.status === 200, 'window rolled over mid-check; the strike was accepted');
+    }
+
+    /* A hold in no alliance has no Hunt — which is honest, and is why the panel tells them what they
+       would need rather than showing nothing. */
+    {
+      const D = await post('/api/register', { name:'Dain', password:'longenoughpassword' });
+      const solo = (await post('/api/realm', { token: D.body.token })).body.boss;
+      ok('a hold in no alliance faces no beast', !solo, solo ? 'GOT ONE' : 'none, correctly');
+      const shut = await post('/api/boss/strike', { token: D.body.token });
+      ok('and is refused with a reason it can act on', shut.status === 400
+         && /alliance/i.test((shut.body || {}).error || ''), (shut.body || {}).error);
+    }
+  }
+
   /* ── the Levy ──
      The only event in the game that two holds have to build together, and the only one whose ladder
      lives on the server. Four things can go wrong here and none of them is visible from a single

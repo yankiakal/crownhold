@@ -59,6 +59,7 @@ import {
 import {
   LANES, DEED_LABEL, poolOf, eventState, laneCap, ladderOf, canDo,
   liveWindows, nextMilestone, claimableMilestones, allClaimable, calendar,
+  APPOINTMENTS, appointmentAt, nextAppointments,
 } from './events.js';
 import { dailyProgress, dailyState, DAILY_BONUS } from './daily.js';
 import * as net from './net.js';
@@ -1460,6 +1461,18 @@ function renderCalendar(S){
     h += '</tr>';
   }
   h += '</tbody></table></div>';
+  /* ── the fixed hours ──
+     The grid is about lanes, which run continuously. This is the other kind of thing: a time. It sits
+     under the grid rather than in it because six windows a day is thirty-six icons across a row, and a
+     day cell reading "6×" tells a player nothing they can act on — whereas "20:00" is the whole point. */
+  for(const app of APPOINTMENTS){
+    const at = appointmentAt(app, now);
+    h += '<div class="callegend"><b>'+app.icon+' '+app.name+'</b> <span>'+app.note+'</span><div>'
+      + nextAppointments(app, now, 5).map(w =>
+          '<span class="cekey'+(w.live ? ' live' : '')+'">'
+          + (w.live ? 'now until '+clock(w.end) : clock(w.start))+'</span>').join('')
+      + '</div></div>';
+  }
   /* The legend is what makes the grid readable — sixteen icons is more than anyone memorises, and a
      tooltip is not reachable on a phone at all. Grouped by lane so the row above has a key. */
   for(const lane of LANES){
@@ -1557,6 +1570,66 @@ function renderRealm(S){
   return h;
 }
 
+/* ── the appointment strip ──
+   The countdown that did not exist. The Hunt has opened every four hours since long before the calendar
+   did, and the only place it was ever mentioned was inside the War tab, online, while the window happened
+   to be open — so the whole point of a scheduled event, that you can plan to be there, was missing.
+
+   Derived from the clock, so it counts down for a hold that is offline, signed out, or in no alliance.
+   Those three states get the countdown and a straight answer about what they would need, rather than
+   nothing: an appointment you cannot attend is still worth knowing about, and it is the honest argument
+   for joining an alliance.
+
+   Its own strip above the cards rather than a sixth card, because it is a different kind of thing: no
+   ladder, no score, nothing to claim — a time and a place. */
+function renderAppointments(S){
+  const now = Date.now();
+  let h = '';
+  for(const app of APPOINTMENTS){
+    const at = appointmentAt(app, now);
+    /* The server owns the beast, so when we are online its numbers win — but the CLOCK is ours either
+       way, which is why there is something to show at all when it is not.
+
+       "Its numbers win" has to include whether the window is OPEN, and at first it did not: the strip
+       took that from the clock even with a server on the line. The server decides whether a strike is
+       accepted, so a strip disagreeing with it is a countdown that says go while the button says no —
+       and they can disagree for real, because the server's period is overridable. Caught by a UI test
+       that ran once inside a window and once outside it. */
+    const b = net.isOnline() ? ((net.realmData() || {}).boss || null) : null;
+    const able = canDo(S, app);
+    const open = b ? !!b.open : at.open;
+    const closesIn = (b && b.open) ? b.closesIn : at.closesIn;
+    const opensIn  = (b && !b.open) ? b.opensIn  : at.opensIn;
+    h += '<div class="appt'+(open ? ' on' : '')+'">';
+    h += '<div class="apptrow"><b>'+app.icon+' '+app.name+'</b>'
+      + '<span class="spacer"></span>'
+      + '<span class="apptwhen">'+(open ? 'OPEN — '+ftime(closesIn)+' left'
+                                        : 'opens in '+ftime(opensIn))+'</span></div>';
+    h += '<div class="apptnote">'+app.note+' · '+app.blurb+'</div>';
+    if(b && !b.slain && able){
+      const pct = Math.max(0, Math.min(100, 100 * b.hp / b.maxHp));
+      h += '<div class="bar threat-fill" style="margin:.25rem 0 .3rem"><i style="width:'+pct+'%"></i></div>'
+        + '<div class="apptnote">'+esc(b.name)+' — '+fmt(b.hp)+' of '+fmt(b.maxHp)+' left</div>';
+    }else if(b && b.slain && able){
+      h += '<div class="apptnote" style="color:var(--gold)">Down. Another of its kin will come out of the fog.</div>';
+    }
+    /* Where it happens. When it is open this is the only button that matters on the page. */
+    h += '<button class="'+(open && able ? 'primary' : '')+'" style="width:100%;margin-top:.3rem" '
+      + (able ? 'data-act="tab" data-key="'+app.where+'"' : 'data-act="tab" data-key="'
+                + (net.isOnline() ? 'ally' : 'ledger')+'"')+'>'
+      + (able ? (open ? '⚔ Strike the beast' : '⚔ The Hunt') + ' — in the War tab'
+              : net.isOnline() ? '🤝 Only an alliance faces it — find one'
+                               : '☁ Sign in, then join an alliance')+'</button>';
+    /* The next few, in the reader's own clock. "20:00" is what makes it an appointment; "in 6h 40m" is
+       what makes it a timer, and a timer is not something you plan around. */
+    const soon = nextAppointments(app, now, 4).filter(w => !w.live);
+    if(soon.length)
+      h += '<div class="apptnext">then '+soon.map(w => clock(w.start)).join(' · ')+'</div>';
+    h += '</div>';
+  }
+  return h;
+}
+
 /* ── the rungs of a ladder, as a row of four chips ──
    Shared by the solo cards and the Levy, so the two cannot drift apart visually — which they did while
    the Levy was being written, and a ladder that looks different is a ladder a player reads differently. */
@@ -1600,6 +1673,8 @@ function renderEvents(S){
   if(sweep.length > 1)
     h += '<button class="primary" style="width:100%;margin:.35rem 0" data-act="claimEvent">'
       + '🏆 Claim all '+sweep.length+' rewards</button>';
+  /* Above the cards, because a window that closes in eleven minutes outranks five ladders that do not. */
+  h += renderAppointments(S);
   for(const win of live){
     if(win.lane.shared){ h += renderLevyCard(S, win, levy); continue; }
     const lane = win.lane, ev = win.event, st = eventState(S, lane, now);

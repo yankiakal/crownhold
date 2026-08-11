@@ -123,7 +123,10 @@ appendFileSync(join(dir, 'src', 'net.js'),
      fake one there is no way to render the card's only interesting state, and the three states it has
      are exactly where a collective event goes wrong: silently absent when you have no alliance, or
      showing a ladder it cannot know the progress of. */
-  '\nexport function _fakeAlliance(payload){ ally = payload; }\n');
+  '\nexport function _fakeAlliance(payload){ ally = payload; }' +
+  /* And the realm payload, which is where the beast's health lives. The appointment strip's open state
+     shows it, and there is no other way to reach that state without a running server. */
+  '\nexport function _fakeRealm(payload){ realm = payload; }\n');
 const from = f => import(pathToFileURL(join(dir, 'src', f)).href);
 
 try {
@@ -706,6 +709,99 @@ try {
          !/data-key="ledger"><span>📜<i class="claimdot">/.test(p2));
       for(const lane of EV.LANES) EV.eventState(owed, lane, Date.now()).score = 0;
     }
+  }
+
+  /* ── the appointment strip ──
+     The countdown that did not exist. The Hunt has opened every four hours for a long time and the only
+     place it was mentioned was inside the War tab, online, during the window — so what is asserted here
+     is mostly that it is now visible at all, in the three states a player can be in.
+
+     The strip is derived from the CLOCK, not from the server, which is the property worth protecting:
+     an offline, signed-out hold in no alliance still gets a countdown and a straight answer about what
+     it would need. Test it signed out first, because that is the state where the old code showed
+     nothing whatsoever. */
+  {
+    const EV = await from('events.js');
+    const NET4 = await from('net.js');
+    const app = EV.APPOINTMENTS[0];
+    const pane = () => (((nodes.app && nodes.app.innerHTML) || '')
+      .match(/data-pane="events"[\s\S]*?(?=<div class="tabpane)/) || [''])[0];
+
+    NET4.signOut && NET4.signOut();
+    NET4._fakeAlliance(null);
+    delete s.can;
+    ST.store.s = s;
+    UI.render();
+    let p = pane();
+    ok('the appointment is on the page even signed out', /class="appt/.test(p),
+       (p.match(/class="appt[^"]*"/) || ['(absent)'])[0]);
+    /* Named, and saying what it is. NOT "in the War tab" here: signed out, the button is the way IN
+       rather than the way there — the destination is asserted in the reachable state below. */
+    ok('and named, and says what it is', p.includes(app.name) && p.includes(app.note),
+       app.icon + ' ' + app.name + ' · ' + app.note);
+    /* Which state to expect is asked of the same function the strip uses, rather than accepting either.
+       A test that passes on "open OR closed" checks only that SOME text is there — and since the real
+       clock decides which one, whichever state the suite happened to miss would never be exercised. */
+    {
+      const at = EV.appointmentAt(app, Date.now());
+      const shown = (p.match(/class="apptwhen">([^<]*)/) || [,''])[1];
+      ok('and it counts down without a server, because the clock is ours',
+         at.open ? /^OPEN — /.test(shown) : /^opens in /.test(shown),
+         (at.open ? 'mid-window: ' : 'between windows: ') + shown);
+      ok('and the strip is lit only while the window actually is',
+         /class="appt on"/.test(p) === at.open,
+         at.open ? 'open and lit' : 'closed and quiet');
+    }
+    ok('and says what it would take, rather than offering a dead button',
+       /Sign in|find one/.test(p), (p.match(/<button[^>]*>([^<]*War tab|[^<]*Sign in[^<]*|[^<]*find one[^<]*)/) || [,'?'])[1]);
+    /* The next few in local clock time — "20:00" is what a person plans around. */
+    ok('and lists the next few by the clock, not as a bare timer',
+       /class="apptnext">then \d\d:\d\d/.test(p),
+       (p.match(/class="apptnext">([^<]*)/) || [,'(none)'])[1]);
+    ok('the calendar page lists its fixed hours too',
+       new RegExp('<b>' + app.icon + ' ' + app.name + '</b>').test(p)
+       && (p.match(/class="cekey[^"]*">\d\d:\d\d/g) || []).length >= 3,
+       (p.match(/class="cekey[^"]*">[^<]*/g) || []).slice(0, 5).join(' '));
+
+    /* ── open, in an alliance, with a beast on the server ── */
+    NET4._fakeSession('Aldis');
+    s.can = { online:true, alliance:true };
+    /* A realm payload whose boss is open: the strip must switch to the loudest thing on the page. */
+    /* A whole realm payload, not just a boss: renderRealm reads the season and the landmark list off the
+       same object and threw on a partial one — which is the harness being wrong, not the game. */
+    NET4._fakeRealm && NET4._fakeRealm({
+      boss: { icon:'🐗', name:'Gravemaw', hp:4000, maxHp:10000,
+              open:true, opensIn:0, closesIn: 11 * 60000, slain:false, damage:{}, cycle:1,
+              every: app.every, window: app.window },
+      season: { no:1, endsIn: 86400000, realmDay:3, titles:[], history:[] },
+      landmarks: [], alliances: [], eventBoard: { band:'Reach', rows:[] },
+      /* `rift: null` rather than a stub: renderRift reads `r.mine.name` on the no-neighbour branch, so a
+         half-built rift throws where an absent one is simply not rendered. */
+      rally: null, rift: null,
+    });
+    UI.render();
+    p = pane();
+    /* And with a server on the line, ITS verdict wins — including when the two disagree, which they can:
+       the server's period is overridable, so the clock alone is a guess about somebody else's schedule.
+       This payload says open whatever the local clock thinks, which is the case that found the bug. */
+    if(/class="appt on"/.test(p)){
+      ok('an open window is marked as the loud thing it is, on the server\'s word not the clock\'s',
+         /class="appt on"/.test(p),
+         EV.appointmentAt(app, Date.now()).open ? 'clock agreed' : 'clock said closed, server said open');
+      ok('and says how long is left of it', /OPEN — /.test(p),
+         (p.match(/class="apptwhen">([^<]*)/) || [,''])[1]);
+      ok('and names the beast and its health from the server',
+         p.includes('Gravemaw') && /4000 of 10.0k/.test(p),
+         (p.match(/Gravemaw[^<]*<\/div>|Gravemaw — [^<]*/) || ['(absent)'])[0]);
+      ok('and the button becomes the primary action on the page',
+         /class="primary"[^>]*data-act="tab" data-key="war"/.test(p));
+    } else {
+      ok('an open window is marked as the loud thing it is', false,
+         'the strip did not switch to open: ' + (p.match(/class="appt[^"]*"/) || [''])[0]);
+    }
+    NET4._fakeRealm && NET4._fakeRealm(null);
+    NET4._fakeAlliance(null);
+    delete s.can;
   }
 
   /* ── the Levy card ──
