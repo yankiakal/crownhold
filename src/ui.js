@@ -57,7 +57,7 @@ import {
   BRANCHES, branchKeys, branchProgress, techNeeds, treeRows,
 } from './research.js';
 import {
-  LANES, DEED_LABEL, poolOf, eventState, laneCap,
+  LANES, DEED_LABEL, poolOf, eventState, laneCap, ladderOf, canDo,
   liveWindows, nextMilestone, claimableMilestones, allClaimable, calendar,
 } from './events.js';
 import { dailyProgress, dailyState, DAILY_BONUS } from './daily.js';
@@ -1557,25 +1557,51 @@ function renderRealm(S){
   return h;
 }
 
-/* ── the four live events ──
+/* ── the rungs of a ladder, as a row of four chips ──
+   Shared by the solo cards and the Levy, so the two cannot drift apart visually — which they did while
+   the Levy was being written, and a ladder that looks different is a ladder a player reads differently. */
+function rungChips(rungs, claimed, score){
+  let h = '<div class="evrungs">';
+  for(const m of rungs){
+    const got = claimed.includes(m.per ?? m.at);
+    const can = score >= m.at && !got;
+    h += '<div class="evrung'+(got?' got':can?' can':'')+'">'
+      + '<span class="evat">'+fmt(m.at)+'</span>'
+      + '<span class="evpay">'+m.txt.split('·')[0].trim()
+          .replace(/\+/g,'').replace(' Valor','⚜').replace(', 1 Writ',' +🛡')+'</span>'
+      + (got ? '<span class="evtick">✓</span>' : '')+'</div>';
+  }
+  return h + '</div>';
+}
+
+/* ── the live events ──
    One card per lane, in lane order — shortest window first, NOT soonest to end. Sorting by time left
    would read better for a second and then reorder itself under the player's thumb every few hours,
    and a card that moves is a card you mis-tap. Every card is the same shape: what it is, what scores
-   in it, how far along you are, and the four rungs. Compact on purpose — four of these have to fit a
-   phone without becoming a scroll, so the ladder is a row of chips rather than four rows each. */
+   in it, how far along you are, and the four rungs. Compact on purpose — five of these have to fit a
+   phone without becoming a scroll, so the ladder is a row of chips rather than four rows each.
+
+   The fifth is the Levy and it is a different animal: its ladder is measured against the whole
+   alliance's total, which lives on the server, so it gets its own branch below. */
 function renderEvents(S){
   const now = Date.now();
   const live = liveWindows(now);
-  const owed = allClaimable(S, now);
+  const levy = net.isOnline() ? net.levyData() : null;
+  const shared = (levy && levy.in) ? { total: levy.total, holds: levy.holds } : null;
+  const owed = allClaimable(S, now, shared);
   let h = '<section class="panel"><h2>Running now'
     + ' <span style="letter-spacing:.05em">'+live.length+' events</span></h2>';
-  h += '<p style="font-size:.85rem;color:var(--ink-dim);font-style:italic">Four windows of different '
+  h += '<p style="font-size:.85rem;color:var(--ink-dim);font-style:italic">Five windows of different '
     + 'lengths run at once, and one deed counts in every one of them that reads it — the wave you just '
-    + 'held can score in three places.</p>';
-  if(owed.length > 1)
+    + 'held can score in three places. The last is your whole alliance against one ladder.</p>';
+  /* The Levy is claimed through its own endpoint, so a "claim all" that swept it up would half-work.
+     It is counted here and excluded from the sweep, and its own button sits on its own card. */
+  const sweep = owed.filter(o => !o.lane.shared);
+  if(sweep.length > 1)
     h += '<button class="primary" style="width:100%;margin:.35rem 0" data-act="claimEvent">'
-      + '🏆 Claim all '+owed.length+' rewards</button>';
+      + '🏆 Claim all '+sweep.length+' rewards</button>';
   for(const win of live){
+    if(win.lane.shared){ h += renderLevyCard(S, win, levy); continue; }
     const lane = win.lane, ev = win.event, st = eventState(S, lane, now);
     const cap = laneCap(S, lane), next = nextMilestone(S, lane, now);
     /* The bar measures the LADDER, not the ceiling. Scaled to the cap it read half-empty for a player
@@ -1595,16 +1621,7 @@ function renderEvents(S){
       + (st.capped ? '<span style="color:var(--gold)">ceiling reached — '+fmt(cap)+'</span>'
          : next ? '<span>'+fmt(next.at - st.score)+' more for '+next.txt+'</span>'
                 : '<span style="color:var(--gold)">every rung taken · ceiling '+fmt(cap)+'</span>')+'</div>';
-    h += '<div class="evrungs">';
-    for(const m of lane.ladder){
-      const got = st.claimed.includes(m.at);
-      const can = st.score >= m.at && !got;
-      h += '<div class="evrung'+(got?' got':can?' can':'')+'">'
-        + '<span class="evat">'+fmt(m.at)+'</span>'
-        + '<span class="evpay">'+m.txt.replace(/\+/g,'').replace(' Valor','⚜').replace(', 1 Writ',' +🛡')+'</span>'
-        + (got ? '<span class="evtick">✓</span>' : '')+'</div>';
-    }
-    h += '</div>';
+    h += rungChips(lane.ladder, st.claimed, st.score);
     if(claimableMilestones(S, lane, now).length)
       h += '<button class="primary" style="width:100%;margin-top:.3rem" data-act="claimEvent" data-key="'
         + lane.id+'">Claim '+ev.name+'</button>';
@@ -1615,6 +1632,84 @@ function renderEvents(S){
     + 'has a ceiling. Milestones hold the rewards; the realm board holds the glory.</p>';
   h += '</section>';
   return h;
+}
+
+/* ── the Levy card ──
+   The fifth row, and the only one nobody can finish alone. Three states, and each has to say something
+   useful rather than be absent:
+
+     · no server        — what the Levy is, and that signing in reaches it
+     · no alliance      — what the Levy is, which one is running, and that joining one takes part
+     · in an alliance   — the shared total against a ladder scaled to how many holds are around,
+                          your own contribution, and who else is pulling
+
+   The contributor column is not decoration. A shared total with anonymous contributors is a total
+   nobody feels responsible for; seeing your name against a number next to everyone else's is the
+   entire mechanism by which a collective event makes people turn up. */
+function renderLevyCard(S, win, levy){
+  const lane = win.lane, ev = win.event;
+  let h = '<div class="evcard levy'
+    + ((levy && levy.in && canDo(S, lane) && levy.rungs.some(r => r.done && !r.claimed))
+        ? ' ready' : '')+'">';
+  h += '<div class="evtop"><b>'+ev.icon+' '+ev.name+'</b>'
+    + '<span class="evlane">'+lane.icon+' '+lane.name+'</span>'
+    + '<span class="spacer"></span><span class="evends">ends in '+ftime(win.endsIn)+'</span></div>';
+  h += '<div class="evsrc">'+Object.entries(ev.sources)
+    .map(([k, v]) => (DEED_LABEL[k] || k)+' <b>'+fmt(v)+'</b>').join(' · ')+'</div>';
+
+  if(!levy || !levy.in){
+    h += '<div class="levylock">🤝 <b>Scored by your whole alliance</b> against one ladder, and every '
+      + 'rung it clears pays every member. Clear the third and the Levy Banner flies over the alliance '
+      + 'for the next day — <b>+5% production</b> and <b>+5% Valor</b> for everyone in it.</div>';
+    h += '<div class="evscore"><span>'
+      + (net.isOnline() ? 'You are in no alliance — join one and your work here starts counting.'
+                        : 'Sign in and join an alliance to take part.')+'</span></div>';
+    h += rungChips(ladderOf(lane, 0), [], -1);
+    h += '<button class="primary" style="width:100%;margin-top:.3rem" data-act="tab" data-key="'
+      + (net.isOnline() ? 'ally' : 'ledger')+'">'
+      + (net.isOnline() ? '🤝 Find an alliance' : '☁ Sign in')+'</button>';
+    return h + '</div>';
+  }
+
+  const top = levy.rungs[levy.rungs.length - 1];
+  const pct = Math.min(100, 100 * levy.total / top.at);
+  h += '<div class="xpbar" style="margin:.25rem 0 .3rem"><i style="width:'+pct+'%;background:var(--gold)"></i></div>';
+  h += '<div class="evscore"><span><b>'+fmt(levy.total)+'</b> of '+fmt(top.at)+'</span>'
+    + '<span class="spacer"></span>'
+    + '<span>'+levy.holds+' holds × '+fmt(top.per)+' each</span></div>';
+  h += rungChips(levy.rungs, levy.rungs.filter(r => r.claimed).map(r => r.per), levy.total);
+
+  /* The banner: what it is worth, whether it is flying, and whether tomorrow's is already earned. */
+  h += '<div class="levybanner'+(levy.banner.flying ? ' on' : '')+'">'
+    + (levy.banner.flying
+        ? '🚩 <b>The Banner flies</b> — +5% production and +5% Valor for every member, '
+          + ftime(levy.banner.endsIn)+' left'
+        : levy.banner.earnedThis
+          ? '🚩 <b>Answered</b> — the Banner flies over the alliance when this window closes'
+          : '🚩 Reach <b>'+fmt(levy.rungs[2].at)+'</b> and the Banner flies for the whole alliance tomorrow')
+    + '</div>';
+
+  h += '<div class="levyrows"><div class="levyme">Your part <b>'+fmt(levy.mine)+'</b>'
+    + (levy.mine >= levy.cap ? ' <span style="color:var(--gold)">— your ceiling</span>' : '')+'</div>';
+  const me = net.accountName();
+  for(const r of levy.rows.slice(0, 6)){
+    if(!r.score) continue;
+    h += '<div class="levyrow'+(r.name === me ? ' mine' : '')+'"><span>'+esc(r.name)+'</span>'
+      + '<span class="spacer"></span><span class="count">'+fmt(r.score)+'</span></div>';
+  }
+  if(levy.counted > levy.rows.filter(r => r.score).length)
+    h += '<div class="levyrow quiet"><span>'
+      + (levy.counted - levy.rows.filter(r => r.score).length)+' more have not scored yet</span></div>';
+  h += '</div>';
+
+  /* Gated on the SAME fact the tab dot reads — `s.can.alliance`, stamped by the server — so a button
+     and a dot cannot disagree about whether this hold is in an alliance. They did: the button went by
+     the alliance payload and the dot by `s.can`, which is two copies of one fact and therefore a bug
+     waiting for a stale poll. Fails closed: a hold that has just joined waits one sync. */
+  if(canDo(S, lane) && levy.rungs.some(r => r.done && !r.claimed))
+    h += '<button class="primary" style="width:100%;margin-top:.3rem" data-act="levyClaim">'
+      + 'Claim the Levy</button>';
+  return h + '</div>';
 }
 
 /* Which branch the Research panel is showing. A view preference, not hold state —
@@ -3427,8 +3522,11 @@ function renderTabBar(){
   const S = store.s, now = Date.now();
   let owed = false, post = false;
   try {
+    /* The Levy's shared total has to be handed in here too, or the dot would never light for the one
+       event a player is least likely to be watching — and `allClaimable` refuses to guess. */
+    const lv = net.isOnline() ? net.levyData() : null;
     owed = dailyProgress(S, now).some(t => t.done && !t.claimed)
-        || allClaimable(S, now).length > 0;
+        || allClaimable(S, now, (lv && lv.in) ? { total: lv.total, holds: lv.holds } : null).length > 0;
     post = unreadMail(S) > 0;
   } catch { owed = false; post = false; }
   const dot = k => (k === 'events' && owed) || (k === 'ledger' && post) ? '<i class="claimdot"></i>' : '';
@@ -3840,6 +3938,13 @@ const VIEW_ACTIONS = {
       .catch(e => { acctMsg = e.message; acctOpen = true; renderAccount(); });
   },
   landmarkHelp: b => { net.landmarkHelp(b.dataset.key).then(render).catch(()=>{}); },
+  /* Its own call, not the generic claimEvent action: the Levy's threshold is the alliance's total and
+     only the server can compute it, so the shared lane pays nothing through the generic path. */
+  levyClaim: () => {
+    net.levyClaim()
+      .then(d => { if(d && d.state) store.s = d.state; render(); })
+      .catch(e => { acctMsg = e.message; acctOpen = true; renderAccount(); });
+  },
   bossStrike: () => {
     net.bossStrike()
       .then(d => { if(d.state) store.s = d.state; render(); })

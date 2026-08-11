@@ -22,6 +22,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+/* The panel prints numbers through the game's own fmt(), which switches to "12.6k" past ten thousand.
+   An assertion looking for "12600" would silently never match. */
+const fmtLike = n => n >= 10000 ? (n/1000).toFixed(1) + 'k' : String(Math.floor(n));
 let pass = 0, fail = 0;
 const ok = (name, cond, note='') => { cond ? pass++ : fail++;
   console.log((cond ? '  ✓ ' : '  ✗ ') + name + (note ? '  — ' + note : '')); };
@@ -115,7 +118,12 @@ appendFileSync(join(dir, 'src', 'ui.js'),
    only exists when signed in — so without a way to fake a session there is nothing to assert, and
    the requirement would be untested until a reviewer found it missing. */
 appendFileSync(join(dir, 'src', 'net.js'),
-  '\nexport function _fakeSession(name){ session = { name, token:\'test\' }; online = true; }\n');
+  '\nexport function _fakeSession(name){ session = { name, token:\'test\' }; online = true; }' +
+  /* The Levy's shared total arrives on the alliance payload, which needs a server. Without a way to
+     fake one there is no way to render the card's only interesting state, and the three states it has
+     are exactly where a collective event goes wrong: silently absent when you have no alliance, or
+     showing a ladder it cannot know the progress of. */
+  '\nexport function _fakeAlliance(payload){ ally = payload; }\n');
 const from = f => import(pathToFileURL(join(dir, 'src', f)).href);
 
 try {
@@ -653,8 +661,18 @@ try {
     const empty = cells.filter(c => !/class="cev/.test(c));
     ok('and not one empty day', cells.length === 7 * EV.LANES.length && empty.length === 0,
        cells.length + ' cells, ' + empty.length + ' empty');
-    ok('exactly four windows are lit as running', (pane.match(/class="cev live"/g) || []).length === 4,
-       (pane.match(/class="cev live"/g) || []).length + ' lit');
+    /* Counted per ROW, not in total: a 24h or 48h window straddles midnight and is correctly drawn in
+       both day cells it touches, so the total number of lit icons is not the number of live windows.
+       The first version of this asserted four and broke the moment a fifth lane made one straddle. */
+    const rowsHtml = pane.split('<tr>').slice(2);
+    const litPerRow = rowsHtml.map(r => (r.match(/class="cev live"/g) || []).length);
+    /* The bound is per lane, from its own length: a 48h window can touch three day columns and a 6h one
+       exactly one. A flat "at most two" broke on the banner lane, which is the code being right. */
+    const maxCells = l => Math.ceil(l.ms / 86400000) + 1;
+    ok('every lane has its running window lit, and only where it runs',
+       litPerRow.length === EV.LANES.length
+       && litPerRow.every((n, i) => n >= 1 && n <= maxCells(EV.LANES[i])),
+       EV.LANES.map((l, i) => l.name + ' ' + litPerRow[i] + '/' + maxCells(l)).join(' '));
     /* Sixteen-plus icons is more than anyone memorises and a title attribute is unreachable on a
        phone, so the legend is the only thing that makes the grid readable at all. */
     ok('and a legend naming every event in every lane',
@@ -668,12 +686,18 @@ try {
       UI.render();
       const p2 = ((nodes.app && nodes.app.innerHTML) || '')
         .match(/data-pane="events"[\s\S]*?(?=<div class="tabpane)/)[0];
+      /* Solo lanes only: the Levy is claimed through its own endpoint, because its threshold is the
+         alliance's total and the generic action has no way to know it. */
+      const soloLanes = EV.LANES.filter(l => !l.shared);
       ok('a lane that is owed something offers a Claim for THAT lane',
-         EV.LANES.every(l => p2.includes('data-act="claimEvent" data-key="' + l.id + '"')),
+         soloLanes.every(l => p2.includes('data-act="claimEvent" data-key="' + l.id + '"'))
+         && !p2.includes('data-act="claimEvent" data-key="levy"'),
          (p2.match(/data-act="claimEvent" data-key="[a-z]+"/g) || []).join(' '));
       ok('and one button claims the lot rather than four taps',
          /data-act="claimEvent">🏆 Claim all 4 rewards/.test(p2),
          (p2.match(/Claim all \d+ rewards/) || ['(absent)'])[0]);
+      ok('and that button counts only what it can actually claim',
+         !/Claim all 5 rewards/.test(p2));
       const bar = ((nodes.app && nodes.app.innerHTML) || '').match(/<nav class="tabbar">[\s\S]*?<\/nav>/);
       ok('and the claim dot moved to Events with the panels',
          /data-key="events"[^>]*><span>🏆<i class="claimdot">/.test(bar ? bar[0] : ''),
@@ -682,6 +706,105 @@ try {
          !/data-key="ledger"><span>📜<i class="claimdot">/.test(p2));
       for(const lane of EV.LANES) EV.eventState(owed, lane, Date.now()).score = 0;
     }
+  }
+
+  /* ── the Levy card ──
+     The fifth row, and the only card whose numbers come from the server. Three states, and the failure
+     mode of each is a page that looks fine: absent when you have no alliance (so the fifth calendar row
+     is a locked door with no sign), showing a ladder without knowing the alliance's progress, or —
+     worst — offering a Claim for a rung the alliance never reached. */
+  {
+    const EV = await from('events.js');
+    const NET3 = await from('net.js');
+    const lane = EV.laneOf('levy');
+    const pane = () => (((nodes.app && nodes.app.innerHTML) || '')
+      .match(/data-pane="events"[\s\S]*?(?=<div class="tabpane)/) || [''])[0];
+
+    ok('there is exactly one shared lane, and it is on the calendar',
+       EV.LANES.filter(l => l.shared).length === 1);
+
+    /* ── solo: told what it is, offered no ladder ── */
+    NET3._fakeAlliance(null);
+    ST.store.s = s;
+    UI.render();
+    let p = pane();
+    ok('the Levy card is shown even with no alliance', /class="evcard levy/.test(p),
+       (p.match(/class="evcard[^"]*"/g) || []).join(' | '));
+    ok('and says what it is rather than sitting blank', /class="levylock"/.test(p)
+       && /whole alliance/.test(p));
+    ok('and names what clearing it is worth', /Levy Banner|Banner flies/.test(p));
+    ok('and offers no Claim at all', !/data-act="levyClaim"/.test(p));
+    ok('and points at the way in instead',
+       /data-act="tab" data-key="ally"|data-act="tab" data-key="ledger"/.test(p));
+
+    /* ── in an alliance, part-way up ──
+       Signed in explicitly. The Levy view is only read when online, and leaning on a previous block
+       having faked a session is how the feed's replay guard came to pass with the guard deleted. */
+    NET3._fakeSession('Aldis');
+    s.can = { online:true, alliance:true };   // what the server stamps for a hold in an alliance
+    const holds = 8, ladder = EV.ladderOf(lane, holds);
+    const win = EV.liveWindow(lane, Date.now());
+    NET3._fakeAlliance({ levy: {
+      in: true, event: win.event.id, name: win.event.name, icon: win.event.icon,
+      blurb: win.event.blurb, w: win.w, endsIn: win.endsIn,
+      total: ladder[1].at, holds, counted: holds, cap: 20000, mine: 2400,
+      rungs: ladder.map((m, i) => ({ at:m.at, per:m.per, txt:m.txt, done: i <= 1, claimed: i === 0 })),
+      rows: [{ name:'Brenna', score:9000 }, { name:'Aldis', score:2400 }, { name:'Corin', score:0 }],
+      banner: { flying:false, earnedThis:false, fx:{}, endsIn:0 },
+    } });
+    UI.render();
+    p = pane();
+    ok('with an alliance it shows the shared total against the ladder',
+       p.includes(fmtLike(ladder[1].at)) && p.includes(fmtLike(ladder[3].at)),
+       'total ' + ladder[1].at + ' of ' + ladder[3].at);
+    ok('and says the target is per hold, not a bare number',
+       new RegExp(holds + ' holds × ').test(p),
+       (p.match(/\d+ holds × [\d.k]+ each/) || ['(absent)'])[0]);
+    ok('and shows your own part separately from the total', /Your part/.test(p));
+    /* The contributor column IS the mechanism — a shared total with anonymous contributors is a total
+       nobody feels responsible for. */
+    ok('and names who is pulling', /class="levyrow/.test(p) && p.includes('Brenna'),
+       (p.match(/class="levyrow[^"]*"><span>[^<]*</g) || []).join(' ').slice(0, 90));
+    ok('and marks your own row', /class="levyrow mine"/.test(p));
+    ok('and says how many have not scored yet', /have not scored yet/.test(p));
+    ok('a reached-but-unclaimed rung offers its Claim', /data-act="levyClaim"/.test(p));
+    ok('and the sweep button does not count it, since it cannot claim it',
+       !/Claim all \d+ rewards/.test(p) || !/levyClaim/.test(
+         (p.match(/Claim all[\s\S]*?<\/button>/) || [''])[0]));
+
+    /* ── the Banner, in its three states ── */
+    const setBanner = b => {
+      const cur = NET3.allianceData();
+      NET3._fakeAlliance({ levy: { ...cur.levy, banner: b } });
+      UI.render();
+      return pane();
+    };
+    ok('not yet earned: the card says what reaching it is worth',
+       /Reach <b>/.test(setBanner({ flying:false, earnedThis:false, fx:{}, endsIn:0 })));
+    ok('earned this window: it says the Banner flies when the window closes',
+       /Answered/.test(setBanner({ flying:false, earnedThis:true, fx:{}, endsIn:0 })));
+    const flying = setBanner({ flying:true, earnedThis:false, fx:{}, endsIn: 3600000 });
+    ok('flying: it says so, and what every member is carrying',
+       /class="levybanner on"/.test(flying) && /\+5% production/.test(flying),
+       (flying.match(/class="levybanner on">([\s\S]{0,80})/) || [,''])[1].replace(/<[^>]*>/g, ''));
+
+    /* ── the claim dot ──
+       The Levy is the event a player is least likely to be watching, so the dot has to light for it. */
+    {
+      const cur = NET3.allianceData();
+      /* `s.can` is what the server stamps to say this hold is in an alliance, and both the Claim button
+         and the dot read it — one gate, so they cannot disagree about the same fact. */
+      s.can = { online:true, alliance:true };
+      NET3._fakeAlliance({ levy: { ...cur.levy,
+        rungs: cur.levy.rungs.map(r => ({ ...r, done:true, claimed:false })) } });
+      UI.render();
+      const bar = (((nodes.app && nodes.app.innerHTML) || '').match(/<nav class="tabbar">[\s\S]*?<\/nav>/) || [''])[0];
+      ok('an owed Levy lights the dot on the Events tab',
+         /data-key="events"[^>]*><span>🏆<i class="claimdot">/.test(bar),
+         bar ? '(bar read)' : 'NO TAB BAR');
+    }
+    NET3._fakeAlliance(null);
+    delete s.can;
   }
 
   /* ── the phone shell: who you are, and what was said ──

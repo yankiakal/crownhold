@@ -46,7 +46,18 @@ export function allyBonus(s, key){ return (s.allyBonus && s.allyBonus[key]) || 0
 
 /* ── formatting ── */
 export function fmt(n){ return n>=10000 ? (n/1000).toFixed(1)+'k' : String(Math.floor(n)); }
-export function ftime(ms){ const s=Math.max(0,Math.ceil(ms/1000)); return s>=60 ? Math.floor(s/60)+'m '+(s%60)+'s' : s+'s'; }
+/* Hours and days, not just minutes. It stopped at minutes, which was survivable while the longest
+   thing in the game was a six-hour event window and became nonsense the moment v4.6 added a 48-hour
+   one: "ends in 2720m 36s" is a number nobody converts in their head. Long builds read badly too —
+   a Town Hall was "160m 0s" rather than "2h 40m". Two units at a time, largest first, because that is
+   how a person says it. */
+export function ftime(ms){
+  const s = Math.max(0, Math.ceil(ms/1000));
+  if(s < 60)    return s+'s';
+  if(s < 3600)  return Math.floor(s/60)+'m '+(s%60)+'s';
+  if(s < 86400) return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m';
+  return Math.floor(s/86400)+'d '+Math.floor((s%86400)/3600)+'h';
+}
 export function clock(t){ const d=new Date(t); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 
 /* ── stars ──
@@ -1501,16 +1512,22 @@ export function startTraining(s, key, count, now){
    four, which is what the button at the top of the Events tab does and what a returning player
    wants. One banner however many rungs paid: four lanes ripening together used to mean four
    identical interruptions. */
-export function claimEvent(s, now, laneId){
+export function claimEvent(s, now, laneId, shared){
   s.now = now;
   const lanes = laneId ? [laneOf(laneId)].filter(Boolean) : null;
   const ready = lanes
-    ? lanes.flatMap(l => claimableMilestones(s, l, now).map(m => ({ lane: l, m })))
-    : allClaimable(s, now);
+    ? lanes.flatMap(l => {
+        const sh = (l.shared && shared) || null;
+        return claimableMilestones(s, l, now, sh ? sh.total : undefined, sh ? sh.holds : undefined)
+          .map(m => ({ lane: l, m }));
+      })
+    : allClaimable(s, now, shared);
   if(!ready.length) return false;
   for(const { lane, m } of ready){
     const st = eventState(s, lane, now);
-    st.claimed.push(m.at);
+    /* The per-member number for a shared lane, not the scaled total: how many holds are online moves
+       the threshold, and a claimed-record keyed on a moving number would come unstuck mid-window. */
+    st.claimed.push(m.per ?? m.at);
     gainReward(s, m.reward);
     gainMastery(s, 20, now);
     pushLog(s, '🏆 '+eventOf(st.id).name+' — '+fmt(m.at)+' points claimed ('+m.txt+').', 'gold');

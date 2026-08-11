@@ -131,6 +131,40 @@ export const LANES = [
       {at:48000, reward:{valor:500, shield:1}, txt:'+500 Valor, +1 Writ'},
     ],
   },
+  /* ── the Levy: the one lane you cannot finish alone ──
+     Everything above is solo. Four solo lanes is a better game than one, but it is still four to-do
+     lists — nothing in the calendar was a reason to talk to anybody, which is the difference between
+     these events and the ones people actually organise around in Kingshot (its Bear Hunt, its
+     Alliance Mobilization, its castle battles). So the fifth row is scored by the WHOLE ALLIANCE
+     against one ladder, and every rung it clears pays every member.
+
+     Three things make it work rather than merely exist:
+
+     · `shared` — the ladder is compared against the alliance's total, not yours. Your own score is
+       your CONTRIBUTION, and it is visible to everyone, which is the social pressure doing the work.
+     · The rungs below are PER MEMBER and multiplied by how many holds are around to help, so a
+       five-hold alliance and a thirty-hold alliance need the same effort each and reach the same
+       rung. Without that the ladder is either trivial for big alliances or impossible for small ones,
+       and a new player's alliance is always the small one.
+     · Clearing the third rung flies the Levy Banner over the alliance for the next window — an
+       earned, temporary, alliance-wide bonus. That is the part that makes clearing it matter beyond
+       the Valor, and it is the shape Kingshot uses for the same job. Never sold, like everything.
+
+     Per-member rungs are about 40% of the solo Term lane's, because the reward goes to everyone and
+     the point is that a normal day's play from a normal alliance clears most of it. */
+  {
+    id:'levy', name:'Levy', icon:'🤝', ms: 24 * 3600 * 1000, off: 11 * 3600 * 1000,
+    note:'a day — your whole alliance against one ladder',
+    shared: true,
+    needs: 'alliance',
+    cap: 20000,                    // per member, like the ladder
+    ladder:[
+      {at:1500,  reward:{valor:40},            txt:'+40 Valor'},
+      {at:4200,  reward:{valor:70},            txt:'+70 Valor'},
+      {at:8000,  reward:{valor:90, shield:1},  txt:'+90 Valor, +1 Writ · the Banner flies'},
+      {at:13000, reward:{valor:100},           txt:'+100 Valor'},
+    ],
+  },
 ];
 
 /* ── the sixteen events ──
@@ -247,7 +281,37 @@ export const EVENTS = [
     blurb:'Out through the gate and back before dark. Score by burning camps and holding the wall.',
     sources:{ camp:86, waveWon:38, trained:4 },   // camp 40% · waveWon 35% · trained 25%
   },
-];
+
+  /* ── levy, 24h, shared: broad on purpose ──
+     A collective event has to be scoreable by whoever happens to be online, so every one of these
+     reads deeds from across the whole game rather than specialising. An alliance event that only
+     counted frontier marches would be an event three members could join. `help` is in all four,
+     because helping an ally build is the one deed that only exists inside an alliance. */
+  {
+    id:'grandlevy', lane:'levy', name:'The Grand Levy', icon:'🤝',
+    blurb:'The call goes out to every hold. Nearly anything anyone does counts toward the total.',
+    // built 25% · research 20% · trained 20% · waveWon 20% · help 15%
+    sources:{ built:21, research:240, trained:3, waveWon:21, help:150 },
+  },
+  {
+    id:'wardward', lane:'levy', name:'Wall and Ward', icon:'🗼',
+    blurb:'Every wall in the alliance, held together. Score by holding waves and raising the works.',
+    // waveWon 40% · warbandWon 25% · built 20% · help 15%
+    sources:{ waveWon:43, warbandWon:125, built:17, help:150 },
+  },
+  {
+    id:'harvest', lane:'levy', name:'The Harvest Call', icon:'🌾',
+    blurb:'Fill the shared stores. Score by working the frontier, hauling, and expeditions.',
+    // gathered 30% · longHaul 25% · camp 15% · expedition 15% · help 15%
+    sources:{ gathered:130, longHaul:250, camp:32, expedition:3, help:150 },
+  },
+  {
+    id:'accord', lane:'levy', name:'The Iron Accord', icon:'⚒️',
+    blurb:'Forges and drill yards from end to end. Score by reforging, drilling and building.',
+    // promoted 30% · trained 25% · built 20% · research 10% · help 15%
+    sources:{ promoted:900, trained:4, built:17, research:120, help:150 },
+  },
+];;
 
 /* What a source key is called out loud. The panel lists an event's sources with their point values,
    because "camps 500 · ruins 350" is the sentence that decides what a player does next, and a blurb
@@ -304,8 +368,14 @@ export function eventState(s, lane, now){
 }
 
 /* Called wherever a deed happens, and it credits EVERY live lane that reads that deed — which is the
-   whole point of running four. Respects each lane's cap, which is what stops an event from becoming
-   a stockpile-dumping contest. Returns the total scored, across lanes. */
+   whole point of running five. Respects each lane's cap, which is what stops an event from becoming
+   a stockpile-dumping contest. Returns the total scored, across lanes.
+
+   The levy is scored here like any other lane, and `laneCap` gives it the PER-MEMBER ceiling — so one
+   member with nothing else to do cannot carry a thirty-hold alliance on their own, which is the same
+   anti-dumping argument one level up. A hold in no alliance still accumulates: joining mid-window then
+   brings that day's work in with you. Deliberate, and harmless — the levy is cooperative, with no
+   cross-alliance board, so there is nobody for it to be unfair to. */
 export function scoreDeed(s, source, count, now){
   tallyDaily(s, source, count, now);      // the same deed feeds today's task list
   let total = 0;
@@ -324,21 +394,70 @@ export function scoreDeed(s, source, count, now){
   return total;
 }
 
-export function nextMilestone(s, lane, now){
-  const st = eventState(s, lane, now);
-  return lane.ladder.find(m => !st.claimed.includes(m.at)) || null;
+/* ── one funnel for every ladder ──
+   A shared lane's rungs are written PER MEMBER, so the real threshold depends on how many holds are
+   around to help. Nothing may read `lane.ladder` directly: every caller comes through here, which is
+   the only way a per-member number and an absolute number cannot be mistaken for each other. `per` is
+   kept alongside so the panel can say "6,000 each" rather than only the total.
+
+   `holds` is floored at LEVY_MIN because a two-hold alliance would otherwise face a ladder it clears
+   by accident, and capped at the alliance size limit so a stale count cannot make one impossible. */
+export const LEVY_MIN = 4, LEVY_MAX = 30;
+export const levyHolds = holds => Math.max(LEVY_MIN, Math.min(LEVY_MAX, Math.round(holds) || 0));
+
+export function ladderOf(lane, holds){
+  if(!lane.shared) return lane.ladder;
+  const n = levyHolds(holds);
+  return lane.ladder.map(m => ({ ...m, at: m.at * n, per: m.at, holds: n }));
 }
-export function claimableMilestones(s, lane, now){
+export function capOf(s, lane, holds){
+  return lane.shared ? laneCap(s, lane) * levyHolds(holds) : laneCap(s, lane);
+}
+
+/* `score` is what the ladder is measured against, and for a shared lane that is NOT the reader's own
+   contribution — it is the alliance's total, which only the server knows. So it is passed in.
+
+   A caller that forgets gets NOTHING, not a fallback to their own score. Falling back looked harmless
+   and was not: a member's own 8,000 would have been compared against a four-hold ladder's 6,000 and
+   paid a rung the alliance had not reached. The generic claim action reaches this with no total by
+   design — it runs on the server too — so the safe answer has to be the silent one. */
+const reachedBy = (s, lane, now, total) => {
+  if(!lane.shared) return eventState(s, lane, now).score;
+  return typeof total === 'number' ? total : -1;
+};
+
+export function nextMilestone(s, lane, now, total, holds){
   const st = eventState(s, lane, now);
-  return lane.ladder.filter(m => st.score >= m.at && !st.claimed.includes(m.at));
+  return ladderOf(lane, holds).find(m => !st.claimed.includes(m.per ?? m.at)) || null;
+}
+export function claimableMilestones(s, lane, now, total, holds){
+  const st = eventState(s, lane, now);
+  const have = reachedBy(s, lane, now, total);
+  if(have < 0) return [];
+  return ladderOf(lane, holds).filter(m => have >= m.at && !st.claimed.includes(m.per ?? m.at));
 }
 /* Anything owed anywhere — what the tab badge asks, and what a player means by "is there something
-   to collect". Flat, with its lane attached, so a caller can claim it without asking twice. */
-export function allClaimable(s, now){
+   to collect". Flat, with its lane attached, so a caller can claim it without asking twice.
+
+   `shared` carries { total, holds } for the levy when the caller has it. Without it the levy simply
+   never reports anything owed, which is correct for a hold in no alliance and for a client that has
+   not heard back from the server yet. */
+export function allClaimable(s, now, shared){
   const out = [];
-  for(const lane of LANES)
-    for(const m of claimableMilestones(s, lane, now)) out.push({ lane, m });
+  for(const lane of LANES){
+    if(lane.needs && !canDo(s, lane)) continue;
+    const sh = (lane.shared && shared) || null;
+    for(const m of claimableMilestones(s, lane, now, sh ? sh.total : undefined, sh ? sh.holds : undefined))
+      out.push({ lane, m });
+  }
   return out;
+}
+/* A lane can require a capability the same way a daily task can — `s.can` is stamped by the server,
+   which is the only party that knows, and absent means a solo hold. The levy is the first lane to use
+   it: an alliance event shown to someone in no alliance is a card that can never move. */
+export function canDo(s, lane){
+  if(!lane.needs) return true;
+  return !!((s && s.can) || {})[lane.needs];
 }
 
 /* ── the calendar ──

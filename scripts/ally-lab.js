@@ -33,6 +33,7 @@ const PASS = 'longenoughpassword';
 const HOLDS = [
   { name: 'Builder', role: 'has a long build — the one to help',        pair: 'ally' },
   { name: 'Helper',  role: 'taps Help — watch Builder\'s timer drop',   pair: 'ally' },
+  { name: 'Warden',  role: 'a third in the alliance — for the Levy board', pair: 'ally' },
   { name: 'Raider',  role: 'send a column at Target from here',         pair: 'war' },
   { name: 'Target',  role: 'the hold being raided — watch it defend',   pair: 'war' },
 ];
@@ -80,6 +81,20 @@ for(const h of HOLDS){
 // the alliance pair share one; the war pair are deliberately in none
 await post('/api/alliance/create', { token: tokens.Builder, name:'The Long Watch', tag:'LWCH' });
 await post('/api/alliance/join',   { token: tokens.Helper,  tag:'LWCH' });
+await post('/api/alliance/join',   { token: tokens.Warden,  tag:'LWCH' });
+
+/* ── the Levy, part-way up ──
+   Seeded rather than left at zero, because the interesting state is the one in the middle: a shared
+   total between two rungs, with names against numbers, and a per-hold target that a session could
+   actually close. At zero the card is honest and says nothing. */
+const levy0 = (await post('/api/alliance/info', { token: tokens.Builder })).body?.levy;
+if(levy0 && levy0.rungs){
+  const rung2 = levy0.rungs[1].at;
+  const share = [[tokens.Builder, 0.30], [tokens.Helper, 0.22], [tokens.Warden, 0.11]];
+  for(const [tok, f] of share)
+    await post('/api/debug/score', { token: tok, lane:'levy', score: Math.round(rung2 * f) });
+}
+const levy = (await post('/api/alliance/info', { token: tokens.Builder })).body?.levy;
 
 /* Something worth helping. The WALL, not the Town Hall: the kit leaves a Town Hall of 20 with low
    farms behind it, so "the Town Hall must lead the rest of the hold" refuses that upgrade — which
@@ -105,7 +120,7 @@ console.log(`
 
      ${HOLDS.map(h => h.name.padEnd(8) + ' password ' + PASS + '   — ' + h.role).join('\n     ')}
 
-  All four hold an Embassy 3. Builder and Helper share [LWCH] The Long Watch; Raider and Target
+  All five hold an Embassy 3. Builder and Helper share [LWCH] The Long Watch; Raider and Target
   are in no alliance, because the server refuses a raid on your own alliance.
   Builder has a Wall upgrade running: ${mins} minutes.
   ${view ? `A help is worth ${view.helpPct}% each, up to ${view.helpCap} per build.` : ''}
@@ -117,6 +132,22 @@ console.log(`
        Sign in as a third account to shave more off.
     Look for: a hold with no Embassy refused WITH A REASON, not a dead button; a short build that
     cannot be erased; and the panel stating what a help is worth before you spend the tap.
+
+  ── to test the Levy: the one event nobody can finish alone ──
+    ${levy && levy.rungs ? `Running now: ${levy.icon} ${levy.name}, ${Math.round(levy.endsIn/3600000)}h left.
+    The alliance is on ${levy.total} of ${levy.rungs[3].at} — ${levy.holds} holds × ${levy.rungs[3].per} each.
+    Rung 1 at ${levy.rungs[0].at} is ${levy.rungs[0].done ? 'already cleared' : 'not cleared yet'}.`
+    : 'NOT READY — no Levy view came back from the server.'}
+    1. Sign in as Builder, open the Events tab, scroll to the 🤝 Levy card.
+    2. Play a little — any wave held or job finished adds to the SHARED total, not just your own.
+    3. Sign in as Helper and look at the same card: the same total, your own part different, and
+       Builder named above or below you in the column.
+    4. Press Help on Builder's build as Helper — helping is worth ${levy && levy.rungs ? '150' : '—'} to the Levy,
+       which is the only deed in the game that needs an alliance to happen at all.
+    Look for: one total for everybody; your own contribution shown separately; a per-hold target
+    rather than a bare number; and clearing rung 3 promising the Banner for tomorrow rather than now.
+    Sign in as Raider — no alliance — and the same card should explain what the Levy is and offer a
+    way to join one, not sit blank.
 
   ── to test attacking each other ──
     ${raidReady ? 'Raider can reach Target right now.' : 'NOT READY — ' + whyNot}

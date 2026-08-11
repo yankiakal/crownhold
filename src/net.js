@@ -158,6 +158,17 @@ export function arenaData(){ return arena; }
 
 let ally = null;
 export function allianceData(){ return ally; }
+/* The Levy's shared total, holds and rungs. Carried on the alliance payload rather than fetched on its
+   own: the events panel already renders every 250ms and a second poll for one number would be a
+   request four times a second. Null until the first alliance refresh comes back, which the panel reads
+   as "asking the server" rather than as zero — the difference between a blank ladder and a wrong one. */
+export function levyData(){ return (ally && ally.levy) || null; }
+export async function levyClaim(){
+  if(!isOnline()) return null;
+  const d = await post('/api/levy/claim', { token: session.token });
+  await refreshAlliance();
+  return d;
+}
 
 /* ── raids: hold against hold ── */
 let raid = null;

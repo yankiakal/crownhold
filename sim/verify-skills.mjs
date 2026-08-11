@@ -3249,26 +3249,41 @@ console.log('\n── a decree shows what it costs, and lasts long enough to mat
            + EV.EVENTS.length + ' events');
 
     /* Rung 4 is meant to be about a third of the window at that rate. A lane whose top rung needs the
-       WHOLE window is a lane nobody finishes; one that needs a tenth of it is not a ladder. */
+       WHOLE window is a lane nobody finishes; one that needs a tenth of it is not a ladder.
+
+       A SHARED lane is pitched lower per person on purpose — its rungs are per-member and every member
+       gets paid, so the personal share has to be something an ordinary day covers. Judged against its
+       own band rather than exempted, because "shared" must not become a hole in the check. */
+    const band = l => l.shared ? [0.1, 0.3] : [0.2, 0.5];
     const bad = EV.LANES.filter(l => {
       const window = TARGET * l.ms / 3600000;
       const frac = l.ladder[l.ladder.length - 1].at / window;
-      return frac < 0.2 || frac > 0.5;
+      const [lo, hi] = band(l);
+      return frac < lo || frac > hi;
     });
     ok('and every top rung is about a third of its window', bad.length === 0,
        bad.length ? 'BADLY PITCHED: ' + bad.map(l => l.name).join(', ')
          : EV.LANES.map(l => l.name + ' '
-             + Math.round(100 * l.ladder[3].at / (TARGET * l.ms / 3600000)) + '%').join(' '));
+             + Math.round(100 * l.ladder[3].at / (TARGET * l.ms / 3600000)) + '%'
+             + (l.shared ? ' each' : '')).join(' '));
   }
 
   /* The stated invariant: no lane is the one worth playing. Four lanes of different lengths paying
      different Valor per hour would make the choice arithmetic instead of taste. */
   {
-    const perHour = EV.LANES.map(l =>
-      l.ladder.reduce((t, m) => t + (m.reward.valor || 0), 0) / (l.ms / 3600000));
-    const spread = Math.max(...perHour) / Math.min(...perHour);
-    ok('Valor per hour is the same in every lane', spread <= 1.02,
-       perHour.map((v, i) => EV.LANES[i].name + ' ' + v.toFixed(1)).join(' / '));
+    const rate = l => l.ladder.reduce((t, m) => t + (m.reward.valor || 0), 0) / (l.ms / 3600000);
+    const solo = EV.LANES.filter(l => !l.shared), shared = EV.LANES.filter(l => l.shared);
+    const spread = Math.max(...solo.map(rate)) / Math.min(...solo.map(rate));
+    ok('Valor per hour is the same in every solo lane', spread <= 1.02,
+       solo.map(l => l.name + ' ' + rate(l).toFixed(1)).join(' / '));
+    /* The Levy pays LESS per hour, and that is the design rather than an oversight. Its points come
+       from the same deeds the solo lanes already read — it is a fifth credit for work you are doing
+       anyway, not a fifth thing to do — so paying it at the solo rate would be paying twice for one
+       deed. What it adds instead is the Banner, which no amount of Valor buys. */
+    ok('and the shared lane pays less, being a second credit for the same deeds',
+       shared.length > 0 && shared.every(l => rate(l) < Math.min(...solo.map(rate))),
+       shared.map(l => l.name + ' ' + rate(l).toFixed(1)
+         + ' vs ' + Math.min(...solo.map(rate)).toFixed(1) + ' solo').join(' / '));
     ok('and the sprint lane hands out no Writs, coming round four times a day',
        !EV.laneOf('sprint').ladder.some(m => m.reward.shield));
   }
@@ -3284,16 +3299,146 @@ console.log('\n── a decree shows what it costs, and lasts long enough to mat
   /* ── claiming ── */
   {
     const s = freshState(now, 1); s.b.townhall = 8;
+    const solo = EV.LANES.filter(l => !l.shared);
     for(const lane of EV.LANES) EV.eventState(s, lane, now).score = lane.ladder[0].at;
-    ok('every lane is owed its first rung', EV.allClaimable(s, now).length === EV.LANES.length);
+    ok('every solo lane is owed its first rung', EV.allClaimable(s, now).length === solo.length,
+       EV.allClaimable(s, now).length + ' of ' + solo.length);
     const v0 = s.valor;
     ok('claiming one lane pays only that lane', L.claimEvent(s, now, 'sprint')
-       && EV.allClaimable(s, now).length === EV.LANES.length - 1
+       && EV.allClaimable(s, now).length === solo.length - 1
        && s.valor - v0 === EV.laneOf('sprint').ladder[0].reward.valor,
        '+' + Math.round(s.valor - v0) + ' Valor');
     ok('and claiming with no lane named pays the rest', L.claimEvent(s, now)
        && EV.allClaimable(s, now).length === 0);
     ok('and there is nothing left to claim twice', L.claimEvent(s, now) === false);
+  }
+
+  /* ── how long is left, in words a person uses ──
+     `ftime` is the funnel every countdown in the game goes through — build timers, march clocks, event
+     windows — and nothing asserted a single one of its outputs. It stopped at minutes, which was
+     survivable while the longest thing in the game was six hours and became nonsense when v4.6 added a
+     48-hour window: "2720m 36s". Changing it broke no test, which is the reason to write these. */
+  {
+    console.log('\n── a countdown reads like a person saying it ──');
+    const f = L.ftime;
+    ok('seconds under a minute', f(45000) === '45s', f(45000));
+    ok('minutes and seconds under an hour', f(3599000) === '59m 59s', f(3599000));
+    ok('hours and minutes under a day', f(2 * 3600000 + 40 * 60000) === '2h 40m',
+       f(2 * 3600000 + 40 * 60000));
+    ok('days and hours beyond that', f(48 * 3600000) === '2d 0h', f(48 * 3600000));
+    /* The two that were wrong before, named: the longest event window and a long build. */
+    ok('a 48-hour event window is not quoted in minutes', !/^\d{3,}m/.test(f(48 * 3600000)),
+       'was 2880m 0s, now ' + f(48 * 3600000));
+    ok('and neither is a two-and-a-half-hour build', !/^\d{3,}m/.test(f(160 * 60000)),
+       'was 160m 0s, now ' + f(160 * 60000));
+    ok('never negative, and zero is zero', f(-5000) === '0s' && f(0) === '0s');
+    /* Two units at most, or a countdown becomes a sentence. */
+    ok('at most two units, always', [1, 90, 5000, 90000, 400000].every(k => {
+      const out = f(k * 1000);
+      return (out.match(/[smhd]/g) || []).length <= 2;
+    }));
+  }
+
+  /* ── the Levy: the shared lane ──
+     Structurally unlike the other four, and every difference is a way to get it wrong. Its ladder is
+     per-member and scaled by how many holds are around; its threshold is the ALLIANCE total, which
+     lives on the server; and its `claimed` record has to survive that threshold moving mid-window.
+
+     The first version of this shipped a hole big enough to matter: with no total supplied, the code
+     fell back to the member's OWN score and compared it against a four-hold ladder — so one member
+     with 8,000 points claimed a rung the alliance had not reached. That fallback looked like defensive
+     programming. The check below is what it should have had instead. */
+  {
+    console.log('\n── the Levy is scored by the alliance, not by you ──');
+    const now2 = 1770000000000;
+    const lane = EV.laneOf('levy');
+    ok('there is exactly one shared lane', EV.LANES.filter(l => l.shared).length === 1);
+    ok('and it is gated on having an alliance', lane.needs === 'alliance');
+    ok('and its pool is as full as any other', EV.poolOf(lane).length === 4,
+       EV.poolOf(lane).map(e => e.id).join(','));
+    /* Every collective event must read `help`, the one deed that only exists inside an alliance. */
+    ok('and every one of its events counts helping an ally',
+       EV.poolOf(lane).every(e => e.sources.help), EV.poolOf(lane).length + ' events');
+
+    /* ── the per-member scaling ── */
+    ok('the ladder scales with how many holds are around',
+       EV.ladderOf(lane, 10)[0].at === lane.ladder[0].at * 10
+       && EV.ladderOf(lane, 20)[0].at === lane.ladder[0].at * 20,
+       '4 holds → ' + EV.ladderOf(lane, 4)[0].at + ' · 20 holds → ' + EV.ladderOf(lane, 20)[0].at);
+    ok('and keeps the per-member figure alongside, so a panel can say "each"',
+       EV.ladderOf(lane, 10)[0].per === lane.ladder[0].at);
+    /* A two-hold alliance must not face a ladder it clears by accident, and a stale count must not make
+       one impossible. Both ends are clamped. */
+    ok('a tiny alliance is floored, not trivial', EV.levyHolds(1) === EV.LEVY_MIN
+       && EV.levyHolds(0) === EV.LEVY_MIN, 'holds 1 → ' + EV.levyHolds(1));
+    ok('and an impossible count is capped', EV.levyHolds(9999) === EV.LEVY_MAX);
+    ok('a solo lane ignores the scaling entirely',
+       EV.ladderOf(EV.laneOf('term'), 20)[0].at === EV.laneOf('term').ladder[0].at);
+
+    /* ── the hole ── */
+    {
+      const s = freshState(now2, 1);
+      s.b.townhall = 8;
+      s.can = { online:true, alliance:true };
+      EV.eventState(s, lane, now2).score = 9999;      // a big personal contribution
+      ok('a big personal contribution claims NOTHING on its own',
+         EV.claimableMilestones(s, lane, now2).length === 0,
+         'own score 9999, ladder starts at ' + EV.ladderOf(lane, 4)[0].at);
+      ok('and the sweep that claims every lane leaves it alone too',
+         !EV.allClaimable(s, now2).some(o => o.lane.shared),
+         EV.allClaimable(s, now2).map(o => o.lane.id).join(',') || 'nothing owed');
+      ok('and claiming it by name pays nothing without the total',
+         L.claimEvent(s, now2, 'levy') === false);
+
+      /* With the alliance's total it behaves like any other ladder. */
+      const holds = 8, first = EV.ladderOf(lane, holds)[0];
+      ok('given the alliance total, the first rung is owed',
+         EV.claimableMilestones(s, lane, now2, first.at, holds).length === 1,
+         'total ' + first.at + ' over ' + holds + ' holds');
+      const v0 = s.valor;
+      ok('and claiming it pays', L.claimEvent(s, now2, 'levy', { total: first.at, holds })
+         && s.valor - v0 === first.reward.valor, '+' + Math.round(s.valor - v0) + ' Valor');
+      ok('and not twice', L.claimEvent(s, now2, 'levy', { total: first.at, holds }) === false);
+
+      /* ── the claimed record has to survive the threshold moving ──
+         Members log on and off all window, so `holds` changes and every absolute threshold changes with
+         it. A claimed-record keyed on the scaled number would come unstuck the moment it did. */
+      ok('a rung stays claimed when the alliance size changes',
+         EV.claimableMilestones(s, lane, now2, EV.ladderOf(lane, 20)[0].at, 20).length === 0,
+         'claimed ' + JSON.stringify(EV.eventState(s, lane, now2).claimed));
+      ok('and the next rung is still reachable at the new size',
+         EV.claimableMilestones(s, lane, now2, EV.ladderOf(lane, 20)[1].at, 20).length === 1);
+    }
+
+    /* A hold in no alliance must never be shown the Levy as claimable — the same rule the daily slate
+       learned in v4.5, one level up. */
+    {
+      const solo = freshState(now2, 1);
+      solo.b.townhall = 8;
+      EV.eventState(solo, lane, now2).score = 99999;
+      ok('a hold in no alliance is never owed the Levy',
+         !EV.allClaimable(solo, now2, { total: 999999, holds: 4 }).some(o => o.lane.shared));
+      ok('but it still scores into it, so joining brings the day\'s work with you',
+         EV.canDo(solo, lane) === false && EV.eventState(solo, lane, now2).score > 0);
+    }
+
+    /* The per-member ceiling: one member cannot carry a thirty-hold alliance. */
+    {
+      const s = freshState(now2, 1); s.b.townhall = 8;
+      const cap = EV.laneCap(s, lane);
+      /* Enough deeds to actually REACH it. The first version of this ran 400 and stopped at 6,800 of
+         22,000, so it asserted `score <= cap` about a score that had never gone near it — a test that
+         would have passed with the ceiling deleted. */
+      const src = Object.keys(EV.windowAt(lane, EV.windowNo(lane, now2)).event.sources)[0];
+      for(let i = 0; i < 20000 && EV.eventState(s, lane, now2).score < cap; i++)
+        EV.scoreDeed(s, src, 1, now2);
+      const got = EV.eventState(s, lane, now2).score;
+      ok('one member\'s contribution stops dead at a ceiling',
+         got === cap && EV.eventState(s, lane, now2).capped,
+         Math.round(got) + ' / ' + cap + ' on ' + src);
+      ok('and the alliance ceiling is that, times the holds',
+         EV.capOf(s, lane, 10) === cap * 10);
+    }
   }
 
   /* ── the save that predates lanes ──

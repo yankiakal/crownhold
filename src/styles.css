@@ -1248,6 +1248,29 @@ canvas{ touch-action:none; }
 .evpay{font-size:.57rem;white-space:nowrap}
 .evtick{position:absolute;top:-5px;right:-3px;font-size:.55rem;color:var(--gold)}
 
+/* the Levy — the shared card, marked as a different kind of thing without being a different shape */
+.evcard.levy{border-left:2px solid var(--gold-deep);background:rgba(217,164,65,.045)}
+.levylock{font-size:.66rem;line-height:1.4;color:var(--ink-dim);margin-top:.2rem}
+.levylock b{color:var(--ink)}
+.levybanner{
+  margin-top:.35rem;padding:.25rem .4rem;border:1px dashed var(--edge);border-radius:3px;
+  font-size:.62rem;line-height:1.35;color:var(--ink-dim);
+}
+.levybanner.on{border-style:solid;border-color:var(--gold-deep);color:var(--ink);
+  background:rgba(217,164,65,.08)}
+.levybanner b{color:var(--gold)}
+/* Who is pulling. Six rows at most: the point is recognising your own name among the others, not a
+   full roster — the Alliance tab is where the roster lives. */
+.levyrows{margin-top:.35rem;font-size:.63rem}
+.levyme{color:var(--ink-dim);margin-bottom:.15rem}
+.levyme b{color:var(--gold);font-variant-numeric:tabular-nums}
+.levyrow{display:flex;gap:.4rem;color:var(--ink-dim);padding:.05rem 0}
+.levyrow .spacer{flex:1}
+.levyrow .count{font-variant-numeric:tabular-nums}
+.levyrow.mine{color:var(--gold)}
+.levyrow.quiet{font-style:italic;opacity:.75}
+
+
 /* ── the week grid ──
    A row per lane, a column per day. Seven columns fit 393px; the wrap scrolls sideways anyway so a
    narrower phone degrades into a swipe rather than squeezing the icons to nothing. */

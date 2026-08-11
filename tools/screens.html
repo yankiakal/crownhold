@@ -175,9 +175,18 @@ setTimeout(() => {
           rows.push('  running now: ' + lit + ' lit' + (lit === 4 ? ' ✓' : ' ✗ NOT FOUR LIVE'));
         }
         const cards = [...d.querySelectorAll('.evcard')];
+        const levy = d.querySelector('.evcard.levy');
         rows.push('  event cards ' + cards.length
           + (cards.length ? ' · ' + Math.round(cards[0].getBoundingClientRect().height) + 'px each' : '')
-          + (cards.length === 4 ? ' ✓' : ' ✗ NOT ONE PER LANE'));
+          + (cards.length === 5 ? ' ✓' : ' ✗ NOT ONE PER LANE'));
+        /* The Levy card must be present and explain itself even with no alliance — this hold has none,
+           so what is measured here is exactly the locked state a new player sees. An absent card would
+           leave the fifth calendar row as a door with no sign on it. */
+        rows.push('  the levy card ' + (levy
+          ? Math.round(levy.getBoundingClientRect().height) + 'px'
+            + (levy.querySelector('.levylock') ? ', explains itself ✓' : ' ✗ NO EXPLANATION')
+            + (levy.querySelector('[data-act="levyClaim"]') ? ' ✗ OFFERS A CLAIM WITH NO ALLIANCE' : '')
+          : '✗ MISSING'));
         /* Four cards plus a slate plus a grid is a lot of panel. Anything past about four screens is
            a page nobody reaches the bottom of. */
       }

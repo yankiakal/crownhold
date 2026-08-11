@@ -402,7 +402,12 @@ try {
     else {
       const cards = pane.querySelectorAll('.evcard');
       say('event cards'.padEnd(16) + cards.length + ' live'
-        + (cards.length === 4 ? '  FOUR LANES' : '  NOT FOUR'));
+        + (cards.length === 5 ? '  FIVE LANES' : '  NOT FIVE'));
+      const levy = pane.querySelector('.evcard.levy');
+      say('the levy card'.padEnd(16) + (levy
+        ? Math.round(levy.getBoundingClientRect().height) + 'px, '
+          + (levy.querySelector('.levylock') ? 'explains itself' : 'NO EXPLANATION')
+        : 'MISSING'));
 
       const cal = pane.querySelector('table.cal'), wrap = pane.querySelector('.calwrap');
       if(!cal || !wrap){ say('week grid'.padEnd(16) + ' NO GRID'); }

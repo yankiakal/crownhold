@@ -19,12 +19,13 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
 import { tick, armyPower, armyBreakdown, tierPower, gainRes, masteryLvl, upkeepPerSec, gainValor, gainMastery, pushLog,
-         takeCasualties, capFor } from '../src/logic.js';
+         takeCasualties, capFor, claimEvent } from '../src/logic.js';
 /* The helper's own deed. `help` is read by the daily task "Help an ally build" and was emitted
    NOWHERE, which made that task impossible — and the slate needs every line for its bonus. It has to
    be credited here rather than in the client, because helping happens on the server: the client that
    pressed the button never learns which builds it actually shortened. */
-import { scoreDeed, laneOf, windowNo, windowAt } from '../src/events.js';
+import { scoreDeed, laneOf, windowNo, windowAt, ladderOf, capOf,
+         levyHolds } from '../src/events.js';
 import { SEASON_MS as DEFAULT_SEASON_MS, SEASON_EPOCH, SEASON_ARCS,
          seasonNo as defSeasonNo, seasonEndsIn as defSeasonEndsIn,
          canAlly, allyBlockedWhy } from '../src/defs.js';
@@ -148,6 +149,113 @@ function allyHelpCap(a, m){
   // Embassy lifts only theirs — which is what an embassy is for
   return HELP_CAP + 2 * allyTechLvl(a,'wideRoads') + 2 * ((m && m.state.b.embassy) || 0);
 }
+/* ── the Levy ──
+   The one event scored by a whole alliance. Every solo lane lives entirely on the member's own state;
+   this one cannot, because the ladder is measured against the SUM of what everybody did. So the sum is
+   computed here, from the members' own `evs.levy` slots, and nothing extra is stored per deed — a
+   running total kept on the alliance record would be a second copy of the same fact and would drift the
+   first time a member's state was rolled back, reset or migrated.
+
+   `holds` is how many members could plausibly have helped: seen inside this window or the one before.
+   A dormant account must not raise the bar for everyone still playing, and a member who was around
+   yesterday but not today still counts — otherwise the target lurches every time somebody logs off. */
+const LEVY_SEEN_MS = 2 * 24 * 3600 * 1000;
+function levyView(tag, now, viewer){
+  const lane = laneOf('levy');
+  const w = windowNo(lane, now), win = windowAt(lane, w);
+  const a = tag && db.alliances[tag];
+  if(!a) return { in: false, event: win.event.id, name: win.event.name, icon: win.event.icon,
+                  endsIn: win.end - now };
+  const rows = [];
+  let holds = 0;
+  for(const n of a.members){
+    const m = db.users[n.toLowerCase()];
+    if(!m) continue;
+    const st = m.state.evs && m.state.evs.levy;
+    const score = (st && st.w === w) ? st.score : 0;
+    if(now - (m.state.lastSeen || 0) <= LEVY_SEEN_MS) holds++;
+    rows.push({ name: m.name, score: Math.round(score) });
+  }
+  const n = levyHolds(holds);
+  const total = rows.reduce((t, r) => t + r.score, 0);
+  const ladder = ladderOf(lane, n);
+  const mine = viewer && viewer.state.evs && viewer.state.evs.levy;
+  const claimed = (mine && mine.w === w) ? mine.claimed : [];
+  return {
+    in: true,
+    event: win.event.id, name: win.event.name, icon: win.event.icon, blurb: win.event.blurb,
+    w, endsIn: win.end - now,
+    total, holds: n, counted: holds,
+    cap: capOf(viewer ? viewer.state : { b:{ townhall:1 } }, lane, n),
+    mine: (mine && mine.w === w) ? Math.round(mine.score) : 0,
+    rungs: ladder.map(m => ({ at: m.at, per: m.per, txt: m.txt,
+                              done: total >= m.at, claimed: claimed.includes(m.per) })),
+    /* Ranked, because a shared total with anonymous contributors is a total nobody feels responsible
+       for — the visible column IS the mechanism. */
+    rows: rows.sort((x, y) => y.score - x.score).slice(0, 30),
+    banner: levyBanner(a, now),
+  };
+}
+
+/* ── the Levy Banner ──
+   Clearing the third rung flies it over the alliance for the NEXT window: a real, earned,
+   alliance-wide bonus reaching every member through `s.allyBonus`, the same channel alliance research
+   and held landmarks already use. This is the part that makes the levy worth organising rather than
+   merely worth claiming, and it is the shape the genre uses for the same job — except it cannot be
+   bought, only earned, and it expires.
+
+   Stored as the window number it was earned IN, not as a flag with a timestamp: a flag would need
+   clearing by something, and nothing runs on a schedule here. Derived every read instead. */
+const LEVY_BANNER_RUNG = 2;                   // index — the third rung
+const LEVY_BANNER = { production: 0.05, valor: 0.05 };
+function levyEarnedIn(a, w, now){
+  const lane = laneOf('levy');
+  let total = 0, holds = 0;
+  for(const n of a.members){
+    const m = db.users[n.toLowerCase()];
+    if(!m) continue;
+    const st = m.state.evs && m.state.evs.levy;
+    if(st && st.w === w) total += st.score;
+    if(now - (m.state.lastSeen || 0) <= LEVY_SEEN_MS) holds++;
+  }
+  return total >= ladderOf(lane, levyHolds(holds))[LEVY_BANNER_RUNG].at;
+}
+/* The windows this alliance has cleared, most recent first. An ARRAY, and that is not tidiness: it was
+   a single `levyWon` field holding the last window cleared, which meant clearing the Levy two days
+   running overwrote the record of the win that was currently flying the Banner — so the reward for
+   doing it again was losing it. Caught by a server test, not by reading the code. */
+function levyWins(a){
+  if(Array.isArray(a.levyWins)) return a.levyWins;
+  a.levyWins = typeof a.levyWon === 'number' ? [a.levyWon] : [];   // older alliance records
+  return a.levyWins;
+}
+function levyBanner(a, now){
+  const lane = laneOf('levy');
+  const w = windowNo(lane, now);
+  /* Earned last window, flying this one. Asking about the PREVIOUS window is what makes the bonus a
+     reward for finishing rather than a bonus you already have while still earning it. */
+  const flying = levyWins(a).includes(w - 1);
+  return { flying, fx: LEVY_BANNER, earnedThis: levyEarnedIn(a, w, now),
+           endsIn: flying ? windowAt(lane, w).end - now : 0 };
+}
+/* Recorded when the total crosses, from wherever a member's score last moved. Idempotent. */
+function levyCheck(u, now){
+  const a = db.alliances[u.alliance];
+  if(!a) return;
+  const w = windowNo(laneOf('levy'), now);
+  const wins = levyWins(a);
+  if(wins.includes(w)) return;
+  if(levyEarnedIn(a, w, now)){
+    wins.unshift(w);
+    wins.length = Math.min(wins.length, 4);   // a few windows of history is all anything reads
+    for(const n of a.members){
+      const m = db.users[n.toLowerCase()];
+      if(m) pushLog(m.state, '🤝 The Levy is answered — the Banner flies over ['+a.tag+'] tomorrow.', 'gold');
+    }
+    markDirty();
+  }
+}
+
 function allyMemberBonus(a){
   if(!a) return null;
   return {
@@ -1023,9 +1131,14 @@ function advance(u, now){
   // alliance techs AND held landmarks reach the member through the state itself
   const techB = allyMemberBonus(db.alliances[u.alliance]) || {};
   const realmB = realmBonusFor(u.alliance);
+  /* And the Levy Banner, if the alliance cleared it in the previous window. Third source through the
+     same channel, which is why that channel exists: a member reads one object and never learns where
+     any of it came from. */
+  const ally = db.alliances[u.alliance];
+  const levyB = (ally && levyBanner(ally, now).flying) ? LEVY_BANNER : {};
   s.allyBonus = {};
-  for(const k of new Set([...Object.keys(techB), ...Object.keys(realmB)]))
-    s.allyBonus[k] = (techB[k] || 0) + (realmB[k] || 0);
+  for(const k of new Set([...Object.keys(techB), ...Object.keys(realmB), ...Object.keys(levyB)]))
+    s.allyBonus[k] = (techB[k] || 0) + (realmB[k] || 0) + (levyB[k] || 0);
   /* What this hold can actually DO, stamped by the only party that knows. The daily slate draws six
      tasks from a pool that includes "win an arena battle" and "help an ally build" — neither of which
      a solo hold can ever perform, and the slate's bonus needs EVERY line. Rather than thread a
@@ -1044,6 +1157,9 @@ function advance(u, now){
   for(let i = 0; i < 8; i++) tick(s, now, 0);
   tickWorld(s, now);
   s.lastSeen = now;
+  /* Any request at all can be the one that tips the alliance over a rung, so the check rides on the
+     single function every request already calls rather than on the handful that happen to score. */
+  levyCheck(u, now);
   markDirty();
 }
 
@@ -1308,10 +1424,28 @@ async function api(req, res, url){
     advance(u, now);
     return send(res, 200, {
       alliance: u.alliance ? allianceView(u.alliance, now, u) : null,
+      /* Sent whether or not the reader is in an alliance: someone with no alliance still needs to be
+         told what the Levy IS and which one is running, or the fifth row of the calendar is a locked
+         door with no sign on it. */
+      levy: levyView(u.alliance, now, u),
       directory: Object.values(db.alliances)
         .map(a => ({ tag:a.tag, name:a.name, members:a.members.length }))
         .sort((x,y) => y.members - x.members).slice(0, 20),
     });
+  }
+
+  /* ── claiming the Levy ──
+     Its own endpoint rather than the generic claimEvent action, because the threshold is the alliance's
+     total and only this process can compute it. The generic action deliberately pays nothing on a
+     shared lane for exactly that reason. */
+  if(path === '/api/levy/claim'){
+    if(!u.alliance) return send(res, 400, { error:'You are in no alliance.' });
+    advance(u, now);
+    const view = levyView(u.alliance, now, u);
+    const got = claimEvent(u.state, now, 'levy', { total: view.total, holds: view.holds });
+    if(!got) return send(res, 400, { error:'Nothing to claim from the Levy yet.' });
+    markDirty();
+    return send(res, 200, { ok:true, levy: levyView(u.alliance, now, u), ...publicState(u) });
   }
 
   if(path === '/api/alliance/contribute'){
@@ -1520,6 +1654,16 @@ async function api(req, res, url){
                              score: Number(body.score) || 0, claimed: [], capped: false };
     markDirty();
     return send(res, 200, { ok:true, lane: lane.id, w, score: u.state.evs[lane.id].score });
+  }
+  /* Mark the alliance as having won the Levy N windows ago. Reaching that state honestly means waiting
+     out a day, so there is no other way to test that the Banner flies for exactly one window and then
+     stops. ALLOW_DEBUG only, like its neighbours. */
+  if(ALLOW_DEBUG && path === '/api/debug/levywon'){
+    const a = db.alliances[u.alliance];
+    if(!a) return send(res, 400, { error:'You are in no alliance.' });
+    a.levyWins = [windowNo(laneOf('levy'), now) - (Number(body.back) || 0)];
+    markDirty();
+    return send(res, 200, { ok:true, levyWins: a.levyWins });
   }
   if(ALLOW_DEBUG && path === '/api/debug/embassy'){
     advance(u, now);
