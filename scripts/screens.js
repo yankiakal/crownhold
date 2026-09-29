@@ -62,10 +62,16 @@ if(chrome && Number(chrome[1]) > 45){
    the only ones that matter are the fixed ones. */
 const arrangeBad = ['NO ARRANGE BUTTON', 'ARRANGE BUTTON TOO SMALL', 'NO ARRANGE PILL',
                     'UNDER THUMB SIZE', 'ARRANGE PILL TOO WIDE', 'ARRANGE PILL OVER THE TABS',
-                    'HOLD HINT INVISIBLE', 'A LANE IS NOT RUNNING']
+                    'HOLD HINT INVISIBLE', 'A LANE IS NOT RUNNING',
+                    'STANCE UNREACHABLE', 'SHIELD UNREACHABLE', 'NO WALL PANEL',
+                    'BANNER BEHIND THE HEADER', 'NO BANNER RAISED']
   .filter(t => body.includes(t));
 if(arrangeBad.length){
   console.error('\n  ✗ arranging the hold: ' + arrangeBad.join(', '));
+  process.exit(1);
+}
+if(!body.includes('a banner')){
+  console.error('\n  ✗ whether an interrupt is visible was never measured — not a pass');
   process.exit(1);
 }
 if(!body.includes('the arrange pill')){

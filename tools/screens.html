@@ -148,6 +148,30 @@ setTimeout(() => {
               + 'px at ' + Math.round(nr.top) : 'MISSING')
             + (nr && nr.width > 40 && nr.height > 10 ? ' ✓ on screen' : ' ✗ HOLD HINT INVISIBLE'));
         }
+        /* ── is an interrupt actually visible? ──
+           .banner is position:fixed with z-index 50; on the phone `header` is sticky at top:0 with
+           z-index 86 and an OPAQUE background, measuring 113px. At the old top:1rem the banner landed
+           inside the header's box and was painted behind it — so the loudest channel in the game (Mastery
+           gains, hero drafts, event rewards, wave results) showed nobody anything. Hit-tested at 76x43 at
+           y=8 with the wordmark on top. Lost once already when a neighbouring probe was moved, which is
+           why it says so here. */
+        {
+          const g = f.contentWindow;
+          const old = d.querySelector('.banner');
+          if(old) old.remove();
+          if(g.__probeBanner) g.__probeBanner();
+          const b = d.querySelector('.banner');
+          if(!b){ rows.push('  a banner       ✗ NO BANNER RAISED — the probe seam is gone'); }
+          else {
+            const r = b.getBoundingClientRect();
+            const mid = d.elementFromPoint(r.left + r.width/2, r.top + r.height/2);
+            const onTop = mid && (mid === b || b.contains(mid));
+            rows.push('  a banner ' + Math.round(r.width) + '×' + Math.round(r.height) + 'px at y='
+              + Math.round(r.top) + ' · topmost is ' + (mid ? (mid.tagName.toLowerCase()
+                + (mid.className ? '.' + String(mid.className).split(' ')[0] : '')) : 'nothing')
+              + (onTop ? ' ✓ visible' : ' ✗ BANNER BEHIND THE HEADER'));
+          }
+        }
         const arrBtn = d.querySelector('[data-act="arrange"]');
         if(!arrBtn){ rows.push('  ✗ NO ARRANGE BUTTON on the hold'); }
         else {
@@ -233,6 +257,35 @@ setTimeout(() => {
           : '✗ MISSING'));
         /* Four cards plus a slate plus a grid is a lot of panel. Anything past about four screens is
            a page nobody reaches the bottom of. */
+      }
+      if(t === 'war'){
+        /* ── can a phone player set their stance and spend a Writ? ──
+           Both controls used to live inside the threat strip, which the phone folds away with
+           `.threat > :not(.row):not(.bar){display:none}` — hit-tested at 4 stance buttons, 0 reachable,
+           and Raise Shield at 0x0. The strip's comment claimed both "already live" in the War sheet; they
+           did not, because the strip held the only call site. They live here now, so this is where the
+           claim gets tested. Hit-tested rather than measured, because a button with a box can still be
+           under something. */
+        const btns = [...d.querySelectorAll('[data-act="stance"]')];
+        const live = btns.filter(b => { const r = b.getBoundingClientRect();
+          if(r.width < 44 || r.height < 44) return false;
+          const el = d.elementFromPoint(r.left + r.width/2, r.top + r.height/2);
+          return el && (el === b || b.contains(el)); });
+        rows.push('  stance control ' + btns.length + ' buttons, ' + live.length
+          + ' reachable and thumb-sized' + (live.length >= 4 ? ' ✓' : ' ✗ STANCE UNREACHABLE'));
+        const sh = d.querySelector('[data-act="raiseShield"]');
+        if(!sh){ rows.push('  raise shield   no Writ held, nothing to measure'); }
+        else {
+          const r = sh.getBoundingClientRect();
+          const el = d.elementFromPoint(r.left + r.width/2, r.top + r.height/2);
+          rows.push('  raise shield ' + Math.round(r.width) + '×' + Math.round(r.height)
+            + (r.height >= 44 && el && (el === sh || sh.contains(el)) ? ' ✓ reachable'
+               : ' ✗ SHIELD UNREACHABLE'));
+        }
+        /* And the two numbers, which used to be wrong by 1.67x and 0.73x in opposite directions. */
+        const wall = d.querySelector('.panel h2');
+        rows.push('  the wall panel ' + (d.body.innerHTML.includes('At the wall') ? 'shows both sides ✓'
+          : '✗ NO WALL PANEL'));
       }
       if(t === 'world'){
         /* #map-dock, not #mapwrap. The frontier became a camera in v3.9 and the old strip was left

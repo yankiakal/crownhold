@@ -303,8 +303,14 @@ section.panel{
 .chronicle time{font-family:var(--sans);font-size:.62rem;color:#6b5f4e;margin-right:.4rem;font-variant-numeric:tabular-nums}
 
 /* banner + overlay */
+/* ── below the header, not behind it ──
+   `top:1rem` with z-index 50 put every banner this game raises INSIDE the phone's sticky header, which
+   is z-index 86 with an opaque background — so the loudest channel in the game (Mastery gains, hero
+   drafts, event rewards, wave results) painted behind an <h1> and nobody ever saw one. Hit-tested: a
+   76x43 banner at y=8 with the wordmark on top of it. --hdr is measured in render() because the header
+   wraps to two rows at some widths, which is exactly why a hardcoded offset would not do. */
 .banner{
-  position:fixed;left:50%;top:1rem;transform:translateX(-50%);
+  position:fixed;left:50%;top:calc(var(--hdr, 5.9rem) + .5rem);transform:translateX(-50%);
   background:var(--panel-2);border:1px solid var(--gold-deep);
   border-radius:4px;padding:.6rem 1.1rem;
   font-size:.95rem;z-index:50;box-shadow:0 6px 24px rgba(0,0,0,.5);
@@ -1300,6 +1306,11 @@ canvas{ touch-action:none; }
   margin-top:.3rem;font-size:.62rem;color:var(--ink-dim);
   font-variant-numeric:tabular-nums;letter-spacing:.03em;
 }
+
+
+/* the stance buttons in the War sheet — thumb-sized, because the strip's folded copy never was */
+.stancerow{display:flex;flex-wrap:wrap;gap:.35rem;margin:.2rem 0 .4rem}
+.stancerow .stance-btn{flex:1 1 auto;min-height:44px;min-width:44px;white-space:nowrap;font-size:.7rem}
 
 
 /* the Levy — the shared card, marked as a different kind of thing without being a different shape */

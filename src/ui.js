@@ -36,7 +36,7 @@ import {
   wavePower, streakMult, finishCost, xpNeed, relicsFound, unreadMail,
   courtSeats, courtSeated, heroAway, leadBonus, leadTotal, heroSeasonOpen, classLift,
   effLvl, heroStarCap, arenaTeam, setArenaTeam, gearBlockedBy, petBonus, screenCover,
-} from './logic.js';
+  battleForecast } from './logic.js';
 import { applyAction, isGameAction } from './actions.js';
 import * as sound from './audio.js';
 import { lessonOf } from './logic.js';
@@ -201,8 +201,16 @@ function renderThreat(S){
   const raven = petBonus(S, 'warn') > 0;
   const scouted = S.b.watchtower >= 1 || raven;
   const wt = WAVE_TYPES[S.waveType||'rabble'];
+  /* ── the same arithmetic the battle uses ──
+     This strip did its own sums and got both numbers wrong in opposite directions: it printed the enemy
+     WITHOUT the watchtower's blunting or the battle mods, and your side as a bare armyPower — no stance
+     bonus, no composition bonus, no Watch, no wall. Measured on a mid-game hold: it read 2,256 against
+     3,668 when the fight was really 1,354 against 4,993, so the game claimed a raid was more than twice
+     as dangerous as it was. And because your side omitted the stance bonus, a player who read the raid
+     correctly was never shown it working. battleForecast is now the only place either number comes from. */
+  const fc = battleForecast(S);
   const est = scouted
-    ? wt.icon+' '+wt.name+' · ≈'+Math.round(wavePower(S.wave)*(isWB?1.6:1)*streakMult(S))+' strength'
+    ? wt.icon+' '+wt.name+' · ≈'+Math.round(fc.enemy)+' strength'
       +(S.streak>0?' (bloodied)':'')
       +(wt.weakTo?' · weak to '+STANCES[wt.weakTo].name+' &amp; '+TROOPS[wt.counter].plural:'')
       +(!S.b.watchtower && raven ? ' <span style="opacity:.7">(your raven brought word)</span>' : '')
@@ -216,9 +224,17 @@ function renderThreat(S){
       + '<span class="meta">in <b>'+ftime(left)+'</b></span>'
       + '<span class="meta">scouts: <b>'+est+'</b></span>';
   }
-  h += '<span class="meta" style="margin-left:auto">your power: <b>'+armyPower(S)+'</b></span>'
+  /* At the wall, not on the road: this is what your side actually brings to THIS raid, stance and
+     composition and the Watch and the wall included. `armyPower` is the marching number and reading it
+     here understated the defence by about a quarter. */
+  h += '<span class="meta" style="margin-left:auto">at the wall: <b>'+fmt(fc.mine)+'</b>'
+    + (fc.cm > 1 ? ' <span style="color:var(--good)">+stance</span>' : fc.cm < 1
+        ? ' <span style="color:var(--bad)">−stance</span>' : '')+'</span>'
     + '<span class="meta">writs: <b>'+S.shields+'/'+shieldCap(S)+'</b></span>'
-    + (S.shields>0 && !shielded ? '<button class="valor-btn" data-act="raiseShield">🛡 Raise shield · 3m</button>' : '')
+    /* No Raise-shield button here. `.threat .row > :not(.title):not(.meta)` hides it on the phone, so it
+       measured 0x0 — a Writ the line beside it tells you that you hold, and could not spend. It lives in
+       renderWall now, and leaving a hidden copy here would have kept it first in document order and
+       therefore still the one anything looking for it finds. */
     + '</div>';
   /* The stance is a STANDING ORDER, and the row now says so. It used to sit open with a
      verdict beside it — "✓ right answer", "✗ wrong stance" — which read as a puzzle to re-solve
@@ -226,23 +242,22 @@ function renderThreat(S){
      counters every wave finished a 4-hour run at army 5,310 against 5,494 for the bot that
      never touched it. Demanding attention that buys nothing is the tiresome part of this genre,
      so the row is folded away by default and the copy tells the truth about what it is worth. */
+  /* ── the standing order is READ-ONLY here ──
+     Its buttons used to live in this strip inside a <details>, and the phone folds every child of
+     .threat that is not the first .row or the bar — so on the target device there were four stance
+     buttons and NONE of them was reachable. Hit-tested: "4 buttons, 0 reachable". The fold's own comment
+     said the detail "already lives" in the War sheet; it did not, because this was the only stance call
+     site in the file. Now it genuinely does: renderWall owns the controls and this is a label.
+
+     The copy above also told the player the stance was not worth watching, quoting a measurement that
+     has since expired. Re-measured: neutering the stance costs 12-16 waves won and up to 26% of the army
+     over four hours. It was both hidden and disclaimed. */
   const cm = counterMult(S);
-  h += '<details class="stance-row"><summary><span class="meta">standing order: <b>'
-    + STANCES[S.stance].icon+' '+STANCES[S.stance].name+'</b>'
-    + (scouted && cm>1 ? ' — suits this raid' : '')+'</span></summary>';
-  for(const [k,st] of Object.entries(STANCES)){
-    h += '<button class="stance-btn'+(S.stance===k?' active':'')+'" data-act="stance" data-key="'+k+'" title="'+st.hint+'">'
-      + st.icon+' '+st.name+'</button>';
-  }
-  h += '<span class="meta" style="display:block;margin-top:.3rem">Set it once and leave it. '
-    + 'A stance that suits the raid is worth +20% and fewer casualties, but raids resolve '
-    + 'themselves and none arrive while the game is closed — this is not something to watch.'
-    + '</span>'
-    + '<span class="meta" style="display:block;margin-top:.3rem">A defeat costs <b>'
-    + Math.round(WAVE_LOSS_FLOOR*100)+'–'+Math.round((WAVE_LOSS_FLOOR+WAVE_LOSS_SPAN)*100)
-    + '%</b> of the muster and <b>'+Math.round(WAVE_PLUNDER_FLOOR*100)+'–'
-    + Math.round((WAVE_PLUNDER_FLOOR+WAVE_PLUNDER_SPAN)*100)+'%</b> of your stores — the floor '
-    + 'when it was close, the ceiling when you were flattened.</span></details>';
+  h += '<span class="meta">standing order: <b>' + STANCES[S.stance].icon + ' '
+    + STANCES[S.stance].name + '</b>'
+    + (scouted && cm > 1 ? ' <span style="color:var(--good)">— suits this raid</span>'
+       : scouted && cm < 1 ? ' <span style="color:var(--bad)">— wrong for this raid</span>' : '')
+    + '</span>';
   h += '<div class="bar'+(shielded?'':' threat-fill')+'"><i style="width:'
     + (shielded ? Math.max(0,Math.min(100,100*(S.shieldUntil-now)/SHIELD_MS)) : pct)
     + '%"></i></div>';
@@ -444,6 +459,67 @@ function renderHoldPanels(S){
   if(hidden > 0)
     h += '<div class="stat-note">🏗 <b>'+hidden+'</b> more structure'+(hidden===1?'':'s')
       + ' still want ground you have not cleared. The next breaks earth at <b>Town Hall '+nextAt+'</b>.</div>';
+  return h + '</section>';
+}
+
+/* ── the wall, in the War sheet ──
+   Where the raid's two numbers and the two controls that answer it now live. Built because both controls
+   were UNREACHABLE on a phone: the stance buttons were folded away with the rest of the threat strip
+   (hit-tested at 4 buttons, 0 reachable) and Raise Shield measured 0x0 — a Writ the strip tells you that
+   you hold, earned from an event milestone, and could not spend. The strip's own comment claimed both
+   "already live" in the War sheet. They did not. Now they do. */
+function renderWall(S){
+  const now = Date.now();
+  const shielded = S.shieldUntil > now;
+  const wt = WAVE_TYPES[S.waveType || 'rabble'];
+  const scouted = S.b.watchtower >= 1 || petBonus(S, 'warn') > 0;
+  const fc = battleForecast(S);
+  const isWB = S.wave % 5 === 0;
+  let h = '<section class="panel"><h2>' + (isWB ? '⚔️ Warband' : 'The Wall')
+    + ' <span style="letter-spacing:.05em">' + (shielded ? 'under the Writ of Peace'
+        : 'raid ' + S.wave + ' in ' + ftime(S.nextWave - now)) + '</span></h2>';
+
+  /* Both sides, from the same function the battle uses — the strip used to compute its own and was wrong
+     on both numbers, in opposite directions. */
+  h += '<div class="trow"><span class="tname">At the wall</span>'
+    + '<span class="tmeta">' + (fc.cm > 1 ? 'stance +20%' : fc.cm < 1 ? 'stance −8%' : 'no stance bonus')
+    + (fc.cb >= 0.02 && wt.counter ? ' · ' + TROOPS[wt.counter].plural + ' +'
+        + Math.round(fc.cb * 100) + '%' : '') + '</span>'
+    + '<span class="spacer"></span><span class="count">' + fmt(fc.mine) + '</span></div>';
+  h += '<div class="trow"><span class="tname">' + (scouted ? wt.icon + ' ' + wt.name : 'An unknown band')
+    + '</span><span class="tmeta">' + (scouted
+        ? (wt.weakTo ? 'weak to ' + STANCES[wt.weakTo].name + ' &amp; ' + TROOPS[wt.counter].plural
+                     : 'no weakness') + (S.streak > 0 ? ' · bloodied' : '')
+        : 'a Watchtower would name it') + '</span>'
+    + '<span class="spacer"></span><span class="count">'
+    + (scouted ? '≈' + fmt(Math.round(fc.enemy)) : '?') + '</span></div>';
+  if(scouted)
+    h += '<div class="stat-note">' + (fc.margin >= 1.6 ? 'You outmatch them comfortably.'
+      : fc.margin >= 1.15 ? 'You should hold.'
+      : fc.margin >= 1 ? '<span style="color:var(--gold)">This will be close.</span>'
+      : '<span style="color:var(--bad)">As it stands, this is a defeat.</span>')
+      + ' A raid resolves itself, and none arrive while the game is closed.</div>';
+
+  h += '<div class="stat-note" style="margin-top:.5rem">Standing order</div><div class="stancerow">';
+  for(const [k, st] of Object.entries(STANCES))
+    h += '<button class="stance-btn' + (S.stance === k ? ' active' : '') + '" data-act="stance" '
+      + 'data-key="' + k + '" title="' + st.hint + '">' + st.icon + ' ' + st.name + '</button>';
+  h += '</div>';
+  h += '<div class="stat-note">Set it once and leave it. Worth <b>+20%</b> and fewer casualties when it '
+    + 'suits the raid, <b>−8%</b> when it does not — measured over four hours, the right order is worth '
+    + '12–16 more waves held and up to a quarter of the muster.</div>';
+
+  if(shielded)
+    h += '<div class="stat-note" style="color:var(--gold);margin-top:.4rem">🛡 Raids resume in <b>'
+      + ftime(S.shieldUntil - now) + '</b></div>';
+  else if(S.shields > 0)
+    h += '<button class="valor-btn" style="width:100%;margin-top:.4rem" data-act="raiseShield">'
+      + '🛡 Raise the Writ of Peace · 3m · ' + S.shields + '/' + shieldCap(S) + '</button>';
+  h += '<div class="stat-note">A defeat costs <b>' + Math.round(WAVE_LOSS_FLOOR*100) + '–'
+    + Math.round((WAVE_LOSS_FLOOR+WAVE_LOSS_SPAN)*100) + '%</b> of the muster and <b>'
+    + Math.round(WAVE_PLUNDER_FLOOR*100) + '–'
+    + Math.round((WAVE_PLUNDER_FLOOR+WAVE_PLUNDER_SPAN)*100) + '%</b> of your stores — the floor when it '
+    + 'was close, the ceiling when you were flattened.</div>';
   return h + '</section>';
 }
 
@@ -3724,7 +3800,7 @@ export function render(){
     + inTab('world', renderWorld(S))
     + '<main>' + inTab('hold', renderScene(S))
     + '<div class="rail">'
-      + inTab('war',    renderMuster(S) + renderWatch(S) + renderRaid(S) + renderArena(S)
+      + inTab('war',    renderWall(S) + renderMuster(S) + renderWatch(S) + renderRaid(S) + renderArena(S)
                       + renderRally(S) + renderBoss(S))
       + inTab('court',  renderHeroes(S) + renderPets(S) + renderRegalia(S) + renderRelics(S) + renderSpoils(S))
       + inTab('build',  renderHoldPanels(S) + renderDecrees(S) + renderResearch(S))
@@ -4632,6 +4708,12 @@ export function renderAccount(){
     + (acctMsg ? '<p class="d-warn">'+acctMsg+'</p>' : '')
     + '</div></div>';
 }
+
+/* A seam for tools/screens.html: raise a banner the way the rules do, so the harness can ask whether
+   the game's loudest channel is actually visible on a phone. Costs nothing and there is no other way to
+   hit-test an interrupt that only the rules raise. */
+if(typeof window !== 'undefined')
+  window.__probeBanner = () => { store.s.banner = { txt:'probe', cls:'win', until: Date.now() + 4000 }; render(); };
 
 export function wire(){
   // pointerdown so the 4 Hz re-render can never swallow a click

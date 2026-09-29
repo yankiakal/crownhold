@@ -1955,6 +1955,33 @@ export function raiseShield(s, now){
 }
 
 /* ── battle resolution ── */
+/* ── what this raid is actually worth, on both sides ──
+   ONE place the odds are computed. The threat bar used to do its own arithmetic and got both numbers
+   wrong, in opposite directions: it printed the enemy WITHOUT the watchtower's blunting or the battle
+   mods, and printed your side as a bare armyPower — no stance bonus, no composition bonus, no Watch, no
+   wall. Measured on a mid-game hold: it showed the raid at 2,256 against your 3,668 when the fight was
+   really 1,354 against 4,993. The game told you a raid was more than twice as dangerous as it was.
+
+   Worse than a wrong number: because your side omitted the stance bonus, a player who set the right
+   stance was never shown it working — the one control the counter system hangs on reported nothing.
+
+   `luck` is the enemy roll, 0.88..1.12. resolveWave passes its real roll; a forecast passes 1 for the
+   middle of the range, which is what a scout can honestly claim to know. */
+export function battleForecast(s, luck = 1){
+  const w = s.wave;
+  const isWB = w % 5 === 0;
+  const mods = getMods(s);
+  const raw = wavePower(w) * (isWB ? 1.6 : 1) * luck * streakMult(s);
+  const enemy = raw * (1 - bluntMult(s)) * mods.enemyX;
+  const bd = armyBreakdown(s);
+  const cb = compBonus(s);
+  const cm = counterMult(s);
+  // the Watch fights the wave too, under whichever captain at the wall is best
+  const mine = Math.round((bd.base + bd.watch)*bd.mult*cm*(1+cb)*mods.powerX + bd.wall*mods.wallX);
+  return { enemy, mine, bd, cb, cm, isWB, raw,
+           margin: mine / Math.max(1, enemy) };
+}
+
 export function resolveWave(s, now, rand=Math.random){
   const w = s.wave;
   const isWB = w % 5 === 0; // every 5th raid is an elite Warband
@@ -1962,12 +1989,11 @@ export function resolveWave(s, now, rand=Math.random){
   const label = (isWB ? 'Warband' : 'Raid')+' '+w+' ('+wt.name+')';
   const mods = getMods(s);
   const cm = counterMult(s);
-  const raw = wavePower(w) * (isWB?1.6:1) * (0.88 + rand()*0.24) * streakMult(s);
-  const enemy = raw * (1-bluntMult(s)) * mods.enemyX;
-  const bd = armyBreakdown(s);
-  const cb = compBonus(s);
-  // the Watch fights the wave too, under whichever captain at the wall is best
-  const mine = Math.round((bd.base + bd.watch)*bd.mult*cm*(1+cb)*mods.powerX + bd.wall*mods.wallX);
+  /* Through battleForecast, so the number the threat bar shows and the number the battle uses cannot be
+     two different numbers — which is exactly what they were. `luck` is passed at its original multiply
+     position so the float order is unchanged and every seeded sim result stays bit-identical. */
+  const fc = battleForecast(s, 0.88 + rand()*0.24);
+  const enemy = fc.enemy, mine = fc.mine, bd = fc.bd, cb = fc.cb;
   let stanceNote = cm > 1 ? ' Your '+STANCES[s.stance].name+' broke their '+wt.name+' (+20%).'
                  : cm < 1 ? ' Your '+STANCES[s.stance].name+' was the wrong answer to '+wt.name+' (−8%).' : '';
   if(cb >= 0.08 && wt.counter) stanceNote += ' Your '+TROOPS[wt.counter].name+' line countered them (+'+Math.round(cb*100)+'%).';

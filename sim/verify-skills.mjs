@@ -3313,6 +3313,68 @@ console.log('\n── a decree shows what it costs, and lasts long enough to mat
     ok('and there is nothing left to claim twice', L.claimEvent(s, now) === false);
   }
 
+  /* ── the odds the game shows must be the odds it fights ──
+     The threat bar computed its own arithmetic and got BOTH numbers wrong, in opposite directions: the
+     enemy without the watchtower's blunting or the battle mods, and your own side as a bare armyPower —
+     no stance bonus, no composition bonus, no Watch, no wall. Measured on a mid-game hold: it showed
+     2,256 against 3,668 when the fight was really 1,354 against 4,993, so the game claimed a raid was
+     more than twice as dangerous as it was.
+
+     And the part that mattered most: because your side omitted the stance bonus, a player who read the
+     raid correctly was never shown it working — the one control the whole counter system hangs on
+     reported nothing back. battleForecast is the single funnel now, and resolveWave uses it too. */
+  {
+    console.log('\n── the odds shown are the odds fought ──');
+    const hold = () => {
+      const h = freshState(1770000000000, 5);
+      h.b.townhall = 12;
+      for(const k of Object.keys(D.BUILDINGS)) h.b[k] = 10;
+      h.t = { spearman:300, archer:150, knight:60, ballista:20 };
+      h.wave = 40; h.waveType = 'riders'; h.stance = 'shieldwall';
+      return h;
+    };
+    const h = hold();
+    const fc = L.battleForecast(h);
+    ok('the forecast reports both sides and a margin',
+       fc.enemy > 0 && fc.mine > 0 && Math.abs(fc.margin - fc.mine / fc.enemy) < 0.01,
+       Math.round(fc.mine) + ' at the wall against ' + Math.round(fc.enemy));
+
+    /* The two omissions, named. Each is a thing the old strip left out. */
+    ok('the enemy figure includes the watchtower\'s blunting',
+       (() => { const a = L.battleForecast(hold());
+                const b = hold(); b.b.watchtower = 0;
+                return L.battleForecast(b).enemy > a.enemy; })(),
+       'a tower lowers the raid it reports, as it lowers the raid it fights');
+    ok('and your side includes the stance bonus, so a right read SHOWS',
+       (() => { const good = hold();                 // shieldwall answers riders
+                const bad = hold(); bad.stance = 'volley';
+                return L.battleForecast(good).mine > L.battleForecast(bad).mine; })(),
+       'the number moves when the order suits the raid');
+    ok('and the composition bonus',
+       (() => { const a = hold(), b = hold();
+                b.t = { spearman:0, archer:150, knight:60, ballista:20 };   // no spearmen vs riders
+                return L.battleForecast(a).cb > L.battleForecast(b).cb; })());
+    ok('and the wall itself, which armyPower knows nothing about',
+       L.battleForecast(hold()).mine > L.armyPower(hold()),
+       Math.round(L.battleForecast(hold()).mine) + ' at the wall vs ' + Math.round(L.armyPower(hold()))
+       + ' on the march');
+
+    /* The funnel. If resolveWave ever computed its own again, the shown odds could drift from the fought
+       ones without a single test failing — which is exactly the state this replaced. */
+    {
+      const a = hold(), b = hold();
+      const fixed = () => 0.5;                       // the same roll for both
+      const before = L.battleForecast(a, 0.88 + 0.5 * 0.24);
+      L.resolveWave(b, 1770000000000, fixed);
+      const won = b.wavesWon > 0;
+      ok('and the battle agrees with the forecast about who should win',
+         won === (before.margin >= 1),
+         'forecast margin ' + before.margin.toFixed(2) + ', battle ' + (won ? 'held' : 'lost'));
+    }
+    ok('a forecast with no luck argument sits in the middle of the roll',
+       L.battleForecast(hold(), 1).enemy === L.battleForecast(hold()).enemy);
+  }
+
   /* ── the player's own arrangement ──
      Purely cosmetic by decision: no rule in this game reads a position, and the two functions below are
      the only things that write one. Confirmed with the author before a line was written, for two reasons
